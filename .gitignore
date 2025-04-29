@@ -3,6 +3,8 @@ node_modules/
 vendor/
 .pnp/
 .pnp.js
+.venv/
+.uv/cache/
 
 # Build outputs
 dist/
@@ -89,4 +91,4 @@ coverage/
 .eslintcache
 
 # Optional REPL history
-.node_repl_history 
+.node_repl_history

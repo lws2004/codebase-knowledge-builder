@@ -1,0 +1,13 @@
+[uv]
+# 使用 pyproject.toml 中的依赖
+use-pyproject = true
+
+# 缓存设置
+cache-dir = ".uv/cache"
+
+# 虚拟环境设置
+venv-path = ".venv"
+venv-python = "python3"
+
+# 安装设置
+index-url = "https://pypi.org/simple"

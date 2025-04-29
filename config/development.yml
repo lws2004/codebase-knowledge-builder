@@ -1,0 +1,21 @@
+# 开发环境配置文件
+
+# 应用程序配置
+app:
+  debug: true
+
+# LLM 配置
+llm:
+  model: "gpt-3.5-turbo"
+  temperature: 0.5
+  
+# Git 仓库配置
+git:
+  default_branch: "develop"
+  max_commits: 50
+
+# 节点配置
+nodes:
+  analyze_history:
+    max_commits: 50
+    include_file_history: false

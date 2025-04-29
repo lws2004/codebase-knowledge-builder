@@ -1,102 +1,78 @@
 """
-代码库知识构建器的主入口点。
+测试 AnalyzeHistoryNode 节点的脚本。
 """
 import os
+import json
 import argparse
-from pocketflow import Flow
 from dotenv import load_dotenv
-
 from src.nodes import AnalyzeHistoryNode
 from src.utils.env_manager import load_env_vars, get_llm_config
-from src.utils.config_loader import ConfigLoader
-from tests.test_flow import InputNode, PrepareRepoNode
-
-def create_flow():
-    """创建流程
-
-    Returns:
-        流程
-    """
-    # 创建节点
-    input_node = InputNode()
-    prepare_repo_node = PrepareRepoNode()
-    analyze_history_node = AnalyzeHistoryNode()
-
-    # 连接节点
-    input_node >> prepare_repo_node >> analyze_history_node
-
-    # 创建流程
-    return Flow(start=input_node)
 
 def main():
     """主函数"""
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="代码库知识构建器")
-    parser.add_argument("--repo-url", type=str, required=True, help="Git 仓库 URL")
-    parser.add_argument("--branch", type=str, default=None, help="分支名称")
+    parser = argparse.ArgumentParser(description="测试 AnalyzeHistoryNode 节点")
+    parser.add_argument("--repo-path", type=str, default=".", help="Git 仓库路径")
+    parser.add_argument("--max-commits", type=int, default=50, help="最大分析的提交数量")
     parser.add_argument("--output", type=str, default="history_analysis.json", help="输出文件路径")
-    parser.add_argument("--env", type=str, default="default", help="环境名称，用于加载对应的配置文件")
     args = parser.parse_args()
-
-    # 加载环境变量和配置
-    load_env_vars(env=args.env)
-
+    
+    # 加载环境变量
+    load_env_vars()
+    
     # 获取 LLM 配置
     llm_config = get_llm_config()
-
-    # 获取配置加载器
-    config_loader = ConfigLoader()
-
-    # 获取默认分支
-    default_branch = config_loader.get("git.default_branch", "main")
-    branch = args.branch or default_branch
-
+    
     # 创建共享存储
     shared = {
-        "llm_config": llm_config,
-        "input": {
-            "repo_url": args.repo_url,
-            "branch": branch
-        }
+        "repo_path": args.repo_path,
+        "llm_config": llm_config
     }
-
-    # 创建流程
-    flow = create_flow()
-
-    # 运行流程
-    print(f"开始分析仓库: {args.repo_url}, 分支: {branch}")
-    flow.run(shared)
-
+    
+    # 创建节点配置
+    node_config = {
+        "max_commits": args.max_commits,
+        "include_file_history": True,
+        "analyze_contributors": True
+    }
+    
+    # 创建节点
+    node = AnalyzeHistoryNode(config=node_config)
+    
+    # 运行节点
+    print(f"开始分析仓库: {args.repo_path}")
+    prep_res = node.prep(shared)
+    exec_res = node.exec(prep_res)
+    node.post(shared, prep_res, exec_res)
+    
     # 输出结果
     if "history_analysis" in shared and shared["history_analysis"].get("success", False):
         analysis = shared["history_analysis"]
-
+        
         # 打印摘要信息
         print(f"\n分析完成:")
         print(f"- 提交数量: {analysis.get('commit_count', 0)}")
         print(f"- 贡献者数量: {analysis.get('contributor_count', 0)}")
         print(f"- 分析的文件数量: {len(analysis.get('file_histories', {}))}")
-
+        
         # 保存结果到文件
-        import json
         with open(args.output, "w", encoding="utf-8") as f:
             # 移除过大的字段以减小文件大小
             output_analysis = analysis.copy()
             if "commit_history" in output_analysis:
                 output_analysis["commit_history"] = output_analysis["commit_history"][:10]  # 只保留前 10 个提交
-
+            
             json.dump(output_analysis, f, indent=2, ensure_ascii=False)
-
+        
         print(f"\n结果已保存到: {args.output}")
-
+        
         # 打印历史总结
         if "history_summary" in analysis and analysis["history_summary"]:
             print("\n历史总结:")
             print(analysis["history_summary"])
-    elif "error" in shared:
-        print(f"\n分析失败: {shared['error']}")
     else:
-        print("\n分析完成，但没有生成历史分析结果")
+        error = shared.get("history_analysis", {}).get("error", "未知错误")
+        print(f"\n分析失败: {error}")
 
 if __name__ == "__main__":
     main()
