@@ -9,8 +9,15 @@ from .ai_understand_core_modules_node import AIUnderstandCoreModulesNode
 from .prepare_rag_data_node import PrepareRAGDataNode
 from .analyze_repo_flow import AnalyzeRepoFlow
 from .generate_overall_architecture_node import GenerateOverallArchitectureNode
+from .generate_api_docs_node import GenerateApiDocsNode
+from .generate_timeline_node import GenerateTimelineNode
+from .generate_dependency_node import GenerateDependencyNode
+from .generate_glossary_node import GenerateGlossaryNode
+from .generate_quick_look_node import GenerateQuickLookNode
 from .content_quality_check_node import ContentQualityCheckNode
 from .generate_module_details_node import GenerateModuleDetailsNode
+from .module_quality_check_node import ModuleQualityCheckNode
+from .generate_content_flow import GenerateContentFlow
 
 __all__ = [
     "AnalyzeHistoryNode",
@@ -21,6 +28,13 @@ __all__ = [
     "PrepareRAGDataNode",
     "AnalyzeRepoFlow",
     "GenerateOverallArchitectureNode",
+    "GenerateApiDocsNode",
+    "GenerateTimelineNode",
+    "GenerateDependencyNode",
+    "GenerateGlossaryNode",
+    "GenerateQuickLookNode",
     "ContentQualityCheckNode",
-    "GenerateModuleDetailsNode"
+    "GenerateModuleDetailsNode",
+    "ModuleQualityCheckNode",
+    "GenerateContentFlow"
 ]

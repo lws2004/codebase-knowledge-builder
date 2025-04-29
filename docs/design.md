@@ -413,481 +413,19 @@ flowchart TD
     - _模型回退链_: 定义模型回退顺序，当首选模型失败时自动尝试备选模型。
 
     ```python
-    # 增强的 LLM 调用实现示例
-    def call_llm(prompt, context=None, task_type=None, target_language='en',
-                retry_count=3, config=None):
+    # 核心实现概要
+    def call_llm(prompt, context=None, task_type=None, target_language='en', retry_count=3, config=None):
         """增强的 LLM 调用函数，支持智能模型选择和回退机制"""
-        # 加载配置
-        llm_config = config or get_llm_config()
-
-        # 构建完整提示
-        full_prompt = _build_prompt(prompt, context, task_type, target_language)
-
-        # 检查缓存
-        cache_key = _generate_cache_key(full_prompt)
-        cached_result = get_from_cache(cache_key)
-        if cached_result:
-            return cached_result["response"], True, {"from_cache": True, **cached_result["metadata"]}
-
-        # 智能模型选择
-        selected_model, provider = _select_model_for_task(task_type, llm_config)
-
-        # 定义模型回退链
-        fallback_chain = _get_fallback_chain(selected_model, provider, task_type, llm_config)
-
-        # 尝试主模型和回退模型
-        for model_info in [{"model": selected_model, "provider": provider}] + fallback_chain:
-            current_model = model_info["model"]
-            current_provider = model_info["provider"]
-
-            # 准备 API 调用参数
-            params = _prepare_api_params(current_model, current_provider, full_prompt, llm_config)
-
-            # 重试机制
-            for attempt in range(retry_count):
-                try:
-                    # 记录开始时间
-                    start_time = time.time()
-
-                    # 调用 API
-                    response = completion(**params)
-
-                    # 计算延迟
-                    latency = time.time() - start_time
-
-                    # 提取结果
-                    result = response.choices[0].message.content
-
-                    # 收集元数据
-                    metadata = {
-                        "model": current_model,
-                        "provider": current_provider,
-                        "latency": latency,
-                        "tokens": {
-                            "prompt": response.usage.prompt_tokens,
-                            "completion": response.usage.completion_tokens,
-                            "total": response.usage.total_tokens
-                        },
-                        "attempt": attempt + 1,
-                        "timestamp": datetime.now().isoformat()
-                    }
-
-                    # 缓存结果
-                    save_to_cache(cache_key, {
-                        "response": result,
-                        "metadata": metadata
-                    })
-
-                    # 记录模型性能
-                    _record_model_performance(current_model, task_type, latency,
-                                            response.usage.total_tokens, True)
-
-                    return result, True, metadata
-
-                except Exception as e:
-                    # 记录错误
-                    log_and_notify(
-                        f"模型 {current_model} 调用失败 (尝试 {attempt+1}/{retry_count}): {str(e)}",
-                        "warning"
-                    )
-
-                    # 记录模型性能 (失败)
-                    _record_model_performance(current_model, task_type,
-                                            time.time() - start_time, 0, False)
-
-                    # 最后一次尝试失败，尝试下一个模型
-                    if attempt == retry_count - 1:
-                        break
-
-                    # 指数退避
-                    backoff_time = 2 ** attempt
-                    time.sleep(backoff_time)
-
-        # 所有模型都失败
-        return f"所有模型调用失败，请稍后重试", False, {"error": "all_models_failed"}
-
-    def _select_model_for_task(task_type, config):
-        """根据任务类型智能选择最合适的模型"""
-        # 任务类型到模型能力的映射
-        task_model_mapping = {
-            # 代码理解任务优先使用擅长代码的模型
-            "understand_code": ["gpt-4", "claude-3-opus", "qwen-max", "glm-4", "moonshot-v1"],
-            # 内容生成任务可以使用更多样的模型
-            "generate_content": ["claude-3-opus", "gpt-4", "qwen-max", "glm-4", "moonshot-v1"],
-            # 翻译任务优先使用多语言能力强的模型
-            "translate": ["qwen-max", "gpt-4", "claude-3-opus", "glm-4"],
-            # 问答任务优先使用上下文理解能力强的模型
-            "answer_question": ["claude-3-opus", "gpt-4", "qwen-max", "glm-4"],
-            # 默认任务配置
-            "default": ["gpt-4", "claude-3-opus", "qwen-max", "glm-4"]
-        }
-
-        # 获取任务对应的模型优先级列表
-        priority_models = task_model_mapping.get(task_type, task_model_mapping["default"])
-
-        # 获取配置中可用的模型和提供商
-        available_models = _get_available_models(config)
-
-        # 按优先级选择第一个可用的模型
-        for model_name in priority_models:
-            for provider, models in available_models.items():
-                if model_name in models:
-                    return model_name, provider
-
-        # 如果没有找到匹配的模型，使用配置中的默认模型
-        default_model = config.get("model", "gpt-4")
-        default_provider = config.get("provider", "openai")
-
-        return default_model, default_provider
-
-    def _get_fallback_chain(primary_model, primary_provider, task_type, config):
-        """获取模型回退链"""
-        # 构建回退链，排除主模型
-        fallback_chain = []
-
-        # 任务类型到模型能力的映射
-        task_model_mapping = {
-            "understand_code": ["gpt-4", "claude-3-opus", "qwen-max", "glm-4", "moonshot-v1"],
-            "generate_content": ["claude-3-opus", "gpt-4", "qwen-max", "glm-4", "moonshot-v1"],
-            "translate": ["qwen-max", "gpt-4", "claude-3-opus", "glm-4"],
-            "answer_question": ["claude-3-opus", "gpt-4", "qwen-max", "glm-4"],
-            "default": ["gpt-4", "claude-3-opus", "qwen-max", "glm-4"]
-        }
-
-        # 获取任务对应的模型优先级列表
-        priority_models = task_model_mapping.get(task_type, task_model_mapping["default"])
-
-        # 获取配置中可用的模型和提供商
-        available_models = _get_available_models(config)
-
-        # 按优先级构建回退链，排除主模型
-        for model_name in priority_models:
-            if model_name == primary_model:
-                continue
-
-            for provider, models in available_models.items():
-                if model_name in models:
-                    fallback_chain.append({"model": model_name, "provider": provider})
-
-        # 限制回退链长度，避免尝试过多模型
-        max_fallbacks = config.get("max_fallbacks", 2)
-        return fallback_chain[:max_fallbacks]
-
-    def _get_available_models(config):
-        """获取配置中可用的模型和提供商"""
-        available_models = {}
-
-        # 检查 OpenAI 配置
-        if config.get("openai_api_key"):
-            available_models["openai"] = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
-
-        # 检查 Anthropic 配置
-        if config.get("anthropic_api_key"):
-            available_models["anthropic"] = ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"]
-
-        # 检查阿里百炼配置
-        if config.get("alibaba_api_key"):
-            available_models["alibaba"] = ["qwen-max", "qwen-plus", "qwen-turbo"]
-
-        # 检查智谱配置
-        if config.get("zhipu_api_key"):
-            available_models["zhipu"] = ["glm-4", "glm-3-turbo"]
-
-        # 检查 Moonshot 配置
-        if config.get("moonshot_api_key"):
-            available_models["moonshot"] = ["moonshot-v1"]
-
-        # 检查 OpenRouter 配置 (可以访问多种模型)
-        if config.get("openrouter_api_key"):
-            available_models["openrouter"] = [
-                "gpt-4", "claude-3-opus", "claude-3-sonnet",
-                "mistral-large", "llama-3-70b"
-            ]
-
-        return available_models
-
-    def _record_model_performance(model, task_type, latency, tokens, success):
-        """记录模型性能，用于优化未来的模型选择"""
-        # 获取性能记录文件路径
-        performance_file = "data/model_performance.json"
-
-        # 确保目录存在
-        os.makedirs(os.path.dirname(performance_file), exist_ok=True)
-
-        # 读取现有记录
-        performance_data = {}
-        if os.path.exists(performance_file):
-            try:
-                with open(performance_file, "r") as f:
-                    performance_data = json.load(f)
-            except:
-                pass
-
-        # 初始化模型记录
-        if model not in performance_data:
-            performance_data[model] = {}
-
-        # 初始化任务类型记录
-        if task_type not in performance_data[model]:
-            performance_data[model][task_type] = {
-                "calls": 0,
-                "success": 0,
-                "failures": 0,
-                "total_latency": 0,
-                "total_tokens": 0,
-                "avg_latency": 0,
-                "avg_tokens": 0,
-                "success_rate": 0
-            }
-
-        # 更新统计信息
-        stats = performance_data[model][task_type]
-        stats["calls"] += 1
-
-        if success:
-            stats["success"] += 1
-            stats["total_latency"] += latency
-            stats["total_tokens"] += tokens
-        else:
-            stats["failures"] += 1
-
-        # 计算平均值
-        if stats["success"] > 0:
-            stats["avg_latency"] = stats["total_latency"] / stats["success"]
-            stats["avg_tokens"] = stats["total_tokens"] / stats["success"]
-
-        # 计算成功率
-        stats["success_rate"] = stats["success"] / stats["calls"]
-
-        # 保存更新后的记录
-        with open(performance_file, "w") as f:
-            json.dump(performance_data, f, indent=2)
-    ```
-
-    ```python
-    # 实现示例
-    from litellm import completion
-    import time
-    import hashlib
-    import json
-    import os
-    from datetime import datetime
-    from langfuse import Langfuse
-    from langfuse.decorators import observe
-    from .env_manager import get_llm_config
-    from .cache_manager import get_from_cache, save_to_cache
-
-    # 初始化 Langfuse 客户端
-    langfuse = Langfuse(
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY", ""),
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY", ""),
-        host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-    )
-
-    @observe(langfuse=langfuse, name="call_llm")
-    def call_llm(prompt, context=None, task_type=None, target_language='en',
-                retry_count=3, config=None):
-        """调用 LLM API 生成文本，并使用 Langfuse 进行追踪"""
-        # 加载配置，优先使用传入的配置，否则从环境变量加载
-        llm_config = config or get_llm_config()
-
-        # 构建完整提示
-        full_prompt = _build_prompt(prompt, context, task_type, target_language)
-
-        # 检查缓存
-        cache_key = _generate_cache_key(full_prompt)
-        cached_result = get_from_cache(cache_key)
-        if cached_result:
-            # 记录缓存命中
-            langfuse.generation(
-                name="llm_call_cached",
-                model=llm_config.get("model", "unknown"),
-                input={"prompt": prompt, "task_type": task_type},
-                output=cached_result["response"],
-                metadata={"from_cache": True, **cached_result.get("metadata", {})}
-            )
-            return cached_result["response"], True, {"from_cache": True, **cached_result.get("metadata", {})}
-
-        # 获取 LLM 提供商
-        provider = llm_config.get("provider", "openai").lower()
-
-        # 准备 API 调用参数
-        params = {
-            "model": llm_config["model"],
-            "messages": [{"role": "user", "content": full_prompt}],
-            "max_tokens": llm_config["max_tokens"],
-            "temperature": 0.2 if task_type in ["explain_code", "summarize"] else 0.7,
-            "api_key": llm_config["api_key"]
-        }
-
-        # 根据不同提供商配置特定参数
-        if provider == "openrouter":
-            params["api_base"] = llm_config.get("base_url", "https://openrouter.ai/api/v1")
-            # OpenRouter 需要添加 HTTP 头以识别应用
-            params["headers"] = {
-                "HTTP-Referer": llm_config.get("app_url", "https://your-app-url.com"),
-                "X-Title": llm_config.get("app_name", "Code Tutorial Generator")
-            }
-        elif provider == "alibaba" or provider == "tongyi":
-            params["api_base"] = llm_config.get("base_url", "https://dashscope.aliyuncs.com/api/v1")
-            # 阿里百炼模型映射
-            if "qwen" in params["model"].lower() and not params["model"].startswith("qwen-"):
-                params["model"] = f"qwen-{params['model']}"
-        elif provider == "volcengine":
-            params["api_base"] = llm_config.get("base_url", "https://api.volcengine.com/ml/api/v1/services")
-            # 火山引擎需要额外的认证参数
-            params["extra_body"] = {
-                "service_id": llm_config.get("service_id", "")
-            }
-        elif provider == "moonshot":
-            params["api_base"] = llm_config.get("base_url", "https://api.moonshot.cn/v1")
-        else:
-            # 其他提供商（如 OpenAI、Anthropic 等）
-            if llm_config.get("base_url"):
-                params["api_base"] = llm_config["base_url"]
-
-        # 创建 Langfuse 跟踪
-        generation = langfuse.generation(
-            name=f"llm_call_{task_type or 'default'}",
-            model=params["model"],
-            model_parameters={
-                "temperature": params.get("temperature", 0.7),
-                "max_tokens": params.get("max_tokens", 4000),
-                "provider": provider
-            },
-            input={"prompt": full_prompt, "task_type": task_type},
-            metadata={
-                "target_language": target_language,
-                "provider": provider
-            }
-        )
-
-        # 重试机制
-        for attempt in range(retry_count):
-            try:
-                # 记录开始时间
-                start_time = time.time()
-
-                # 调用 API
-                response = completion(**params)
-
-                # 计算延迟
-                latency = time.time() - start_time
-
-                # 提取结果
-                result = response.choices[0].message.content
-
-                # 收集元数据
-                metadata = {
-                    "model": params["model"],
-                    "provider": provider,
-                    "latency": latency,
-                    "tokens": {
-                        "prompt": response.usage.prompt_tokens,
-                        "completion": response.usage.completion_tokens,
-                        "total": response.usage.total_tokens
-                    },
-                    "attempt": attempt + 1,
-                    "timestamp": datetime.now().isoformat()
-                }
-
-                # 更新 Langfuse 跟踪
-                generation.end(
-                    output=result,
-                    usage={
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens
-                    },
-                    metadata={
-                        "latency": latency,
-                        "success": True,
-                        "attempt": attempt + 1
-                    }
-                )
-
-                # 缓存结果
-                save_to_cache(cache_key, {
-                    "response": result,
-                    "metadata": metadata
-                })
-
-                # 记录模型性能
-                _record_model_performance(params["model"], task_type, latency,
-                                        response.usage.total_tokens, True)
-
-                return result, True, metadata
-            except Exception as e:
-                # 记录错误
-                error_message = f"LLM API 调用失败 (尝试 {attempt+1}/{retry_count}): {str(e)}"
-                log_and_notify(error_message, "error")
-
-                # 记录模型性能 (失败)
-                _record_model_performance(params["model"], task_type,
-                                        time.time() - start_time, 0, False)
-
-                # 最后一次尝试失败
-                if attempt == retry_count - 1:
-                    # 更新 Langfuse 跟踪为失败
-                    generation.end(
-                        output=f"LLM API 调用失败: {str(e)}",
-                        metadata={
-                            "success": False,
-                            "error": str(e),
-                            "attempts": attempt + 1
-                        }
-                    )
-                    return f"LLM API 调用失败: {str(e)}", False, {"error": str(e)}
-
-                # 指数退避
-                backoff_time = 2 ** attempt
-                time.sleep(backoff_time)
-
-    def get_llm_config():
-        """从环境变量加载 LLM 配置"""
-        # 默认配置
-        default_config = {
-            "provider": "openai",
-            "model": "gpt-3.5-turbo",
-            "max_tokens": 4000,
-            "temperature": 0.7
-        }
-
-        # 从环境变量加载
-        config = {
-            "provider": os.getenv("LLM_PROVIDER", default_config["provider"]),
-            "model": os.getenv("LLM_MODEL", default_config["model"]),
-            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", default_config["max_tokens"])),
-            "temperature": float(os.getenv("LLM_TEMPERATURE", default_config["temperature"])),
-            "api_key": os.getenv("LLM_API_KEY", "")
-        }
-
-        # 加载提供商特定配置
-        if config["provider"] == "openrouter":
-            config["base_url"] = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-            config["app_url"] = os.getenv("APP_URL", "")
-            config["app_name"] = os.getenv("APP_NAME", "Code Tutorial Generator")
-        elif config["provider"] in ["alibaba", "tongyi"]:
-            config["base_url"] = os.getenv("ALIBABA_BASE_URL", "https://dashscope.aliyuncs.com/api/v1")
-        elif config["provider"] == "volcengine":
-            config["base_url"] = os.getenv("VOLCENGINE_BASE_URL", "https://api.volcengine.com/ml/api/v1/services")
-            config["service_id"] = os.getenv("VOLCENGINE_SERVICE_ID", "")
-        elif config["provider"] == "moonshot":
-            config["base_url"] = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1")
-        else:
-            # OpenAI 或其他提供商
-            config["base_url"] = os.getenv("LLM_BASE_URL", "")
-
-        # 加载 Langfuse 配置
-        config["langfuse"] = {
-            "enabled": os.getenv("LANGFUSE_ENABLED", "true").lower() == "true",
-            "public_key": os.getenv("LANGFUSE_PUBLIC_KEY", ""),
-            "secret_key": os.getenv("LANGFUSE_SECRET_KEY", ""),
-            "host": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-            "project_name": os.getenv("LANGFUSE_PROJECT", "codebase-knowledge-builder")
-        }
-
-        return config
+        # 1. 加载配置
+        # 2. 构建完整提示
+        # 3. 检查缓存，如有则返回缓存结果
+        # 4. 智能选择最适合任务的模型
+        # 5. 准备模型回退链
+        # 6. 尝试调用主模型，失败时尝试回退模型
+        # 7. 实现重试机制和指数退避
+        # 8. 记录性能指标和使用统计
+        # 9. 缓存成功结果
+        # 10. 返回生成内容、状态和元数据
     ```
 
 2.  **`evaluate_llm_output(output, task_type, criteria=None, trace_id=None)`** (`utils/llm_evaluator.py`) - **质量保证**
@@ -897,55 +435,14 @@ flowchart TD
     - _实现建议_: 可使用规则基础检查或另一个 LLM 调用进行评估，并通过 Langfuse 记录评估结果。
 
     ```python
-    # 实现示例
-    from langfuse import Langfuse
-
+    # 核心实现概要
     def evaluate_llm_output(output, task_type, criteria=None, trace_id=None):
         """评估 LLM 输出质量，并记录到 Langfuse"""
-        # 加载配置
-        config = get_llm_config()
-
-        # 初始化评估结果
-        evaluation = {
-            "score": 0.0,
-            "issues": [],
-            "suggestions": ""
-        }
-
-        # 根据任务类型选择评估标准
-        if criteria is None:
-            criteria = get_default_criteria(task_type)
-
-        # 执行评估 (可以使用规则或另一个 LLM 调用)
-        evaluation = perform_evaluation(output, criteria)
-
-        # 如果提供了 trace_id 且 Langfuse 已启用，记录评估结果
-        if trace_id and config.get("langfuse", {}).get("enabled", False):
-            try:
-                # 初始化 Langfuse 客户端
-                langfuse = Langfuse(
-                    public_key=config["langfuse"]["public_key"],
-                    secret_key=config["langfuse"]["secret_key"],
-                    host=config["langfuse"]["host"]
-                )
-
-                # 记录评估结果
-                langfuse.score(
-                    trace_id=trace_id,
-                    name=f"quality_{task_type}",
-                    value=evaluation["score"],
-                    comment=evaluation["suggestions"],
-                    metadata={
-                        "issues": evaluation["issues"],
-                        "task_type": task_type,
-                        "criteria": criteria
-                    }
-                )
-            except Exception as e:
-                # 记录错误但不中断流程
-                log_and_notify(f"Langfuse 评估记录失败: {str(e)}", "warning")
-
-        return evaluation["score"], evaluation["issues"], evaluation["suggestions"]
+        # 1. 加载配置
+        # 2. 根据任务类型选择评估标准
+        # 3. 执行评估（使用规则或另一个 LLM 调用）
+        # 4. 如果启用了 Langfuse，记录评估结果
+        # 5. 返回评分、问题列表和改进建议
     ```
 
 3.  **`collect_user_feedback(content_id, feedback_type, rating, comment=None, trace_id=None)`** (`utils/feedback_collector.py`) - **用户反馈**
@@ -955,102 +452,14 @@ flowchart TD
     - _实现建议_: 使用 Langfuse 记录用户反馈，并存储到本地数据库。
 
     ```python
-    # 实现示例
-    from langfuse import Langfuse
-    import uuid
-    import json
-    import os
-    from datetime import datetime
-
+    # 核心实现概要
     def collect_user_feedback(content_id, feedback_type, rating, comment=None, trace_id=None):
         """收集用户反馈并记录到 Langfuse"""
-        # 加载配置
-        config = get_llm_config()
-
-        # 生成反馈 ID
-        feedback_id = str(uuid.uuid4())
-
-        # 准备反馈数据
-        feedback_data = {
-            "id": feedback_id,
-            "content_id": content_id,
-            "type": feedback_type,
-            "rating": rating,
-            "comment": comment,
-            "timestamp": datetime.now().isoformat(),
-            "trace_id": trace_id
-        }
-
-        # 保存到本地数据库
-        success = save_feedback_to_db(feedback_data)
-
-        # 如果提供了 trace_id 且 Langfuse 已启用，记录反馈
-        if trace_id and config.get("langfuse", {}).get("enabled", False):
-            try:
-                # 初始化 Langfuse 客户端
-                langfuse = Langfuse(
-                    public_key=config["langfuse"]["public_key"],
-                    secret_key=config["langfuse"]["secret_key"],
-                    host=config["langfuse"]["host"]
-                )
-
-                # 记录用户反馈
-                langfuse.score(
-                    trace_id=trace_id,
-                    name=f"user_feedback_{feedback_type}",
-                    value=float(rating),
-                    comment=comment or "",
-                    metadata={
-                        "content_id": content_id,
-                        "feedback_id": feedback_id
-                    }
-                )
-            except Exception as e:
-                # 记录错误但不中断流程
-                log_and_notify(f"Langfuse 反馈记录失败: {str(e)}", "warning")
-
-        return feedback_id, success
-
-    def save_feedback_to_db(feedback_data):
-        """保存反馈到本地数据库"""
-        try:
-            # 确保目录存在
-            feedback_dir = "data/feedback"
-            os.makedirs(feedback_dir, exist_ok=True)
-
-            # 保存反馈数据
-            feedback_file = os.path.join(feedback_dir, f"{feedback_data['id']}.json")
-            with open(feedback_file, "w") as f:
-                json.dump(feedback_data, f, indent=2)
-
-            # 更新索引
-            index_file = os.path.join(feedback_dir, "index.json")
-            index_data = {}
-
-            if os.path.exists(index_file):
-                with open(index_file, "r") as f:
-                    index_data = json.load(f)
-
-            # 添加到索引
-            if "feedback" not in index_data:
-                index_data["feedback"] = []
-
-            index_data["feedback"].append({
-                "id": feedback_data["id"],
-                "content_id": feedback_data["content_id"],
-                "type": feedback_data["type"],
-                "rating": feedback_data["rating"],
-                "timestamp": feedback_data["timestamp"]
-            })
-
-            # 保存更新后的索引
-            with open(index_file, "w") as f:
-                json.dump(index_data, f, indent=2)
-
-            return True
-        except Exception as e:
-            log_and_notify(f"保存反馈失败: {str(e)}", "error")
-            return False
+        # 1. 生成唯一的反馈 ID
+        # 2. 准备反馈数据（ID、内容ID、类型、评分、评论等）
+        # 3. 保存反馈到本地数据库
+        # 4. 如果启用了 Langfuse，记录反馈到 Langfuse
+        # 5. 返回反馈 ID 和操作成功状态
     ```
 
 ### 代码分析函数
@@ -1092,120 +501,19 @@ flowchart TD
     - _缓存机制_: 默认启用24小时缓存，避免重复下载相同仓库。
 
     ```python
-    # 实现示例
-    import os
-    import time
-    import hashlib
-    import shutil
-    import git
-    from pathlib import Path
-
+    # 核心实现概要
     def git_clone(repo_url, local_path, depth=None, branch=None, auth=None,
                  use_cache=True, cache_ttl=None):
         """克隆或使用缓存的Git仓库"""
-        # 从环境变量获取缓存有效期，默认为24小时（86400秒）
-        if cache_ttl is None:
-            cache_ttl = int(os.getenv("REPO_CACHE_TTL", "86400"))
-        # 生成仓库唯一标识
-        repo_hash = hashlib.md5(repo_url.encode()).hexdigest()
-
-        # 从环境变量获取缓存目录，默认为 ~/.repo_cache
-        cache_dir = os.getenv("REPO_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".repo_cache"))
-        os.makedirs(cache_dir, exist_ok=True)
-
-        # 缓存的仓库路径
-        cached_repo_path = os.path.join(cache_dir, repo_hash)
-        cache_meta_path = f"{cached_repo_path}.meta"
-
-        # 检查缓存
-        if use_cache and os.path.exists(cached_repo_path) and os.path.exists(cache_meta_path):
-            # 读取缓存元数据
-            with open(cache_meta_path, "r") as f:
-                meta = json.load(f)
-
-            # 检查缓存是否有效
-            if time.time() - meta["timestamp"] < cache_ttl:
-                # 缓存有效，复制到目标路径
-                if os.path.exists(local_path):
-                    shutil.rmtree(local_path)
-
-                shutil.copytree(cached_repo_path, local_path)
-
-                return {
-                    "success": True,
-                    "path": local_path,
-                    "from_cache": True,
-                    "branch": meta.get("branch", "main")
-                }
-
-        # 缓存无效或不使用缓存，执行克隆
-        try:
-            # 准备克隆参数
-            clone_args = {
-                "to_path": local_path,
-                "multi_options": []
-            }
-
-            # 添加深度参数
-            if depth:
-                clone_args["multi_options"].append(f"--depth={depth}")
-
-            # 添加分支参数
-            if branch:
-                clone_args["branch"] = branch
-
-            # 处理认证信息
-            if auth:
-                if "token" in auth:
-                    # 使用令牌认证
-                    auth_url = repo_url.replace("https://", f"https://{auth['token']}@")
-                    clone_args["url"] = auth_url
-                elif "username" in auth and "password" in auth:
-                    # 使用用户名密码认证
-                    auth_url = repo_url.replace(
-                        "https://",
-                        f"https://{auth['username']}:{auth['password']}@"
-                    )
-                    clone_args["url"] = auth_url
-            else:
-                clone_args["url"] = repo_url
-
-            # 执行克隆
-            repo = git.Repo.clone_from(**clone_args)
-            actual_branch = repo.active_branch.name
-
-            # 更新缓存
-            if use_cache:
-                # 如果缓存目录存在，先删除
-                if os.path.exists(cached_repo_path):
-                    shutil.rmtree(cached_repo_path)
-
-                # 复制到缓存目录
-                shutil.copytree(local_path, cached_repo_path)
-
-                # 保存元数据
-                meta = {
-                    "url": repo_url,
-                    "timestamp": time.time(),
-                    "branch": actual_branch
-                }
-
-                with open(cache_meta_path, "w") as f:
-                    json.dump(meta, f)
-
-            return {
-                "success": True,
-                "path": local_path,
-                "from_cache": False,
-                "branch": actual_branch
-            }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "from_cache": False
-            }
+        # 1. 从环境变量获取缓存配置（有效期、缓存目录等）
+        # 2. 生成仓库唯一标识（用于缓存）
+        # 3. 检查缓存是否存在且有效
+        #    - 如果有效，直接从缓存复制到目标路径并返回
+        # 4. 准备克隆参数（深度、分支等）
+        # 5. 处理认证信息（令牌或用户名密码）
+        # 6. 执行 Git 克隆操作
+        # 7. 如果启用缓存，更新缓存
+        # 8. 返回操作结果（成功状态、路径、是否使用缓存等）
     ```
 
 ### 可视化函数
@@ -1262,107 +570,11 @@ flowchart TD
       ```python
       def map_module_to_docs_path(module_name, repo_structure):
           """将模块名映射到文档路径，符合 JustDoc 命名约定"""
-          # 查找模块在代码仓库中的位置
-          module_path = repo_structure.get(module_name, {}).get("path")
-
-          if not module_path:
-              # 如果找不到对应路径，放在根目录
-              # 将下划线转换为连字符，符合 JustDoc 命名约定
-              justdoc_name = module_name.replace("_", "-").lower()
-              return f"docs/{justdoc_name}.md"
-
-          # 将源代码路径转换为文档路径
-          # 例如: src/auth/service.py -> docs/auth/service.md
-          # 例如: src/data_processor/main.py -> docs/data-processor/main.md
-          parts = os.path.normpath(module_path).split(os.sep)
-
-          # 移除 src/ 前缀（如果存在）
-          if parts and parts[0] == "src":
-              parts = parts[1:]
-
-          # 处理目录名和文件名，将下划线转换为连字符
-          justdoc_parts = []
-          for i, part in enumerate(parts):
-              # 最后一部分是文件名，移除扩展名
-              if i == len(parts) - 1 and "." in part:
-                  part = os.path.splitext(part)[0]
-
-              # 将下划线转换为连字符
-              justdoc_part = part.replace("_", "-").lower()
-              justdoc_parts.append(justdoc_part)
-
-          # 创建文档目录结构
-          doc_path = os.path.join("docs", *justdoc_parts[:-1])
-
-          # 返回完整的文档路径
-          return os.path.join(doc_path, f"{justdoc_parts[-1]}.md")
-
-      def create_index_files(module_dirs, module_info_dict=None, repo_structure=None):
-          """为每个模块目录创建更加组织化的 index.md 文件
-
-          Args:
-              module_dirs: 模块目录列表
-              module_info_dict: 模块信息字典，包含模块描述和功能
-              repo_structure: 代码仓库结构信息
-
-          Returns:
-              索引文件列表 [(文件路径, 文件内容), ...]
-          """
-          index_files = []
-
-          for dir_path in module_dirs:
-              # 创建目录的索引文件
-              index_path = os.path.join(dir_path, "index.md")
-
-              # 获取目录名作为标题
-              dir_name = os.path.basename(dir_path)
-              title = dir_name.replace("-", " ").title()
-
-              # 获取该目录下的所有模块
-              dir_modules = []
-              if module_info_dict and repo_structure:
-                  for module_name, info in module_info_dict.items():
-                      module_path = repo_structure.get(module_name, {}).get("path", "")
-                      if module_path and dir_name in module_path.split(os.sep):
-                          dir_modules.append((module_name, info))
-
-              # 创建索引文件内容 - 更加流畅的组织方式，添加 emoji 突出重点
-              content = f"# 📚 {title} 模块\n\n## 📋 概述\n\n"
-              content += f"本目录包含 {title} 模块的相关文档，这些模块共同实现了系统的{title.lower()}功能。\n\n"
-
-              # 添加模块列表，带有简短描述
-              if dir_modules:
-                  content += "## 📦 模块列表\n\n"
-
-                  for module_name, info in dir_modules:
-                      module_file = module_name.replace("_", "-").lower()
-                      module_title = module_name.replace("_", " ").title()
-                      description = info.get("short_description", "").split(".")[0]  # 只取第一句
-
-                      # 创建带有简短描述的链接，添加 emoji 突出重点
-                      content += f"- 🔹 [{module_title}]({module_file}.md) - {description}\n"
-
-                  # 添加功能概览部分
-                  content += "\n## ⚙️ 功能概览\n\n"
-                  content += f"{title} 模块提供以下核心功能：\n\n"
-
-                  # 提取并组织主要功能点
-                  functions = set()
-                  for _, info in dir_modules:
-                      for function in info.get("functions", []):
-                          functions.add(function)
-
-                  for function in sorted(functions):
-                      content += f"- ✅ {function}\n"
-              else:
-                  # 如果没有模块信息，使用简单的内容列表
-                  content += "## 📑 内容\n\n"
-                  content += "本目录包含以下文档：\n\n"
-
-              # 添加到索引文件列表
-              index_files.append((index_path, content))
-
-          return index_files
+          # 1. 查找模块在代码仓库中的位置
+          # 2. 将源代码路径转换为文档路径
+          # 3. 处理特殊情况（如找不到对应路径）
+          # 4. 将下划线转换为连字符，符合 JustDoc 命名约定
+          # 5. 返回完整的文档路径
       ```
     - _文件结构示例_:
       ```python
@@ -1376,8 +588,6 @@ flowchart TD
           "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
 
           # 模块文档放置在与代码仓库结构对应的目录中，使用 JustDoc 兼容的命名
-          # 目录使用小写，单词间用连字符分隔
-          # 文件名使用小写，单词间用连字符分隔
           "docs/{module_dir}/{module_file}.md": {"title": "{module_title}", "sections": ["description", "api", "examples"]}
       }
 
@@ -1385,10 +595,6 @@ flowchart TD
       # 源代码: src/auth/service.py -> 文档: docs/auth/service.md
       # 源代码: src/data_processor/main.py -> 文档: docs/data-processor/main.md
       # 源代码: utils/helpers/string_utils.py -> 文档: docs/utils/helpers/string-utils.md
-
-      # JustDoc 兼容的目录结构
-      # docs/
-      # ├── index.md                # 文档首页
       # ├── overview.md            # 系统架构概览
       # ├── auth/                  # 与源码目录结构对应
       # │   ├── index.md           # 模块索引页
@@ -1426,75 +632,12 @@ flowchart TD
     - _必要性_: 在多文件文档中生成导航链接，便于用户浏览。
     - _导航类型_: 包括上一页/下一页链接、目录链接、面包屑导航等。
     - _上下文相关_: 根据当前页面内容和相关模块，生成更加上下文相关的导航链接。
-    - _实现示例_:
-      ```python
-      def generate_navigation_links(files_info, current_file, related_content=None):
-          """生成更加上下文相关的导航链接"""
-          # 找到当前文件在文件列表中的位置
-          current_index = -1
-          for i, file_info in enumerate(files_info):
-              if file_info["path"] == current_file:
-                  current_index = i
-                  break
-
-          if current_index == -1:
-              return ""
-
-          # 获取上一页和下一页
-          prev_file = files_info[current_index - 1] if current_index > 0 else None
-          next_file = files_info[current_index + 1] if current_index < len(files_info) - 1 else None
-
-          # 创建导航链接
-          nav_links = []
-
-          if prev_file:
-              prev_title = prev_file.get("title", os.path.basename(prev_file["path"]))
-              nav_links.append(f"[← {prev_title}]({os.path.relpath(prev_file['path'], os.path.dirname(current_file))})")
-
-          # 添加首页链接
-          index_path = find_index_path(files_info, current_file)
-          if index_path:
-              nav_links.append(f"[🏠 首页]({os.path.relpath(index_path, os.path.dirname(current_file))})")
-
-          if next_file:
-              next_title = next_file.get("title", os.path.basename(next_file["path"]))
-              nav_links.append(f"[{next_title} →]({os.path.relpath(next_file['path'], os.path.dirname(current_file))})")
-
-          nav_html = " | ".join(nav_links)
-
-          # 添加面包屑导航
-          breadcrumb = generate_breadcrumb(files_info, current_file)
-
-          # 添加相关内容导航（如果有）
-          related_html = ""
-          if related_content:
-              related_html = "\n\n### 相关内容\n\n"
-
-              # 按相关性分组
-              by_category = {}
-              for item in related_content:
-                  category = item.get("category", "其他")
-                  if category not in by_category:
-                      by_category[category] = []
-                  by_category[category].append(item)
-
-              # 为每个分类创建链接组
-              for category, items in by_category.items():
-                  related_html += f"**{category}:** "
-                  category_links = []
-
-                  for item in items:
-                      title = item.get("title", "")
-                      path = item.get("path", "")
-                      if title and path:
-                          rel_path = os.path.relpath(path, os.path.dirname(current_file))
-                          category_links.append(f"[{title}]({rel_path})")
-
-                  related_html += ", ".join(category_links) + "\n\n"
-
-          # 组合所有导航元素
-          return f"{nav_html}\n\n{breadcrumb}\n{related_html}\n---\n"
-      ```
+    - _功能概要_:
+      - 找到当前文件在文件列表中的位置
+      - 生成上一页/下一页导航链接
+      - 生成目录链接
+      - 根据相关内容生成上下文相关的导航
+      - 返回格式化的导航链接HTML/Markdown
     - _Markdown 输出示例_:
       ```markdown
       <!-- 上下文相关导航链接 - 符合 JustDoc 命名约定 -->
@@ -1520,36 +663,10 @@ flowchart TD
     - _必要性_: 为代码引用创建直接链接到源代码的链接，便于用户查看完整代码。
     - _链接类型_: 支持 GitHub/GitLab 风格的源码链接，包括行号范围。
     - _嵌入模式_: 当提供上下文文本时，将模块和函数引用自然地嵌入到文本中，而非单独列出。
-    - _实现示例_:
-      ```python
-      # 代码引用示例
-      def create_github_link(repo_url, file_path, line_start=None, line_end=None):
-          link = f"{repo_url}/blob/{branch}/{file_path}"
-          if line_start:
-              link += f"#L{line_start}"
-              if line_end and line_end > line_start:
-                  link += f"-L{line_end}"
-          return link
-
-      # 使用示例 - 与代码仓库结构对应
-      code_ref = {
-          "file_path": "src/utils/formatter.py",  # 与代码仓库中的实际路径一致
-          "line_start": 10,
-          "line_end": 20,
-          "code": "def format_markdown(...):\n    ...",
-          "description": "格式化 Markdown 的核心函数",
-          "module_name": "formatter",  # 对应的模块名，用于生成文档链接
-          "function_name": "format_markdown"  # 函数名，用于在文本中查找引用
-      }
-
-      # 生成文档链接 - 链接到对应模块的文档，符合 JustDoc 命名约定
-      doc_link = f"[查看详细文档](../utils/formatter.md#format-markdown)"
-
-      # 嵌入模式 - 在上下文文本中自然嵌入链接
-      context = "系统使用 `formatter` 模块中的 `format_markdown` 函数处理文档格式化。"
-      context_with_links = create_code_links([code_ref], repo_url, branch, context)
-      # 结果: "系统使用 [`formatter`](../utils/formatter.md) 模块中的 [`format_markdown`](https://github.com/user/repo/blob/main/src/utils/formatter.py#L10-L20) 函数处理文档格式化。"
-      ```
+    - _功能概要_:
+      - 构建基本的文件链接
+      - 如果提供了行号，添加行号范围
+      - 返回完整的GitHub源码链接
     - _标准模式 Markdown 输出_:
       ```markdown
       **格式化 Markdown 的核心函数** [查看源码](https://github.com/user/repo/blob/main/src/utils/formatter.py#L10-L20) | [查看详细文档](../utils/formatter.md#format-markdown)
@@ -1570,157 +687,24 @@ flowchart TD
       ```
 
     - _嵌入模式实现_:
-      ```python
-      def embed_code_references(content, code_references, repo_url=None, branch='main'):
-          """在内容中自然嵌入代码引用"""
-          if not code_references or not content:
-              return content
-
-          # 创建函数名和模块名到引用信息的映射
-          function_map = {}
-          module_map = {}
-
-          for ref in code_references:
-              if "function_name" in ref:
-                  function_map[ref["function_name"]] = ref
-              if "module_name" in ref:
-                  module_map[ref["module_name"]] = ref
-
-          # 分割内容为段落，逐段处理
-          paragraphs = content.split("\n\n")
-          result_paragraphs = []
-
-          for para in paragraphs:
-              modified_para = para
-
-              # 处理函数引用 - 将纯文本引用替换为链接
-              for func_name, ref in function_map.items():
-                  source_link = create_github_link(
-                      repo_url, ref["file_path"], ref["line_start"], ref["line_end"]
-                  )
-
-                  patterns = [
-                      (f"`{func_name}`", f"[`{func_name}`]({source_link})"),
-                      (f" {func_name}(", f" [{func_name}]({source_link})("),
-                      (f"函数 {func_name}", f"函数 [{func_name}]({source_link})")
-                  ]
-
-                  for pattern, replacement in patterns:
-                      if pattern in modified_para:
-                          # 只替换第一次出现，避免过度链接
-                          modified_para = modified_para.replace(pattern, replacement, 1)
-                          break
-
-              # 处理模块引用
-              for module_name, ref in module_map.items():
-                  doc_path = f"../utils/{module_name.replace('_', '-').lower()}.md"
-
-                  patterns = [
-                      (f"`{module_name}`", f"[`{module_name}`]({doc_path})"),
-                      (f" {module_name} 模块", f" [{module_name}]({doc_path}) 模块"),
-                      (f"模块 {module_name}", f"模块 [{module_name}]({doc_path})")
-                  ]
-
-                  for pattern, replacement in patterns:
-                      if pattern in modified_para:
-                          modified_para = modified_para.replace(pattern, replacement, 1)
-                          break
-
-              result_paragraphs.append(modified_para)
-
-          return "\n\n".join(result_paragraphs)
-      ```
+      - 在内容中自然嵌入代码引用
+      - 创建函数名和模块名到引用信息的映射
+      - 分割内容为段落，逐段处理
+      - 处理文本中的代码引用，将纯文本引用替换为链接
+      - 合并处理后的段落并返回结果
 
 17. **`generate_module_detail_page(module_name, module_info, related_modules, code_references, repo_url)`** (`utils/formatter.py`)
     - _输入_: 模块名称 (str), 模块信息 (dict), 相关模块列表 (list), 代码引用信息 (list), 仓库 URL (str)
     - _输出_: 模块详情页面的 Markdown 内容 (str)
     - _必要性_: 生成模块详情页面，将相关模块链接自然嵌入到文本中，使文档更加流畅。
     - _链接嵌入_: 在描述、API 文档和示例中自然嵌入相关模块和函数链接，而非单独列出。
-    - _实现示例_:
-      ```python
-      def generate_module_detail_page(module_name, module_info, related_modules, code_references, repo_url):
-          """
-          生成模块详情页面，将相关模块链接自然嵌入到文本中
-
-          Args:
-              module_name: 模块名称
-              module_info: 模块信息
-              related_modules: 相关模块列表
-              code_references: 代码引用信息
-              repo_url: 仓库URL
-
-          Returns:
-              模块详情页面的Markdown内容
-          """
-          # 基本信息
-          title = module_name.replace("_", " ").title()
-          content = f"# 📦 {title}\n\n"
-
-          # 模块描述
-          description = module_info.get("description", "")
-          # 在描述中嵌入相关模块链接
-          description_with_links = create_code_links(
-              code_references,
-              repo_url=repo_url,
-              context_text=description
-          )
-          content += f"## 📋 概述\n\n{description_with_links}\n\n"
-
-          # API 部分
-          if "api_description" in module_info:
-              api_desc = module_info["api_description"]
-              # 在API描述中嵌入相关函数链接
-              api_with_links = create_code_links(
-                  code_references,
-                  repo_url=repo_url,
-                  context_text=api_desc
-              )
-              content += f"## 🔌 API\n\n{api_with_links}\n\n"
-
-          # 代码示例部分
-          if "code_examples" in module_info and module_info["code_examples"]:
-              content += "## 💻 示例\n\n"
-              for i, example in enumerate(module_info["code_examples"]):
-                  snippet = example.get("snippet", "")
-                  explanation = example.get("explanation", "")
-
-                  # 在解释中嵌入相关链接
-                  explanation_with_links = create_code_links(
-                      code_references,
-                      repo_url=repo_url,
-                      context_text=explanation
-                  )
-
-                  content += f"### 🔍 示例 {i+1}\n\n"
-                  content += f"```python\n{snippet}\n```\n\n"
-                  content += f"{explanation_with_links}\n\n"
-
-          # 内部依赖部分 - 自然嵌入相关模块链接
-          if "internal_dependencies" in module_info:
-              deps_text = module_info["internal_dependencies"]
-              # 在依赖描述中嵌入相关模块链接
-              deps_with_links = create_code_links(
-                  code_references,
-                  repo_url=repo_url,
-                  context_text=deps_text
-              )
-              content += f"## 🔗 依赖关系\n\n{deps_with_links}\n\n"
-
-          # 添加导航链接
-          content += "\n\n---\n\n"
-          content += "**相关模块:** "
-
-          # 将相关模块作为行内链接
-          related_links = []
-          for related in related_modules:
-              related_name = related.replace("_", "-").lower()
-              related_title = related.replace("_", " ").title()
-              related_links.append(f"[{related_title}](../utils/{related_name}.md)")
-
-          content += " | ".join(related_links)
-
-          return content
-      ```
+    - _功能概要_:
+      - 生成模块标题和基本信息
+      - 生成模块描述，嵌入相关模块链接
+      - 生成API文档，包含函数签名和说明
+      - 生成代码示例和解释
+      - 生成依赖关系说明
+      - 返回完整的模块详情页面Markdown内容
     - _Markdown 输出示例_:
       ```markdown
       # 📦 String Utils
@@ -1758,9 +742,8 @@ flowchart TD
       本模块被 [`formatter`](../utils/formatter.md) 模块依赖，用于处理文本格式化前的预处理工作。
 
       ---
-
+      
       **相关模块:** [Formatter](../utils/formatter.md) | [Text Processor](../utils/text-processor.md)
-      ```
 
 17. **`format_markdown(content_dict, template=None, toc=True, nav_links=True, add_emojis=True)`** (`utils/formatter.py`)
     - _输入_: 包含教程各部分内容的字典 (dict), 模板 (str), 是否生成目录 (bool), 是否生成导航链接 (bool), 是否添加 emoji (bool)
@@ -1770,167 +753,12 @@ flowchart TD
     - _验证_: 验证生成的 Markdown 是否符合规范，检查链接有效性。
     - _与多文件集成_: 与 `split_content_into_files` 和 `generate_navigation_links` 配合使用，生成完整的多文件文档。
     - _Emoji 支持_: 自动为标题添加适当的 emoji，使文档重点更加突出。
-    - _实现示例_:
-      ```python
-      def format_markdown(content_dict, template=None, toc=True, nav_links=True, add_emojis=True):
-          """格式化 Markdown 内容
-
-          Args:
-              content_dict: 包含教程各部分内容的字典
-              template: 可选的模板字符串
-              toc: 是否生成目录
-              nav_links: 是否生成导航链接
-              add_emojis: 是否添加 emoji 到标题
-
-          Returns:
-              格式化后的完整 Markdown 文本
-          """
-          # 使用默认模板或自定义模板
-          if template is None:
-              template = """
-              # {title}
-
-              {toc}
-
-              ## 简介
-
-              {introduction}
-
-              ## 系统架构
-
-              {architecture}
-
-              ## 核心模块
-
-              {core_modules}
-
-              ## 使用示例
-
-              {examples}
-
-              ## 常见问题
-
-              {faq}
-
-              ## 参考资料
-
-              {references}
-              """
-
-          # 填充模板
-          content = template.format(**content_dict)
-
-          # 生成目录
-          if toc:
-              toc_content = generate_toc(content)
-              content = content.replace("{toc}", toc_content)
-          else:
-              content = content.replace("{toc}", "")
-
-          # 添加导航链接
-          if nav_links:
-              nav_content = generate_navigation_links(content_dict.get("files_info", []),
-                                                     content_dict.get("current_file", ""),
-                                                     content_dict.get("related_content", []))
-              content = nav_content + content
-
-          # 添加 emoji 到标题
-          if add_emojis:
-              content = add_emojis_to_headings(content)
-
-          # 验证 Markdown 格式
-          validation_result = validate_markdown(content)
-          if not validation_result["valid"]:
-              log_and_notify(f"Markdown 验证失败: {validation_result['errors']}", "warning")
-
-          return content
-
-
-      def add_emojis_to_headings(markdown_text):
-          """为 Markdown 标题添加 emoji，使文档重点更加突出
-
-          Args:
-              markdown_text: 原始 Markdown 文本
-
-          Returns:
-              添加了 emoji 的 Markdown 文本
-          """
-          # 定义标题级别对应的 emoji
-          heading_emojis = {
-              "# ": "📚 ",  # 一级标题: 书籍
-              "## ": "📋 ",  # 二级标题: 文档
-              "### ": "🔍 ",  # 三级标题: 放大镜
-              "#### ": "🔹 ",  # 四级标题: 蓝色小菱形
-              "##### ": "✏️ ",  # 五级标题: 铅笔
-              "###### ": "📎 "  # 六级标题: 回形针
-          }
-
-          # 特定内容的 emoji 映射
-          content_emojis = {
-              "概述": "📋",
-              "简介": "📝",
-              "介绍": "📝",
-              "安装": "⚙️",
-              "配置": "🔧",
-              "使用方法": "📘",
-              "示例": "💻",
-              "API": "🔌",
-              "函数": "⚡",
-              "类": "🧩",
-              "模块": "📦",
-              "依赖": "🔗",
-              "架构": "🏗️",
-              "流程": "🔄",
-              "数据结构": "📊",
-              "算法": "🧮",
-              "性能": "⚡",
-              "优化": "🚀",
-              "测试": "🧪",
-              "部署": "🚢",
-              "常见问题": "❓",
-              "故障排除": "🔧",
-              "贡献": "👥",
-              "许可证": "📜",
-              "参考": "📚",
-              "结论": "🎯",
-              "总结": "📝",
-              "附录": "📎"
-          }
-
-          lines = markdown_text.split("\n")
-          result_lines = []
-
-          for line in lines:
-              # 检查是否是标题行
-              is_heading = False
-              for heading_prefix, emoji in heading_emojis.items():
-                  if line.startswith(heading_prefix):
-                      # 检查标题内容是否有特定的 emoji 映射
-                      title_text = line[len(heading_prefix):].strip()
-                      custom_emoji = None
-
-                      for content_key, content_emoji in content_emojis.items():
-                          if content_key in title_text.lower():
-                              custom_emoji = content_emoji
-                              break
-
-                      # 如果标题已经包含 emoji，不再添加
-                      if any(char in title_text for char in "🔍📚📋🔹✏️📎📝⚙️🔧📘💻🔌⚡🧩📦🔗🏗️🔄📊🧮⚡🚀🧪🚢❓👥📜🎯"):
-                          result_lines.append(line)
-                      else:
-                          # 使用特定内容的 emoji 或默认的标题级别 emoji
-                          emoji_to_use = custom_emoji or emoji.strip()
-                          result_lines.append(f"{heading_prefix}{emoji_to_use} {title_text}")
-
-                      is_heading = True
-                      break
-
-              # 如果不是标题行，直接添加
-              if not is_heading:
-                  result_lines.append(line)
-
-          return "\n".join(result_lines)
-      ```
+    - _功能概要_:
+      - 根据内容字典和可选模板生成完整的Markdown文档
+      - 可选生成目录和导航链接
+      - 可选添加emoji图标增强可读性
+      - 验证生成的Markdown是否符合规范
+      - 返回格式化后的Markdown文本
 
 18. **`convert_to_pdf(markdown_files, output_path, style=None, toc=True, cover_page=True)`** (`utils/formatter.py`)
     - _输入_: Markdown 文件路径列表 (list of str), 输出 PDF 路径 (str), 样式配置 (dict), 是否包含目录 (bool), 是否包含封面 (bool)
@@ -1958,68 +786,13 @@ flowchart TD
     - _错误处理_: 处理认证失败、权限问题、网络错误等情况。
     - _验证_: 发布后验证内容是否正确显示，链接是否有效。
     - _多文件支持_: 保持目录结构和文件间链接关系，确保发布后的导航正常工作。
-    - _实现示例_:
-      ```python
-      def publish_to_platform(content_dir, platform, target_repo, auth, config=None):
-          """将文档发布到指定平台"""
-          platform = platform.lower()
-          config = config or {}
-
-          # 选择合适的发布器
-          if platform == "github":
-              publisher = GitHubPublisher(auth, config.get("github_pages", {}))
-          elif platform == "gitlab":
-              publisher = GitLabPublisher(auth, config.get("gitlab_pages", {}))
-          elif platform == "readthedocs":
-              publisher = ReadTheDocsPublisher(auth, config.get("rtd", {}))
-          elif platform == "netlify":
-              publisher = NetlifyPublisher(auth, config.get("netlify", {}))
-          elif platform == "vercel":
-              publisher = VercelPublisher(auth, config.get("vercel", {}))
-          elif platform == "gitbook":
-              publisher = GitbookPublisher(auth, config.get("gitbook", {}))
-          elif platform == "docsify":
-              publisher = DocsifyPublisher(config.get("docsify", {}))
-          elif platform == "vuepress":
-              publisher = VuePressPublisher(config.get("vuepress", {}))
-          elif platform == "mkdocs":
-              publisher = MkDocsPublisher(config.get("mkdocs", {}))
-          elif platform == "justdoc":
-              publisher = JustDocPublisher(auth, config.get("justdoc", {}))
-          else:
-              raise ValueError(f"不支持的平台: {platform}")
-
-          # 准备发布
-          prepare_result = publisher.prepare(content_dir, target_repo)
-          if not prepare_result["success"]:
-              return {
-                  "success": False,
-                  "error": prepare_result["error"],
-                  "details": prepare_result.get("details", {})
-              }
-
-          # 执行发布
-          publish_result = publisher.publish()
-          if not publish_result["success"]:
-              return {
-                  "success": False,
-                  "error": publish_result["error"],
-                  "details": publish_result.get("details", {})
-              }
-
-          # 验证发布结果
-          verify_result = publisher.verify()
-
-          return {
-              "success": True,
-              "url": publish_result["url"],
-              "details": {
-                  "platform": platform,
-                  "target": target_repo,
-                  "verification": verify_result
-              }
-          }
-      ```
+    - _功能概要_:
+      - 根据平台类型选择合适的发布策略
+      - 验证认证信息和权限
+      - 准备发布配置（如GitHub Pages配置）
+      - 执行发布操作
+      - 验证发布结果
+      - 返回发布URL或状态信息
 
 ### 辅助函数
 
@@ -2042,151 +815,12 @@ flowchart TD
       - **流程图**: 展示算法或业务流程
       - **甘特图**: 展示项目时间线和里程碑
       - **交互式图表**: 使用 Plotly 或 Vega-Lite 生成交互式图表
-    - _实现示例_:
-      ```python
-      def generate_visualization(data, vis_type, options=None):
-          """生成可视化图表
-
-          Args:
-              data: 可视化数据
-              vis_type: 可视化类型，如 "architecture", "dependency", "sequence", "state", "class", "flow", "gantt", "interactive"
-              options: 可视化选项
-
-          Returns:
-              (visualization_code, format): 可视化代码和格式
-          """
-          options = options or {}
-
-          # 设置默认选项
-          default_options = {
-              "theme": "default",
-              "direction": "TB",  # 方向: TB, BT, LR, RL
-              "include_legend": True,
-              "max_depth": 3,  # 依赖图最大深度
-              "highlight_nodes": [],  # 高亮节点
-              "width": 800,
-              "height": 600
-          }
-
-          # 合并选项
-          for key, value in default_options.items():
-              if key not in options:
-                  options[key] = value
-
-          # 根据可视化类型生成代码
-          if vis_type == "architecture":
-              return generate_architecture_diagram(data, options), "mermaid"
-
-          elif vis_type == "dependency":
-              if options.get("interactive", False):
-                  return generate_interactive_dependency(data, options), "html"
-              else:
-                  return generate_mermaid_dependency(data, options), "mermaid"
-
-          elif vis_type == "sequence":
-              return generate_sequence_diagram(data, options), "mermaid"
-
-          elif vis_type == "state":
-              return generate_state_diagram(data, options), "mermaid"
-
-          elif vis_type == "class":
-              return generate_class_diagram(data, options), "mermaid"
-
-          elif vis_type == "flow":
-              return generate_flow_diagram(data, options), "mermaid"
-
-          elif vis_type == "gantt":
-              return generate_gantt_chart(data, options), "mermaid"
-
-          elif vis_type == "interactive":
-              chart_type = options.get("chart_type", "bar")
-              if chart_type in ["bar", "line", "pie", "scatter"]:
-                  return generate_plotly_chart(data, chart_type, options), "html"
-              else:
-                  return generate_vega_lite_chart(data, chart_type, options), "html"
-
-          else:
-              raise ValueError(f"不支持的可视化类型: {vis_type}")
-
-      def generate_architecture_diagram(architecture_data, options):
-          """生成架构图"""
-          direction = options.get("direction", "TB")
-          theme = options.get("theme", "default")
-
-          # 生成 Mermaid 代码
-          mermaid_code = [f"graph {direction}"]
-
-          # 添加主题
-          if theme != "default":
-              mermaid_code.append(f"    %% theme: {theme}")
-
-          # 添加节点
-          for node in architecture_data.get("nodes", []):
-              node_id = node.get("id")
-              node_label = node.get("label", node_id)
-              node_type = node.get("type", "default")
-
-              # 根据节点类型设置形状
-              if node_type == "service":
-                  shape = "([{label}])"
-              elif node_type == "database":
-                  shape = "[({label})]"
-              elif node_type == "external":
-                  shape = ">{label}]"
-              elif node_type == "component":
-                  shape = "{{{label}}}"
-              else:
-                  shape = "[{label}]"
-
-              # 替换标签
-              shape = shape.replace("{label}", node_label)
-
-              # 添加节点定义
-              mermaid_code.append(f"    {node_id}{shape}")
-
-              # 添加样式
-              if node.get("style"):
-                  mermaid_code.append(f"    style {node_id} {node.get('style')}")
-
-              # 高亮节点
-              if node_id in options.get("highlight_nodes", []):
-                  mermaid_code.append(f"    style {node_id} fill:#f96,stroke:#333,stroke-width:2px")
-
-          # 添加连接
-          for edge in architecture_data.get("edges", []):
-              source = edge.get("source")
-              target = edge.get("target")
-              label = edge.get("label", "")
-              edge_type = edge.get("type", "default")
-
-              # 根据边类型设置线条样式
-              if edge_type == "async":
-                  line = "-.->"
-              elif edge_type == "bidirectional":
-                  line = "<-->"
-              elif edge_type == "dependency":
-                  line = "-..->"
-              else:
-                  line = "-->"
-
-              # 添加边定义
-              if label:
-                  mermaid_code.append(f"    {source} {line}|{label}| {target}")
-              else:
-                  mermaid_code.append(f"    {source} {line} {target}")
-
-          # 添加图例
-          if options.get("include_legend", True):
-              mermaid_code.append("    %% 图例")
-              mermaid_code.append("    subgraph 图例")
-              mermaid_code.append("        legend_service([服务])")
-              mermaid_code.append("        legend_db[(数据库)]")
-              mermaid_code.append("        legend_component{{组件}}")
-              mermaid_code.append("        legend_external>外部系统]")
-              mermaid_code.append("    end")
-
-          return "\n".join(mermaid_code)
-      ```
+    - _功能概要_:
+      - 根据可视化类型选择合适的图表生成器
+      - 处理输入数据，确保格式正确
+      - 应用可选的样式和配置选项
+      - 生成可视化代码（如Mermaid、PlantUML等）
+      - 返回可视化代码和格式类型
 
 22. **`extract_technical_terms(text, domain=None, language=None)`** (`utils/language_utils.py`)
     - _输入_: 文本 (str), 领域 (str), 语言 (str)
@@ -2194,86 +828,11 @@ flowchart TD
     - _必要性_: 识别需要在翻译过程中保留的技术术语。
     - _实现建议_: 结合规则和 NLP 技术识别专业术语。
     - _多语言支持_: 支持多种语言的术语识别，包括英文、中文等。
-    - _实现示例_:
-      ```python
-      def extract_technical_terms(text, domain=None, language=None):
-          """提取技术术语
-
-          Args:
-              text: 输入文本
-              domain: 领域，如 "python", "web", "machine_learning" 等
-              language: 语言，如 "en", "zh" 等，如果为 None 则自动检测
-
-          Returns:
-              技术术语列表
-          """
-          # 自动检测语言
-          if language is None:
-              language, _ = detect_natural_language(text)
-
-          # 加载领域特定的术语库
-          domain_terms = []
-          if domain:
-              domain_file = os.path.join(
-                  os.path.dirname(__file__),
-                  "data",
-                  "terms",
-                  f"{domain}_{language}.txt"
-              )
-              if os.path.exists(domain_file):
-                  with open(domain_file, "r", encoding="utf-8") as f:
-                      domain_terms = [line.strip() for line in f if line.strip()]
-
-          # 基于规则的术语提取
-          terms = []
-
-          # 英文术语提取
-          if language == "en":
-              # 提取大写缩写词
-              abbr_pattern = r'\b[A-Z][A-Z0-9]{1,5}\b'
-              abbreviations = re.findall(abbr_pattern, text)
-              terms.extend(abbreviations)
-
-              # 提取驼峰命名的术语
-              camel_pattern = r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b'
-              camel_terms = re.findall(camel_pattern, text)
-              terms.extend(camel_terms)
-
-              # 提取下划线连接的术语
-              underscore_pattern = r'\b[a-z]+(?:_[a-z]+)+\b'
-              underscore_terms = re.findall(underscore_pattern, text)
-              terms.extend(underscore_terms)
-
-          # 中文术语提取
-          elif language == "zh":
-              # 提取英文术语（在中文文本中）
-              en_pattern = r'[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*'
-              en_terms = re.findall(en_pattern, text)
-              terms.extend(en_terms)
-
-              # 提取中文术语（基于常见模式）
-              zh_patterns = [
-                  r'[\u4e00-\u9fa5]+框架',
-                  r'[\u4e00-\u9fa5]+库',
-                  r'[\u4e00-\u9fa5]+算法',
-                  r'[\u4e00-\u9fa5]+模型',
-                  r'[\u4e00-\u9fa5]+协议'
-              ]
-              for pattern in zh_patterns:
-                  zh_terms = re.findall(pattern, text)
-                  terms.extend(zh_terms)
-
-          # 添加领域特定术语
-          for term in domain_terms:
-              if term in text and term not in terms:
-                  terms.append(term)
-
-          # 去重并排序
-          unique_terms = list(set(terms))
-          unique_terms.sort(key=len, reverse=True)
-
-          return unique_terms
-      ```
+    - _功能概要_:
+      - 自动检测文本语言（如果未指定）
+      - 根据语言选择合适的术语提取规则
+      - 应用领域特定的术语识别规则
+      - 提取并返回技术术语列表
 
 23. **`log_and_notify(message, level='info', notify=False)`** (`utils/logger.py`)
     - _输入_: 消息 (str), 日志级别 (str), 是否通知用户 (bool)
@@ -2288,75 +847,13 @@ flowchart TD
     - _实现建议_: 使用 `concurrent.futures` 库实现线程池或进程池。
     - _错误处理_: 捕获并记录单个项处理失败，不影响整体流程。
     - _进度跟踪_: 支持实时进度显示，提供 ETA 估计。
-    - _实现示例_:
-      ```python
-      def parallel_process(items, process_func, max_workers=None, chunk_size=1, show_progress=True):
-          """并行处理项目列表
-
-          Args:
-              items: 待处理项列表
-              process_func: 处理函数，接受单个项作为输入
-              max_workers: 最大工作线程/进程数，默认为 CPU 核心数 * 2
-              chunk_size: 每个工作单元的项目数
-              show_progress: 是否显示进度条
-
-          Returns:
-              处理结果列表
-          """
-          if max_workers is None:
-              max_workers = min(32, os.cpu_count() * 2)
-
-          results = []
-          total = len(items)
-          processed = 0
-          errors = []
-
-          # 创建进度条
-          if show_progress:
-              from tqdm import tqdm
-              progress_bar = tqdm(total=total, desc="Processing", unit="item")
-
-          # 使用线程池并行处理
-          with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-              # 提交所有任务
-              future_to_item = {
-                  executor.submit(process_func, item): i
-                  for i, item in enumerate(items)
-              }
-
-              # 处理完成的任务
-              for future in concurrent.futures.as_completed(future_to_item):
-                  item_index = future_to_item[future]
-                  try:
-                      result = future.result()
-                      results.append((item_index, result))
-                  except Exception as e:
-                      errors.append((item_index, str(e)))
-                      log_and_notify(
-                          f"处理项 {item_index} 失败: {str(e)}",
-                          level="error"
-                      )
-
-                  # 更新进度
-                  processed += 1
-                  if show_progress:
-                      progress_bar.update(1)
-
-          # 关闭进度条
-          if show_progress:
-              progress_bar.close()
-
-          # 记录错误统计
-          if errors:
-              log_and_notify(
-                  f"并行处理完成，共 {len(errors)}/{total} 项失败",
-                  level="warning"
-              )
-
-          # 按原始顺序排序结果
-          sorted_results = [r[1] for r in sorted(results, key=lambda x: x[0])]
-          return sorted_results
-      ```
+    - _功能概要_:
+      - 设置合适的工作线程/进程数
+      - 将项目列表分块处理
+      - 使用线程池或进程池并行执行处理函数
+      - 显示处理进度（如果启用）
+      - 处理并记录错误，不中断整体流程
+      - 返回处理结果列表
 
 25. **`optimize_cache_strategy(cache_dir, ttl=86400, max_size_gb=5, priority_func=None)`** (`utils/cache_manager.py`)
     - _输入_: 缓存目录 (str), 缓存有效期 (int, 秒), 最大缓存大小 (float, GB), 优先级函数 (callable)
@@ -2364,131 +861,12 @@ flowchart TD
     - _必要性_: 智能管理缓存，提高系统性能，避免重复计算和 API 调用。
     - _实现建议_: 使用 LRU (最近最少使用) 策略结合自定义优先级。
     - _缓存类型_: 支持多种缓存类型 (LLM 调用、嵌入向量、解析结果等)。
-    - _实现示例_:
-      ```python
-      def optimize_cache_strategy(cache_dir, ttl=86400, max_size_gb=5, priority_func=None):
-          """优化缓存策略
-
-          Args:
-              cache_dir: 缓存目录
-              ttl: 缓存有效期（秒）
-              max_size_gb: 最大缓存大小（GB）
-              priority_func: 自定义优先级函数，接受缓存项元数据，返回优先级分数
-
-          Returns:
-              优化后的缓存统计信息
-          """
-          # 确保缓存目录存在
-          os.makedirs(cache_dir, exist_ok=True)
-
-          # 默认优先级函数 - 基于访问时间和使用频率
-          if priority_func is None:
-              def priority_func(metadata):
-                  # 计算基于时间的优先级 (0-1)
-                  age = time.time() - metadata.get("last_access", 0)
-                  age_factor = min(1.0, age / ttl)
-
-                  # 使用频率因子 (0-1)
-                  freq = metadata.get("access_count", 0)
-                  freq_factor = 1.0 / (1.0 + math.log(1 + freq))
-
-                  # 大小因子 (0-1)
-                  size = metadata.get("size", 0) / (1024 * 1024)  # MB
-                  size_factor = min(1.0, size / 100)  # 100MB 作为参考点
-
-                  # 综合优先级 (越高越先被清除)
-                  return 0.5 * age_factor + 0.3 * freq_factor + 0.2 * size_factor
-
-          # 扫描缓存目录
-          cache_items = []
-          total_size = 0
-
-          for root, _, files in os.walk(cache_dir):
-              for file in files:
-                  if file.endswith(".metadata"):
-                      continue
-
-                  file_path = os.path.join(root, file)
-                  metadata_path = file_path + ".metadata"
-
-                  # 获取文件大小
-                  try:
-                      size = os.path.getsize(file_path)
-                      total_size += size
-
-                      # 读取元数据
-                      metadata = {}
-                      if os.path.exists(metadata_path):
-                          with open(metadata_path, "r") as f:
-                              metadata = json.load(f)
-
-                      # 添加文件信息
-                      metadata["path"] = file_path
-                      metadata["size"] = size
-
-                      # 检查是否过期
-                      is_expired = False
-                      if "created_at" in metadata:
-                          age = time.time() - metadata["created_at"]
-                          is_expired = age > ttl
-
-                      cache_items.append({
-                          "path": file_path,
-                          "metadata": metadata,
-                          "is_expired": is_expired,
-                          "priority": priority_func(metadata)
-                      })
-                  except Exception as e:
-                      log_and_notify(f"处理缓存项 {file_path} 失败: {str(e)}", "warning")
-
-          # 转换为 GB
-          total_size_gb = total_size / (1024 * 1024 * 1024)
-
-          # 清理过期项
-          expired_items = [item for item in cache_items if item["is_expired"]]
-          for item in expired_items:
-              try:
-                  os.remove(item["path"])
-                  metadata_path = item["path"] + ".metadata"
-                  if os.path.exists(metadata_path):
-                      os.remove(metadata_path)
-              except Exception as e:
-                  log_and_notify(f"删除过期缓存项 {item['path']} 失败: {str(e)}", "warning")
-
-          # 如果缓存仍然超过最大大小，清理优先级最高的项
-          if total_size_gb > max_size_gb:
-              # 按优先级排序（降序）
-              remaining_items = [item for item in cache_items if not item["is_expired"]]
-              remaining_items.sort(key=lambda x: x["priority"], reverse=True)
-
-              # 计算需要清理的大小
-              size_to_free = total_size - (max_size_gb * 1024 * 1024 * 1024)
-              freed_size = 0
-
-              for item in remaining_items:
-                  if freed_size >= size_to_free:
-                      break
-
-                  try:
-                      os.remove(item["path"])
-                      metadata_path = item["path"] + ".metadata"
-                      if os.path.exists(metadata_path):
-                          os.remove(metadata_path)
-
-                      freed_size += item["metadata"]["size"]
-                  except Exception as e:
-                      log_and_notify(f"删除缓存项 {item['path']} 失败: {str(e)}", "warning")
-
-          # 返回优化后的统计信息
-          return {
-              "total_items_before": len(cache_items),
-              "expired_items_removed": len(expired_items),
-              "size_before_gb": total_size_gb,
-              "size_after_gb": (total_size - freed_size) / (1024 * 1024 * 1024),
-              "ttl_seconds": ttl,
-              "max_size_gb": max_size_gb
-          }
-      ```
+    - _功能概要_:
+      - 扫描缓存目录，收集缓存项信息
+      - 清理过期的缓存项
+      - 如果缓存总大小超过限制，根据优先级删除低优先级项
+      - 应用自定义优先级函数（如果提供）
+      - 返回优化后的缓存统计信息
 
 ## 🧠 节点设计 (Node Design)
 
@@ -2635,31 +1013,31 @@ graph TD
 
 #### 节点阶段划分概览 (Node Allocation Overview)
 
-下表概述了主要节点/流程在各实现阶段中的引入或关键增强：
+下表概述了主要节点/流程在各流程阶段中的对应关系、错误处理策略和可扩展性设计：
 
-| 节点/流程 (Node/Flow)           | 主要实现阶段 | 对应流程阶段 | 错误处理策略 | 可扩展性设计 |
-| :------------------------------ | :------------ | :------------ | :----------- | :----------- |
-| `InputNode`                     | 阶段 1        | 🏷️ 1: 输入与准备 | 输入验证，提供默认值 | 支持自定义参数扩展 |
-| `PrepareRepoNode`               | 阶段 1        | 🏷️ 1: 输入与准备 | 处理网络错误，权限问题 | 支持多种代码库来源 |
-| `AnalyzeRepoFlow`               | 阶段 2        | 🏷️ 2: AI 理解 | 合并可用分析结果 | 模块化设计，支持新分析器 |
-| ↳ `ParseCodeBatchNode`          | 阶段 2        | 🏷️ 2.1: 代码解析 | 降级解析，跳过问题文件 | 支持多种编程语言 |
-| ↳ `AIUnderstandCoreModulesNode` | 阶段 2        | 🏷️ 2.2: AI 核心理解 | LLM 调用重试，结果验证 | 可配置理解深度，支持多语言 |
-| ↳ `AnalyzeHistoryNode`          | 阶段 2        | 🏷️ 2.1: 代码解析 | 处理空仓库，历史截断 | 支持过滤和聚焦 |
-| ↳ `PrepareRAGDataNode`          | 阶段 2        | 🏷️ 2.3: RAG 数据准备 | 处理大文件，优化分块 | 可配置索引类型和参数 |
-| `GenerateContentFlow`           | 阶段 3        | 🏷️ 3: AI 生成 | 内容质量检查，重新生成 | 插件式内容生成器 |
-| ↳ `GenerateOverallArchitectureNode` | 阶段 3    | 🏷️ 3.1: 生成整体内容 | 结构验证，降级生成 | 支持多种架构表示，增强可视化 |
-| ↳ `GenerateApiDocsNode`         | 阶段 3        | 🏷️ 3.1: 生成整体内容 | API 提取失败处理 | 支持多种 API 风格 |
-| ↳ `ContentQualityCheckNode`     | 阶段 3        | 🏷️ 3.1: 生成整体内容 | 质量评估反馈 | 可配置质量标准 |
-| ↳ `GenerateModuleDetailsNode`   | 阶段 3        | 🏷️ 3.2: 生成模块细节 | 模块缺失处理 | 支持自定义模块模板 |
-| ↳ `ModuleQualityCheckNode`      | 阶段 3        | 🏷️ 3.2: 生成模块细节 | 质量评估反馈 | 可配置质量标准 |
-| ↳ `GenerateTimelineNode`        | 阶段 3        | 🏷️ 3.1: 生成整体内容 | 历史数据不足处理 | 支持多种时间线格式 |
-| ↳ `GenerateDependencyNode`      | 阶段 3        | 🏷️ 3.1: 生成整体内容 | 依赖分析失败处理 | 支持多种依赖图表示 |
-| ↳ `GenerateGlossaryNode`        | 阶段 3        | 🏷️ 3.1: 生成整体内容 | 术语提取失败处理 | 支持领域特定术语 |
-| ↳ `GenerateQuickLookNode`       | 阶段 3        | 🏷️ 3.1: 生成整体内容 | 内容不足处理 | 可配置概览深度 |
-| `CombineAndTranslateNode`       | 阶段 4        | 🏷️ 4.1: 内容组合 & 4.2.1: 翻译检查 | 内容缺失处理，翻译错误 | 支持多语言和自定义模板，增强术语处理 |
-| `FormatOutputNode`              | 阶段 4        | 🏷️ 4.2.2: 格式化输出 | 格式转换错误处理 | 支持多种输出格式 |
-| `InteractiveQANode`             | 阶段 5        | 🏷️ 5: 交互问答 | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈 |
-| `PublishNode`                   | 阶段 6        | 🏷️ 6: 发布 | 认证失败，网络错误 | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 JustDoc |
+| 节点/流程 (Node/Flow)           | 对应流程阶段 | 错误处理策略 | 可扩展性设计 |
+| :------------------------------ | :------------ | :----------- | :----------- |
+| `InputNode`                     | 🏷️ 1: 输入与准备 | 输入验证，提供默认值 | 支持自定义参数扩展 |
+| `PrepareRepoNode`               | 🏷️ 1: 输入与准备 | 处理网络错误，权限问题 | 支持多种代码库来源 |
+| `AnalyzeRepoFlow`               | 🏷️ 2: AI 理解 | 合并可用分析结果 | 模块化设计，支持新分析器 |
+| ↳ `ParseCodeBatchNode`          | 🏷️ 2.1: 代码解析 | 降级解析，跳过问题文件 | 支持多种编程语言 |
+| ↳ `AIUnderstandCoreModulesNode` | 🏷️ 2.2: AI 核心理解 | LLM 调用重试，结果验证 | 可配置理解深度，支持多语言 |
+| ↳ `AnalyzeHistoryNode`          | 🏷️ 2.1: 代码解析 | 处理空仓库，历史截断 | 支持过滤和聚焦 |
+| ↳ `PrepareRAGDataNode`          | 🏷️ 2.3: RAG 数据准备 | 处理大文件，优化分块 | 可配置索引类型和参数 |
+| `GenerateContentFlow`           | 🏷️ 3: AI 生成 | 内容质量检查，重新生成 | 插件式内容生成器 |
+| ↳ `GenerateOverallArchitectureNode` | 🏷️ 3.1: 生成整体内容 | 结构验证，降级生成 | 支持多种架构表示，增强可视化 |
+| ↳ `GenerateApiDocsNode`         | 🏷️ 3.1: 生成整体内容 | API 提取失败处理 | 支持多种 API 风格 |
+| ↳ `ContentQualityCheckNode`     | 🏷️ 3.1: 生成整体内容 | 质量评估反馈 | 可配置质量标准 |
+| ↳ `GenerateModuleDetailsNode`   | 🏷️ 3.2: 生成模块细节 | 模块缺失处理 | 支持自定义模块模板 |
+| ↳ `ModuleQualityCheckNode`      | 🏷️ 3.2: 生成模块细节 | 质量评估反馈 | 可配置质量标准 |
+| ↳ `GenerateTimelineNode`        | 🏷️ 3.1: 生成整体内容 | 历史数据不足处理 | 支持多种时间线格式 |
+| ↳ `GenerateDependencyNode`      | 🏷️ 3.1: 生成整体内容 | 依赖分析失败处理 | 支持多种依赖图表示 |
+| ↳ `GenerateGlossaryNode`        | 🏷️ 3.1: 生成整体内容 | 术语提取失败处理 | 支持领域特定术语 |
+| ↳ `GenerateQuickLookNode`       | 🏷️ 3.1: 生成整体内容 | 内容不足处理 | 可配置概览深度 |
+| `CombineAndTranslateNode`       | 🏷️ 4.1: 内容组合 & 4.2.1: 翻译检查 | 内容缺失处理，翻译错误 | 支持多语言和自定义模板，增强术语处理 |
+| `FormatOutputNode`              | 🏷️ 4.2.2: 格式化输出 | 格式转换错误处理 | 支持多种输出格式 |
+| `InteractiveQANode`             | 🏷️ 5: 交互问答 | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈 |
+| `PublishNode`                   | 🏷️ 6: 发布 | 认证失败，网络错误 | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 JustDoc |
 
 #### 核心节点详细设计
 
@@ -2672,192 +1050,11 @@ graph TD
   - 处理无效 URL/路径: 提供详细错误信息，建议修复步骤
   - 处理权限问题: 请求必要权限，提供替代方案
   - 处理超大代码库: 实现分割策略，或提供部分分析选项
-- **实现细节 (使用 Pydantic)**:
-  ```python
-  from pydantic import BaseModel, Field, validator, ConfigDict
-  from typing import Dict, Optional, Any, List
-  from datetime import datetime
-  import os
-  import re
-
-  # 使用 Pydantic 定义输入模型
-  class PrepareRepoInput(BaseModel):
-      """PrepareRepoNode 的输入模型"""
-      repo_source: str = Field(..., description="代码库来源 (URL 或本地路径)")
-
-      @validator("repo_source")
-      def validate_repo_source(cls, v):
-          """验证代码库来源格式"""
-          # 验证 URL 格式
-          url_pattern = r'^(https?://|git@)[\w.-]+(/[\w.-]+)+(.git)?$'
-          # 验证本地路径格式
-          path_pattern = r'^(/[\w.-]+)+$|^([A-Za-z]:\\[\w.-]+)+$'
-
-          if re.match(url_pattern, v) or re.match(path_pattern, v):
-              return v
-          raise ValueError("无效的代码库来源格式，必须是有效的 URL 或本地路径")
-
-  # 使用 Pydantic 定义输出模型
-  class RepoSizeInfo(BaseModel):
-      """代码库大小信息模型"""
-      total_size: int = Field(..., description="总大小（字节）")
-      file_count: int = Field(..., description="文件数量")
-      language_stats: Dict[str, int] = Field(default_factory=dict, description="各语言代码行数")
-
-      @validator("total_size")
-      def validate_total_size(cls, v):
-          """验证总大小在合理范围内"""
-          if v < 0:
-              raise ValueError("总大小不能为负数")
-          return v
-
-  class PrepareRepoOutput(BaseModel):
-      """PrepareRepoNode 的输出模型"""
-      success: bool = Field(..., description="操作是否成功")
-      local_path: Optional[str] = Field(None, description="本地代码库路径")
-      size_info: Optional[RepoSizeInfo] = Field(None, description="代码库大小信息")
-      error: Optional[str] = Field(None, description="错误信息")
-      from_cache: bool = Field(False, description="是否使用了缓存")
-
-      @validator("local_path")
-      def validate_local_path(cls, v, values):
-          """验证本地路径在成功时必须存在"""
-          if values.get("success") and (v is None or not os.path.exists(v)):
-              raise ValueError("成功状态下必须提供有效的本地路径")
-          return v
-
-      @validator("error")
-      def validate_error(cls, v, values):
-          """验证失败时必须提供错误信息"""
-          if not values.get("success") and not v:
-              raise ValueError("失败状态下必须提供错误信息")
-          return v
-
-  # 节点实现
-  class PrepareRepoNode:
-      """准备代码库节点，使用 Pydantic 进行输入/输出验证"""
-
-      def __init__(self, config=None):
-          self.config = config or {}
-          self.max_repo_size = self.config.get("max_repo_size", 100_000_000)  # 100MB
-          self.split_threshold = self.config.get("split_threshold", 50_000_000)  # 50MB
-
-      def prep(self, shared):
-          """准备阶段，从共享内存中提取输入并验证"""
-          try:
-              # 使用 Pydantic 模型验证输入
-              input_model = PrepareRepoInput(repo_source=shared["repo_source"])
-              return input_model.repo_source
-          except Exception as e:
-              # 输入验证失败，记录错误
-              log_and_notify(f"输入验证失败: {str(e)}", "error")
-              return None
-
-      def validate_source(self, repo_source):
-          """验证源类型并获取本地路径"""
-          if is_url(repo_source):
-              # 克隆远程仓库，使用缓存机制
-              temp_path = temp_dir()
-              # 从环境变量获取缓存设置
-              use_cache = os.getenv("REPO_CACHE_ENABLED", "true").lower() == "true"
-
-              result = git_clone(
-                  repo_url=repo_source,
-                  local_path=temp_path,
-                  use_cache=use_cache,  # 根据环境变量决定是否启用缓存
-                  cache_ttl=None  # 使用环境变量中的默认值
-              )
-
-              if not result["success"]:
-                  return {"success": False, "error": result["error"]}
-
-              local_path = result["path"]
-              from_cache = result.get("from_cache", False)
-
-              # 记录缓存使用情况
-              if from_cache:
-                  log_and_notify(f"使用缓存的代码库: {repo_source}", "info")
-              else:
-                  log_and_notify(f"克隆新代码库: {repo_source}", "info")
-
-              return {"success": True, "path": local_path, "from_cache": from_cache}
-          else:
-              # 验证本地路径
-              if not os.path.exists(repo_source):
-                  return {"success": False, "error": f"路径不存在: {repo_source}"}
-              local_path = repo_source
-
-              return {"success": True, "path": local_path, "from_cache": False}
-
-      def validate_repo(self, local_path):
-          """验证代码库大小和权限"""
-          # 分析代码库大小
-          size_info_dict = analyze_code_size(local_path)
-
-          # 使用 Pydantic 模型验证大小信息
-          try:
-              size_info = RepoSizeInfo(**size_info_dict)
-          except Exception as e:
-              return {"success": False, "error": f"代码库大小信息无效: {str(e)}"}
-
-          # 检查代码库大小是否超过限制
-          if size_info.total_size > self.max_repo_size:
-              return {
-                  "success": False,
-                  "error": f"代码库大小 ({size_info.total_size} 字节) 超过最大限制 ({self.max_repo_size} 字节)"
-              }
-
-          # 检查权限
-          if not has_read_permission(local_path):
-              return {"success": False, "error": "缺少读取权限"}
-
-          return {"success": True, "size_info": size_info}
-
-      def exec(self, repo_source):
-          """执行阶段，处理代码库"""
-          if repo_source is None:
-              return {"success": False, "error": "无效的代码库来源"}
-
-          # 验证源并获取本地路径
-          source_result = self.validate_source(repo_source)
-          if not source_result["success"]:
-              return {"success": False, "error": source_result["error"]}
-
-          local_path = source_result["path"]
-          from_cache = source_result.get("from_cache", False)
-
-          # 验证代码库
-          repo_result = self.validate_repo(local_path)
-          if not repo_result["success"]:
-              return {"success": False, "error": repo_result["error"]}
-
-          # 使用 Pydantic 模型验证输出
-          try:
-              output = PrepareRepoOutput(
-                  success=True,
-                  local_path=local_path,
-                  size_info=repo_result["size_info"],
-                  from_cache=from_cache
-              )
-              return output.dict()
-          except Exception as e:
-              return {"success": False, "error": f"输出验证失败: {str(e)}"}
-
-      def post(self, shared, prep_res, exec_res):
-          """后处理阶段，更新共享内存"""
-          if exec_res["success"]:
-              shared["local_repo_path"] = exec_res["local_path"]
-              shared["repo_size_info"] = exec_res["size_info"]
-              shared["process_status"]["current_stage"] = "代码库准备完成"
-              log_and_notify(f"代码库准备完成: {shared['local_repo_path']}", "info")
-          else:
-              shared["process_status"]["errors"].append({
-                  "stage": "准备代码库",
-                  "error": exec_res["error"],
-                  "timestamp": datetime.now()
-              })
-              log_and_notify(f"代码库准备失败: {exec_res['error']}", "error", notify=True)
-  ```
+- **实现要点**:
+  - 使用 Pydantic 进行数据验证和类型检查
+  - 支持多种输入源（URL、本地路径）
+  - 实现缓存机制避免重复下载
+  - 提供详细的错误信息和恢复建议
 
 ##### 2. `AIUnderstandCoreModulesNode`
 
@@ -2867,360 +1064,11 @@ graph TD
 - **错误处理**:
   - 处理 LLM 调用失败: 实现重试机制，降级处理
   - 处理理解质量不佳: 实现质量评估和迭代细化
-- **实现细节**:
-  ```python
-  def prep(self, shared):
-      return shared["code_structure"], shared["dependencies"]
-
-  def create_prompt(self, code_structure, dependencies):
-      """创建分析提示"""
-      return f"""
-      分析以下代码库结构和依赖关系，识别核心模块并解释其功能和关系:
-
-      代码结构:
-      {json.dumps(code_structure, indent=2)}
-
-      依赖关系:
-      {json.dumps(dependencies, indent=2)}
-
-      请提供:
-      1. 核心模块列表及其功能
-      2. 整体架构概述
-      3. 模块间关系
-      """
-
-  def call_model(self, prompt, target_language):
-      """调用LLM并处理结果"""
-      result, success, metadata = call_llm(
-          prompt=prompt,
-          task_type="understand_code",
-          target_language=target_language
-      )
-
-      if not success:
-          return None, None, False
-
-      # 解析结果
-      parsed_result = self.parse_llm_response(result)
-
-      # 质量评估
-      quality_score = self.evaluate_llm_output(
-          result,
-          "understand_code",
-          {"completeness": 0.7, "accuracy": 0.8, "clarity": 0.6}
-      )
-
-      return parsed_result, quality_score, True
-
-  def parse_llm_response(self, response: str) -> Dict[str, Any]:
-      """解析 LLM 响应，提取结构化信息
-
-      Args:
-          response: LLM 生成的响应文本
-
-      Returns:
-          解析后的结构化数据
-      """
-      # 尝试解析为 JSON
-      try:
-          # 查找 JSON 块
-          json_match = re.search(r'```(?:json)?\s*({[\s\S]*?})```', response)
-          if json_match:
-              json_str = json_match.group(1)
-              return json.loads(json_str)
-      except:
-          pass
-
-      # 尝试解析为 YAML
-      try:
-          # 查找 YAML 块
-          yaml_match = re.search(r'```(?:yaml)?\s*([\s\S]*?)```', response)
-          if yaml_match:
-              yaml_str = yaml_match.group(1)
-              import yaml
-              return yaml.safe_load(yaml_str)
-      except:
-          pass
-
-      # 如果无法解析为结构化格式，尝试提取关键信息
-      result = {
-          "core_modules": [],
-          "architecture": "",
-          "module_relationships": []
-      }
-
-      # 提取核心模块
-      modules_section = self._extract_section(response, ["核心模块", "Core Modules", "主要模块"])
-      if modules_section:
-          # 尝试提取列表项
-          modules = re.findall(r'[*\-•]\s*([^:\n]+)(?::|\n|：)(.*?)(?=\n[*\-•]|\n\n|$)', modules_section, re.DOTALL)
-          if modules:
-              result["core_modules"] = [
-                  {"name": m[0].strip(), "description": m[1].strip()}
-                  for m in modules
-              ]
-          else:
-              # 尝试提取段落描述的模块
-              modules = re.findall(r'([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)(?::|：)\s*(.*?)(?=\n\n|$)', modules_section, re.DOTALL)
-              if modules:
-                  result["core_modules"] = [
-                      {"name": m[0].strip(), "description": m[1].strip()}
-                      for m in modules
-                  ]
-
-      # 提取架构概述
-      architecture_section = self._extract_section(response, ["整体架构", "架构概述", "Architecture", "Overall Architecture"])
-      if architecture_section:
-          result["architecture"] = architecture_section.strip()
-
-      # 提取模块关系
-      relationships_section = self._extract_section(response, ["模块关系", "Module Relationships", "依赖关系", "组件关系"])
-      if relationships_section:
-          # 尝试提取关系描述
-          relationships = re.findall(r'[*\-•]\s*(.*?)(?=\n[*\-•]|\n\n|$)', relationships_section, re.DOTALL)
-          if relationships:
-              result["module_relationships"] = [r.strip() for r in relationships]
-
-      return result
-
-  def _extract_section(self, text: str, section_titles: List[str]) -> Optional[str]:
-      """从文本中提取特定章节
-
-      Args:
-          text: 完整文本
-          section_titles: 可能的章节标题列表
-
-      Returns:
-          提取的章节内容，如果未找到则返回 None
-      """
-      for title in section_titles:
-          # 查找章节标题
-          pattern = rf'(?:^|\n)(?:#{1,3}\s*)?{re.escape(title)}[:\s]*(.*?)(?=\n(?:#{1,3}\s*|$)|\Z)'
-          match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-          if match:
-              return match.group(1).strip()
-
-      return None
-
-  def evaluate_llm_output(self, output: str, task_type: str, criteria: Optional[Dict[str, float]] = None) -> Dict[str, float]:
-      """评估 LLM 输出质量
-
-      Args:
-          output: LLM 生成的输出
-          task_type: 任务类型
-          criteria: 评估标准和权重
-
-      Returns:
-          包含各项评分和总体评分的字典
-      """
-      # 默认评估标准
-      default_criteria = {
-          "understand_code": {
-              "completeness": 0.4,  # 完整性
-              "accuracy": 0.4,      # 准确性
-              "clarity": 0.2        # 清晰度
-          }
-      }
-
-      # 使用默认标准或合并自定义标准
-      task_criteria = default_criteria.get(task_type, {"quality": 1.0})
-      if criteria:
-          for key, value in criteria.items():
-              task_criteria[key] = value
-
-      # 基于输出长度和内容的基本评估
-      scores = {}
-
-      # 1. 长度检查
-      min_length = 200  # 代码理解需要足够的长度
-      length_score = min(1.0, len(output) / min_length)
-
-      # 2. 内容质量检查
-      # 检查结构化内容
-      structure_indicators = ["模块", "类", "函数", "方法", "接口", "组件"]
-      structure_count = sum(indicator in output for indicator in structure_indicators)
-      structure_score = min(1.0, structure_count / 5)
-
-      # 检查关系描述
-      relation_indicators = ["调用", "依赖", "继承", "包含", "使用", "关联"]
-      relation_count = sum(indicator in output for indicator in relation_indicators)
-      relation_score = min(1.0, relation_count / 3)
-
-      # 计算各项指标得分
-      scores["completeness"] = length_score
-      scores["accuracy"] = (structure_score + relation_score) / 2
-      scores["clarity"] = structure_score
-
-      # 计算加权总分
-      overall_score = 0.0
-      for criterion, weight in task_criteria.items():
-          if criterion in scores:
-              overall_score += scores[criterion] * weight
-          else:
-              overall_score += 0.5 * weight
-
-      # 添加总体评分
-      scores["overall"] = min(1.0, overall_score)
-
-      return scores
-
-  def exec(self, inputs):
-      code_structure, dependencies = inputs
-      target_language = self.shared.get("target_language", "en")
-
-      # 准备提示
-      prompt = self.create_prompt(code_structure, dependencies)
-
-      # 尝试调用LLM (最多3次)
-      for attempt in range(3):
-          try:
-              parsed_result, quality_score, success = self.call_model(
-                  prompt, target_language
-              )
-
-              if success and quality_score["overall"] >= 0.7:
-                  return {
-                      "success": True,
-                      "core_modules": parsed_result["core_modules"],
-                      "architecture": parsed_result["architecture"],
-                      "quality_score": quality_score
-                  }
-              elif success:
-                  log_and_notify(
-                      f"理解质量不佳 (分数: {quality_score['overall']}), 重试中...",
-                      "warning"
-                  )
-          except Exception as e:
-              log_and_notify(f"LLM调用失败: {str(e)}, 重试中...", "warning")
-
-      # 所有重试都失败，返回降级结果
-      return {
-          "success": False,
-          "error": "无法获得高质量的代码理解",
-          "fallback_result": self.generate_basic_understanding(code_structure)
-      }
-
-  def generate_basic_understanding(self, code_structure: Dict[str, Any]) -> Dict[str, Any]:
-      """生成基本的代码理解结果，作为 LLM 调用失败时的降级方案
-
-      Args:
-          code_structure: 代码结构信息
-
-      Returns:
-          包含核心模块和架构概述的字典
-      """
-      # 初始化结果
-      result = {
-          "core_modules": [],
-          "architecture": "无法通过 AI 分析生成详细架构概述。以下是基于代码结构的基本信息。"
-      }
-
-      # 提取文件和目录信息
-      files = []
-      directories = []
-
-      # 从代码结构中提取文件和目录
-      for path, info in code_structure.items():
-          if isinstance(info, dict) and "type" in info:
-              if info["type"] == "file":
-                  files.append(path)
-              elif info["type"] == "directory":
-                  directories.append(path)
-
-      # 识别可能的核心模块
-      potential_modules = []
-
-      # 1. 查找 __init__.py 文件所在的目录，这些通常是 Python 模块
-      python_modules = [d for d in directories if f"{d}/__init__.py" in files]
-      potential_modules.extend(python_modules)
-
-      # 2. 查找可能的主要文件
-      main_files = [f for f in files if any(pattern in f.lower() for pattern in
-                                          ["main", "app", "core", "server", "client", "api", "service"])]
-      potential_modules.extend(main_files)
-
-      # 3. 按文件扩展名分组
-      file_extensions = {}
-      for f in files:
-          ext = f.split(".")[-1] if "." in f else "unknown"
-          if ext not in file_extensions:
-              file_extensions[ext] = []
-          file_extensions[ext].append(f)
-
-      # 为每个可能的核心模块创建描述
-      for module in potential_modules[:10]:  # 限制数量
-          if module in python_modules:
-              description = f"Python 模块，可能包含核心功能"
-          elif module in main_files:
-              description = f"可能的主要文件，包含程序入口点或核心逻辑"
-          else:
-              description = f"可能的核心组件"
-
-          result["core_modules"].append({
-              "name": module,
-              "description": description
-          })
-
-      # 生成基本架构描述
-      architecture_parts = [
-          "代码库包含以下组件：",
-          f"- {len(directories)} 个目录",
-          f"- {len(files)} 个文件"
-      ]
-
-      # 添加文件类型统计
-      if file_extensions:
-          architecture_parts.append("文件类型分布：")
-          for ext, ext_files in file_extensions.items():
-              if len(ext_files) > 0:
-                  architecture_parts.append(f"- {ext}: {len(ext_files)} 个文件")
-
-      # 添加可能的架构模式识别
-      if any("test" in f.lower() for f in files):
-          architecture_parts.append("- 包含测试文件，可能遵循测试驱动开发模式")
-
-      if any("model" in f.lower() for f in files) and any("view" in f.lower() for f in files):
-          architecture_parts.append("- 可能采用 MVC 或类似架构模式")
-
-      if any("api" in f.lower() for f in files) and any("service" in f.lower() for f in files):
-          architecture_parts.append("- 可能采用微服务或服务导向架构")
-
-      result["architecture"] = "\n".join(architecture_parts)
-
-      return result
-
-  def update_success_state(self, shared, exec_res):
-      """更新成功状态"""
-      shared["ai_analysis"]["core_modules_explanation"] = exec_res["core_modules"]
-      shared["ai_analysis"]["overall_architecture_summary"] = exec_res["architecture"]
-      shared["ai_analysis"]["quality_metrics"]["architecture_understanding"] = (
-          exec_res["quality_score"]["overall"]
-      )
-      shared["process_status"]["current_stage"] = "AI 核心理解完成"
-
-  def update_failure_state(self, shared, exec_res):
-      """更新失败状态"""
-      shared["process_status"]["errors"].append({
-          "stage": "AI 核心理解",
-          "error": exec_res["error"],
-          "timestamp": datetime.now()
-      })
-      # 使用降级结果
-      shared["ai_analysis"]["core_modules_explanation"] = (
-          exec_res["fallback_result"]["core_modules"]
-      )
-      shared["ai_analysis"]["overall_architecture_summary"] = (
-          exec_res["fallback_result"]["architecture"]
-      )
-      shared["ai_analysis"]["quality_metrics"]["architecture_understanding"] = 0.4
-      log_and_notify("使用降级的代码理解结果", "warning", notify=True)
-
-  def post(self, shared, prep_res, exec_res):
-      if exec_res["success"]:
-          self.update_success_state(shared, exec_res)
-      else:
-          self.update_failure_state(shared, exec_res)
-  ```
+- **实现要点**:
+  - 构建结构化的分析提示，包含代码结构和依赖关系
+  - 使用 LLM 分析代码库架构和模块关系
+  - 实现质量评估机制，确保分析结果的准确性
+  - 提供降级处理策略，在 LLM 调用失败时生成基本理解
 
 ##### 3. `InteractiveQANode`
 
@@ -3235,597 +1083,12 @@ graph TD
   - 主动澄清机制: 当用户问题不明确时主动请求澄清
   - 个性化学习路径: 基于用户问题和反馈生成定制化学习路径
   - 交互式文档导航: 允许通过对话方式导航和探索文档
-- **实现细节**:
-  ```python
-  def prep(self, shared):
-      return (
-          shared["user_query"],
-          shared["vector_index"],
-          shared["text_chunks"],
-          shared["ai_analysis"],
-          shared.get("conversation_history", [])
-      )
-
-  def analyze_query(self, user_query, conversation_history):
-      """分析用户问题类型和意图，支持上下文理解"""
-      # 构建分析提示，包含对话历史
-      history_context = ""
-      if conversation_history:
-          history_context = "对话历史:\n" + "\n".join([
-              f"用户: {turn['question']}\n回答: {turn['answer'][:100]}..."
-              for turn in conversation_history[-3:]  # 只使用最近的3轮对话
-          ])
-
-      analysis_prompt = f"""
-      分析以下关于代码库的问题，确定问题类型、意图和清晰度:
-
-      {history_context}
-
-      当前问题: {user_query}
-
-      请提供:
-      1. 问题类型 (如 "架构相关", "API使用", "功能解释", "导航请求" 等)
-      2. 用户意图 (如 "寻求信息", "请求示例", "比较选项", "定位文档" 等)
-      3. 问题清晰度 (0-10分，10分表示完全清晰)
-      4. 是否依赖上下文 (true/false)
-      5. 如果问题不清晰，需要澄清的具体方面
-      """
-
-      query_analysis, success, metadata = call_llm(
-          prompt=analysis_prompt,
-          task_type="analyze_question"
-      )
-
-      if not success:
-          return {
-              "type": "general",
-              "intent": "unknown",
-              "clarity": 5,
-              "context_dependent": False,
-              "needs_clarification": False
-          }
-
-      # 解析 LLM 返回的分析结果
-      try:
-          parsed_analysis = json.loads(query_analysis)
-          return parsed_analysis
-      except:
-          # 如果无法解析为 JSON，尝试从文本中提取信息
-          analysis = {
-              "type": "general",
-              "intent": "unknown",
-              "clarity": 5,
-              "context_dependent": "上下文" in query_analysis or "历史" in query_analysis,
-              "needs_clarification": "不清晰" in query_analysis or "澄清" in query_analysis
-          }
-
-          # 尝试提取问题类型
-          type_match = re.search(r"类型[：:]\s*[\"']?([^\"'\n]+)[\"']?", query_analysis)
-          if type_match:
-              analysis["type"] = type_match.group(1).strip()
-
-          # 尝试提取意图
-          intent_match = re.search(r"意图[：:]\s*[\"']?([^\"'\n]+)[\"']?", query_analysis)
-          if intent_match:
-              analysis["intent"] = intent_match.group(1).strip()
-
-          # 尝试提取清晰度
-          clarity_match = re.search(r"清晰度[：:]\s*(\d+)", query_analysis)
-          if clarity_match:
-              analysis["clarity"] = int(clarity_match.group(1))
-
-          return analysis
-
-  def request_clarification(self, user_query, analysis, target_language):
-      """当问题不清晰时，生成澄清请求"""
-      clarification_prompt = f"""
-      用户问题: "{user_query}"
-
-      这个问题不够清晰，需要更多信息。请生成 2-3 个简短、具体的后续问题，
-      帮助澄清用户的意图。问题应该友好、有针对性，并直接关联到用户可能想了解的代码库方面。
-      """
-
-      clarification, success, metadata = call_llm(
-          prompt=clarification_prompt,
-          task_type="generate_clarification",
-          target_language=target_language
-      )
-
-      if not success:
-          return "您的问题不够清晰，能否提供更多细节？例如，您想了解哪个特定模块或功能？"
-
-      return clarification
-
-  def retrieve_context(self, user_query, analysis, vector_index, text_chunks, ai_analysis, conversation_history):
-      """增强的上下文检索，支持对话历史和混合检索"""
-      try:
-          # 构建增强查询
-          enhanced_query = user_query
-
-          # 如果问题依赖上下文，将最近的对话融入查询
-          if analysis.get("context_dependent", False) and conversation_history:
-              recent_context = conversation_history[-1]["question"] + " " + conversation_history[-1]["answer"][:100]
-              enhanced_query = recent_context + " " + user_query
-
-          # 获取问题的嵌入向量
-          query_embedding = get_embedding(enhanced_query)
-
-          # 确定检索数量
-          top_k = self.config.get("top_k", 5)
-
-          # 根据问题类型调整相似度阈值
-          similarity_threshold = self.config.get("similarity_threshold", 0.65)
-          if analysis["type"] in ["架构相关", "概览"]:
-              similarity_threshold = 0.6  # 架构问题需要更广泛的上下文
-          elif analysis["type"] in ["API使用", "函数细节"]:
-              similarity_threshold = 0.75  # API 问题需要更精确的匹配
-
-          # RAG 检索相关内容
-          relevant_ids, scores = vector_search(
-              query_embedding,
-              vector_index,
-              top_k=top_k,
-              similarity_threshold=similarity_threshold
-          )
-
-          # 混合检索策略：结合向量检索和关键词匹配
-          if len(relevant_ids) < 2:  # 如果向量检索结果不足
-              keyword_matches = keyword_search(
-                  user_query,
-                  text_chunks,
-                  max_results=3
-              )
-              # 合并结果并去重
-              all_ids = list(set(relevant_ids + keyword_matches))
-              relevant_ids = all_ids[:top_k]
-
-          # 获取相关文本块
-          relevant_chunks = [text_chunks[idx] for idx in relevant_ids]
-
-          # 根据问题类型添加特定上下文
-          if analysis["type"] == "架构相关":
-              relevant_chunks.append(f"架构概述: {ai_analysis['overall_architecture_summary']}")
-          elif analysis["type"] == "模块关系":
-              relevant_chunks.append(f"核心模块: {ai_analysis['core_modules_explanation']}")
-
-          # 组合上下文
-          context = "\n\n".join(relevant_chunks)
-
-          return context, relevant_ids
-
-      except Exception as e:
-          # RAG 检索失败，使用备用上下文
-          log_and_notify(f"RAG 检索失败: {str(e)}", "warning")
-          context = f"""
-          整体架构概述:
-          {ai_analysis['overall_architecture_summary']}
-
-          核心模块:
-          {ai_analysis['core_modules_explanation']}
-          """
-          return context, []
-
-  def generate_answer(self, user_query, analysis, context, conversation_history, target_language):
-      """增强的回答生成，支持对话历史和个性化学习路径"""
-      # 构建对话历史上下文
-      history_context = ""
-      if conversation_history and analysis.get("context_dependent", False):
-          history_context = "对话历史:\n" + "\n".join([
-              f"用户: {turn['question']}\n回答: {turn['answer'][:150]}..."
-              for turn in conversation_history[-3:]  # 只使用最近的3轮对话
-          ])
-
-      # 根据问题类型定制提示
-      if analysis["type"] == "导航请求" or "查找" in analysis["intent"]:
-          answer_prompt = f"""
-          用户正在寻找代码库中的特定内容。基于以下上下文，提供准确的导航指南:
-
-          {history_context}
-
-          用户问题: {user_query}
-
-          上下文信息:
-          {context}
-
-          请提供:
-          1. 直接回答用户的导航问题
-          2. 相关文件或模块的具体位置
-          3. 如何找到和使用这些内容的简短指南
-          4. 1-2个相关的后续问题建议，帮助用户继续探索
-          """
-      elif analysis["type"] == "API使用" or "示例" in analysis["intent"]:
-          answer_prompt = f"""
-          用户正在询问API使用方法。基于以下上下文，提供详细的API使用指南:
-
-          {history_context}
-
-          用户问题: {user_query}
-
-          上下文信息:
-          {context}
-
-          请提供:
-          1. API的详细说明
-          2. 参数和返回值解释
-          3. 一个完整的代码示例
-          4. 常见错误和解决方法
-          5. 1-2个相关的后续问题建议，帮助用户深入理解
-          """
-      elif analysis.get("clarity", 10) < 5:
-          # 问题不够清晰，生成澄清回答
-          answer_prompt = f"""
-          用户的问题不够清晰。基于以下上下文，提供有帮助的回应:
-
-          {history_context}
-
-          用户问题: {user_query}
-
-          上下文信息:
-          {context}
-
-          请提供:
-          1. 对用户可能意图的最佳猜测
-          2. 2-3个具体的澄清问题，帮助更好地理解用户需求
-          3. 基于当前理解的初步回答
-          """
-      else:
-          # 一般问题的标准提示
-          answer_prompt = f"""
-          基于以下上下文，回答关于代码库的问题:
-
-          {history_context}
-
-          用户问题: {user_query}
-
-          上下文信息:
-          {context}
-
-          请提供准确、清晰、有帮助的回答。如果上下文中没有足够信息，
-          请说明并基于一般软件工程原则提供最佳猜测。
-
-          在回答末尾，提供1-2个相关的后续问题建议，帮助用户继续探索。
-          """
-
-      # 调用 LLM 生成回答
-      answer, success, metadata = call_llm(
-          prompt=answer_prompt,
-          task_type="answer_question",
-          target_language=target_language
-      )
-
-      if not success:
-          return None, False, None
-
-      # 评估回答质量
-      quality_score = self.evaluate_llm_output(
-          answer,
-          "answer_question",
-          {"relevance": 0.8, "accuracy": 0.7, "helpfulness": 0.6}
-      )
-
-      # 提取建议的后续问题
-      follow_up_questions = self.extract_follow_up_questions(answer)
-
-      return answer, quality_score["overall"], follow_up_questions
-
-  def evaluate_llm_output(self, output: str, task_type: str, criteria: Optional[Dict[str, float]] = None) -> Dict[str, float]:
-      """评估 LLM 输出质量
-
-      Args:
-          output: LLM 生成的输出
-          task_type: 任务类型
-          criteria: 评估标准和权重
-
-      Returns:
-          包含各项评分和总体评分的字典
-      """
-      # 默认评估标准
-      default_criteria = {
-          "answer_question": {
-              "relevance": 0.4,  # 相关性
-              "accuracy": 0.3,   # 准确性
-              "helpfulness": 0.3  # 有用性
-          },
-          "understand_code": {
-              "completeness": 0.4,  # 完整性
-              "accuracy": 0.4,      # 准确性
-              "clarity": 0.2        # 清晰度
-          },
-          "generate_learning_path": {
-              "structure": 0.3,     # 结构性
-              "relevance": 0.4,     # 相关性
-              "practicality": 0.3   # 实用性
-          },
-          "analyze_question": {
-              "accuracy": 0.5,      # 准确性
-              "completeness": 0.3,  # 完整性
-              "insight": 0.2        # 洞察力
-          }
-      }
-
-      # 使用默认标准或合并自定义标准
-      task_criteria = default_criteria.get(task_type, {"quality": 1.0})
-      if criteria:
-          for key, value in criteria.items():
-              task_criteria[key] = value
-
-      # 基于输出长度和内容的基本评估
-      scores = {}
-
-      # 1. 长度检查
-      min_lengths = {
-          "answer_question": 100,
-          "understand_code": 200,
-          "generate_learning_path": 300,
-          "analyze_question": 50
-      }
-
-      min_length = min_lengths.get(task_type, 100)
-      length_score = min(1.0, len(output) / min_length)
-
-      # 2. 内容质量检查
-      # 这里使用简单的启发式规则，实际项目中可以使用更复杂的评估方法
-
-      # 检查结构化内容（如 JSON、列表等）
-      structure_indicators = ["```", "：", ":", "-", "•", "1.", "#", "{", "「"]
-      has_structure = any(indicator in output for indicator in structure_indicators)
-      structure_score = 0.8 if has_structure else 0.5
-
-      # 检查专业术语
-      tech_terms = ["函数", "方法", "类", "模块", "API", "接口", "代码", "算法",
-                   "function", "method", "class", "module", "interface", "code", "algorithm"]
-      term_count = sum(term in output.lower() for term in tech_terms)
-      term_score = min(1.0, term_count / 3)
-
-      # 检查代码示例
-      has_code = "```" in output or "    " in output
-      code_score = 0.9 if has_code and task_type in ["answer_question", "understand_code"] else 0.6
-
-      # 根据任务类型计算各项指标得分
-      if task_type == "answer_question":
-          scores["relevance"] = (structure_score + term_score) / 2
-          scores["accuracy"] = term_score
-          scores["helpfulness"] = (structure_score + code_score) / 2
-      elif task_type == "understand_code":
-          scores["completeness"] = length_score
-          scores["accuracy"] = term_score
-          scores["clarity"] = structure_score
-      elif task_type == "generate_learning_path":
-          scores["structure"] = structure_score
-          scores["relevance"] = term_score
-          scores["practicality"] = (length_score + code_score) / 2
-      elif task_type == "analyze_question":
-          scores["accuracy"] = term_score
-          scores["completeness"] = length_score
-          scores["insight"] = structure_score
-      else:
-          scores["quality"] = (length_score + structure_score + term_score) / 3
-
-      # 计算加权总分
-      overall_score = 0.0
-      for criterion, weight in task_criteria.items():
-          if criterion in scores:
-              overall_score += scores[criterion] * weight
-          else:
-              # 如果没有特定标准的分数，使用平均分
-              overall_score += 0.5 * weight
-
-      # 添加总体评分
-      scores["overall"] = min(1.0, overall_score)
-
-      return scores
-
-  def extract_follow_up_questions(self, text: str) -> List[str]:
-      """从文本中提取后续问题建议
-
-      Args:
-          text: 包含后续问题的文本
-
-      Returns:
-          提取的问题列表
-      """
-      # 常见的后续问题标记模式
-      patterns = [
-          r"(?:后续问题|相关问题|建议问题|您可能想问|你可能想问|Further questions|Related questions)[:：]?\s*((?:\d+[\.\)、][\s]*[^？\?\n]+[\？\?][\s]*)+)",
-          r"(?:\n\s*\d+[\.\)、][\s]*[^？\?\n]+[\？\?][\s]*)+$",
-          r"(?:您还可以问|你还可以问|You might also ask)[:：]?\s*((?:[^？\?\n]+[\？\?][\s]*)+)"
-      ]
-
-      # 尝试使用不同模式提取问题
-      for pattern in patterns:
-          matches = re.findall(pattern, text, re.MULTILINE)
-          if matches:
-              # 提取到整个问题块
-              questions_block = matches[0] if isinstance(matches[0], str) else matches[0][0]
-              # 分割成单独的问题
-              questions = re.findall(r"\d+[\.\)、]?\s*([^？\?\n]+[\？\?])", questions_block)
-              if questions:
-                  return [q.strip() for q in questions]
-
-      # 如果上面的模式都没匹配到，尝试直接查找问号结尾的句子
-      questions = re.findall(r"([^。？！\?\.\!\n]{10,}[\？\?])", text)
-
-      # 过滤掉不像问题的句子（太短或不是问句）
-      filtered_questions = []
-      for q in questions:
-          q = q.strip()
-          # 问题通常以疑问词开头或包含特定词语
-          if (len(q) > 10 and
-              (q.startswith(("如何", "为什么", "是否", "怎样", "什么", "哪些", "如果", "能否")) or
-               any(word in q for word in ["可以", "能够", "应该", "需要", "有没有", "是不是"]))):
-              filtered_questions.append(q)
-
-      # 限制返回的问题数量
-      return filtered_questions[:3]
-
-  def generate_learning_path(self, user_queries, answers, ai_analysis):
-      """基于用户问题和回答生成个性化学习路径"""
-      if len(user_queries) < 2:
-          return None  # 需要至少两个问题才能生成学习路径
-
-      learning_path_prompt = f"""
-      基于用户的问题历史和代码库结构，生成个性化学习路径:
-
-      用户问题历史:
-      {json.dumps(user_queries, indent=2, ensure_ascii=False)}
-
-      代码库核心模块:
-      {ai_analysis['core_modules_explanation']}
-
-      请生成一个结构化的学习路径，包含:
-      1. 用户似乎感兴趣的主要领域
-      2. 建议的学习顺序（从基础到高级）
-      3. 每个步骤需要了解的关键概念和模块
-      4. 推荐的实践练习
-
-      以JSON格式返回，包含以下字段:
-      - interest_areas: 兴趣领域列表
-      - learning_steps: 学习步骤数组，每步包含 title, description, modules, concepts, practice
-      """
-
-      learning_path, success, metadata = call_llm(
-          prompt=learning_path_prompt,
-          task_type="generate_learning_path"
-      )
-
-      if not success:
-          return None
-
-      try:
-          # 尝试解析为JSON
-          return json.loads(learning_path)
-      except:
-          # 如果解析失败，返回原始文本
-          return {"raw_text": learning_path}
-
-  def exec(self, inputs):
-      user_query, vector_index, text_chunks, ai_analysis, conversation_history = inputs
-
-      if not user_query:
-          return {"success": True, "skip": True}
-
-      # 初始化配置
-      self.config = self.shared.get("config", {}).get("InteractiveQANode", {})
-      target_language = self.shared.get("target_language", "en")
-
-      # 分析问题
-      query_analysis = self.analyze_query(user_query, conversation_history)
-
-      # 检查问题清晰度，如果不清晰且需要澄清，生成澄清请求
-      if query_analysis.get("clarity", 10) < 5 and query_analysis.get("needs_clarification", False):
-          clarification = self.request_clarification(user_query, query_analysis, target_language)
-          return {
-              "success": True,
-              "requires_clarification": True,
-              "question": user_query,
-              "clarification_request": clarification,
-              "analysis": query_analysis
-          }
-
-      # 检索上下文
-      context, relevant_ids = self.retrieve_context(
-          user_query, query_analysis, vector_index, text_chunks, ai_analysis, conversation_history
-      )
-
-      # 生成回答
-      answer, quality_score, follow_up_questions = self.generate_answer(
-          user_query, query_analysis, context, conversation_history, target_language
-      )
-
-      if answer is None:
-          return {
-              "success": False,
-              "error": "无法生成回答",
-              "fallback_answer": "抱歉，我无法回答这个问题。请尝试重新表述或询问其他问题。"
-          }
-
-      # 检查是否需要生成学习路径
-      generate_path = False
-      if len(conversation_history) >= 3:  # 至少有3轮对话后考虑生成学习路径
-          # 提取所有问题
-          user_queries = [turn["question"] for turn in conversation_history] + [user_query]
-          # 检查问题多样性
-          if len(set([query_analysis["type"] for query in user_queries])) >= 2:
-              generate_path = True
-
-      learning_path = None
-      if generate_path:
-          user_queries = [turn["question"] for turn in conversation_history] + [user_query]
-          answers = [turn["answer"] for turn in conversation_history] + [answer]
-          learning_path = self.generate_learning_path(user_queries, answers, ai_analysis)
-
-      return {
-          "success": True,
-          "skip": False,
-          "question": user_query,
-          "answer": answer,
-          "quality_score": quality_score,
-          "context_sources": relevant_ids,
-          "analysis": query_analysis,
-          "follow_up_questions": follow_up_questions,
-          "learning_path": learning_path
-      }
-
-  def handle_success(self, shared, exec_res):
-      """处理成功情况"""
-      # 如果需要澄清，不添加到回答列表，而是请求用户澄清
-      if exec_res.get("requires_clarification", False):
-          log_and_notify(
-              exec_res["clarification_request"],
-              "info",
-              notify=True
-          )
-          shared["clarification_needed"] = True
-          shared["last_question"] = exec_res["question"]
-          return
-
-      # 创建回答条目
-      answer_entry = {
-          "question": exec_res["question"],
-          "answer": exec_res["answer"],
-          "quality_score": exec_res["quality_score"],
-          "timestamp": datetime.now().isoformat(),
-          "context_sources": exec_res["context_sources"],
-          "analysis": exec_res["analysis"],
-          "follow_up_questions": exec_res.get("follow_up_questions", [])
-      }
-
-      shared["generated_content"]["custom_answers"].append(answer_entry)
-      shared["process_status"]["current_stage"] = "问答处理完成"
-
-      # 请求用户反馈
-      log_and_notify("已生成回答，请提供反馈", "info", notify=True)
-
-  def handle_failure(self, shared, exec_res):
-      """处理失败情况"""
-      shared["process_status"]["errors"].append({
-          "stage": "交互问答",
-          "error": exec_res["error"],
-          "timestamp": datetime.now()
-      })
-
-      # 使用降级回答
-      answer_entry = {
-          "question": shared["user_query"],
-          "answer": exec_res["fallback_answer"],
-          "quality_score": 0.3,
-          "timestamp": datetime.now(),
-          "context_sources": []
-      }
-
-      shared["generated_content"]["custom_answers"].append(answer_entry)
-      log_and_notify("使用降级回答", "warning", notify=True)
-
-  def post(self, shared, prep_res, exec_res):
-      if exec_res.get("skip", False):
-          shared["process_status"]["current_stage"] = "跳过问答阶段"
-          return
-
-      if exec_res["success"]:
-          self.handle_success(shared, exec_res)
-      else:
-          self.handle_failure(shared, exec_res)
-  ```
+- **实现要点**:
+  - 从共享状态中获取用户查询、向量索引和文本块
+  - 分析用户问题类型和意图
+  - 使用RAG检索相关内容
+  - 构建包含上下文的提示
+  - 生成回答并提取后续问题建议
 
 #### 可扩展性设计
 
@@ -3840,240 +1103,6 @@ graph TD
 4. **自定义钩子**: 在关键点提供钩子，允许用户注入自定义逻辑。
 
 5. **模块化设计**: 功能被分解为独立模块，可以单独升级或替换。
-
-示例配置文件结构：
-
-```yaml
-# config.yaml
-general:
-  target_language: "zh"
-  output_format: "markdown"
-  cache_enabled: true
-  # 环境变量配置
-  env:
-    # 指定 .env 文件路径，如果为空则使用默认路径
-    env_file: ".env"
-    # 是否在启动时验证必要的环境变量
-    validate_on_start: true
-    # 必要的环境变量列表
-    required_vars:
-      - "LLM_API_KEY"
-
-# 性能优化配置
-performance:
-  # 并行处理配置
-  parallel:
-    enabled: true
-    max_workers: 8  # 最大工作线程/进程数，默认为 CPU 核心数 * 2
-    chunk_size: 5   # 每个工作单元的项目数
-    show_progress: true  # 是否显示进度条
-
-  # 缓存优化配置
-  cache:
-    enabled: true
-    ttl: 86400  # 缓存有效期（秒）
-    max_size_gb: 5  # 最大缓存大小（GB）
-    optimization_interval: 3600  # 缓存优化间隔（秒）
-    priority_strategy: "lru"  # 缓存优先级策略: lru, lfu, size, custom
-
-# 多语言支持配置
-language:
-  # 术语表配置
-  terminology:
-    enabled: true
-    custom_terms_file: "./data/custom_terms.json"  # 自定义术语表文件
-    domain_specific: true  # 是否使用领域特定术语
-    preserve_case: true  # 是否保留术语大小写
-
-  # 翻译配置
-  translation:
-    quality_check: true  # 是否进行翻译质量检查
-    technical_terms_handling: "preserve"  # 技术术语处理方式: preserve, translate, hybrid
-
-  # Emoji 配置
-  emoji:
-    enabled: true  # 是否在文档中添加 emoji
-    heading_emojis: true  # 是否为标题添加 emoji
-    custom_emoji_map: "./data/emoji_map.json"  # 自定义 emoji 映射文件
-    content_based: true  # 是否根据内容选择 emoji
-
-# 可视化配置
-visualization:
-  # 架构图配置
-  architecture:
-    engine: "mermaid"  # 可视化引擎: mermaid, d3, plantuml
-    theme: "default"  # 主题: default, dark, forest, neutral
-    direction: "TB"  # 方向: TB, BT, LR, RL
-    include_legend: true  # 是否包含图例
-
-  # 依赖图配置
-  dependency:
-    max_depth: 3  # 最大深度
-    group_by_module: true  # 是否按模块分组
-    interactive: true  # 是否生成交互式图表
-
-  # 时序图配置
-  sequence:
-    show_activation: true  # 是否显示激活条
-    include_notes: true  # 是否包含注释
-
-  # 其他图表配置
-  charts:
-    enabled: true
-    types: ["bar", "line", "pie", "gantt"]  # 启用的图表类型
-
-# 发布配置
-publishing:
-  # GitHub Pages 配置
-  github_pages:
-    branch: "gh-pages"
-    custom_domain: ""
-    theme: "jekyll-theme-cayman"
-
-  # GitLab Pages 配置
-  gitlab_pages:
-    branch: "pages"
-
-  # ReadTheDocs 配置
-  readthedocs:
-    config_file: ".readthedocs.yml"
-
-  # Netlify 配置
-  netlify:
-    build_command: "npm run build"
-    publish_directory: "_site"
-
-  # Vercel 配置
-  vercel:
-    build_command: "npm run build"
-    output_directory: "out"
-
-  # Gitbook 配置
-  gitbook:
-    summary_file: "SUMMARY.md"
-
-  # Docsify 配置
-  docsify:
-    index_file: "README.md"
-    sidebar: true
-
-  # VuePress 配置
-  vuepress:
-    config_file: ".vuepress/config.js"
-
-  # MkDocs 配置
-  mkdocs:
-    config_file: "mkdocs.yml"
-
-  # JustDoc 配置
-  justdoc:
-    config_file: "justdoc.json"
-
-nodes:
-  PrepareRepoNode:
-    max_repo_size: 100000000  # 100MB
-    split_threshold: 50000000  # 50MB
-
-  AIUnderstandCoreModulesNode:
-    retry_count: 3
-    quality_threshold: 0.7
-    # 使用环境变量中的模型名称，如果未设置则使用默认值
-    model: "${LLM_MODEL:-gpt-4}"
-    # 多语言支持
-    language_detection: true
-    terminology_extraction: true
-
-  InteractiveQANode:
-    top_k: 5
-    similarity_threshold: 0.65
-    # 并行处理相关问题
-    batch_processing: true
-    max_parallel_questions: 3
-
-plugins:
-  - name: "PerformanceMonitor"
-    enabled: true
-    config:
-      log_threshold_ms: 1000
-
-  - name: "CustomContentGenerator"
-    enabled: false
-    path: "./plugins/custom_generator.py"
-
-  - name: "ParallelProcessor"
-    enabled: true
-    config:
-      max_workers: 8
-
-  - name: "CacheOptimizer"
-    enabled: true
-    config:
-      run_interval: 3600
-      max_size_gb: 5
-
-  - name: "VisualizationEnhancer"
-    enabled: true
-    config:
-      engines: ["mermaid", "d3", "plotly"]
-      interactive: true
-```
-
-```bash
-# .env 文件示例
-# LLM 配置
-LLM_PROVIDER=openai  # 提供商选择 (openai, openrouter, alibaba, tongyi, volcengine, moonshot)
-LLM_MODEL=gpt-4  # 模型名称
-LLM_API_KEY=sk-your-api-key-here
-LLM_BASE_URL=https://api.openai.com/v1  # 可选，用于自定义 API 端点
-LLM_MAX_TOKENS=4000
-LLM_TEMPERATURE=0.7
-
-# OpenRouter 配置
-# OPENROUTER_API_KEY=sk-your-openrouter-api-key-here
-# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-
-# 阿里百炼 (通义千问) 配置
-# ALIBABA_API_KEY=your-alibaba-api-key-here
-# ALIBABA_BASE_URL=https://dashscope.aliyuncs.com/api/v1
-
-# 火山引擎配置
-# VOLCENGINE_API_KEY=your-volcengine-api-key-here
-# VOLCENGINE_BASE_URL=https://api.volcengine.com/ml/api/v1/services
-# VOLCENGINE_SERVICE_ID=your-service-id-here
-
-# 硅基流动 (Moonshot) 配置
-# MOONSHOT_API_KEY=your-moonshot-api-key-here
-# MOONSHOT_BASE_URL=https://api.moonshot.cn/v1
-
-# 性能优化配置
-PARALLEL_ENABLED=true
-PARALLEL_MAX_WORKERS=8
-CACHE_ENABLED=true
-CACHE_TTL=86400
-CACHE_MAX_SIZE_GB=5
-REPO_CACHE_ENABLED=true
-REPO_CACHE_TTL=86400
-
-# 多语言支持配置
-TARGET_LANGUAGE=zh
-TERMINOLOGY_ENABLED=true
-TRANSLATION_QUALITY_CHECK=true
-TECHNICAL_TERMS_HANDLING=preserve
-EMOJI_ENABLED=true
-EMOJI_HEADING=true
-EMOJI_CONTENT_BASED=true
-
-# 可视化配置
-VISUALIZATION_ENGINE=mermaid
-VISUALIZATION_THEME=default
-VISUALIZATION_INTERACTIVE=true
-
-# 发布配置
-PUBLISH_PLATFORM=github
-GITHUB_TOKEN=your-github-token-here
-GITHUB_REPO=username/repo-name
-GITHUB_BRANCH=gh-pages
-```
 
 ## 🛡️ 全局错误处理与恢复框架 (Global Error Handling and Recovery Framework)
 
@@ -4117,209 +1146,76 @@ class GlobalErrorHandler:
     """全局错误处理器，统一管理所有节点的错误处理逻辑"""
 
     def __init__(self, config=None):
-        self.config = config or {}
-        self.error_history = []
-        self.recovery_strategies = {
-            "network_timeout": self._handle_network_timeout,
-            "api_rate_limit": self._handle_rate_limit,
-            "model_quality_low": self._handle_low_quality,
-            "parsing_error": self._handle_parsing_error,
-            # 其他错误类型的处理策略...
-        }
+        # 初始化错误处理器，设置配置和错误恢复策略
+        pass
 
     def handle_error(self, error_type, error_info, node_name, shared_state):
-        """处理错误并尝试恢复"""
-        # 记录错误
-        error_record = {
-            "type": error_type,
-            "info": error_info,
-            "node": node_name,
-            "timestamp": datetime.now(),
-            "recovered": False
-        }
-        self.error_history.append(error_record)
+        """处理错误并尝试恢复
 
-        # 确定错误严重程度
-        severity = self._determine_severity(error_type)
-
-        # 根据严重程度采取不同策略
-        if severity == "fatal":
-            return self._handle_fatal_error(error_record, shared_state)
-        elif severity == "recoverable":
-            return self._handle_recoverable_error(error_record, shared_state)
-        else:  # warning
-            return self._handle_warning(error_record, shared_state)
+        1. 记录错误信息
+        2. 确定错误严重程度
+        3. 根据严重程度采取不同处理策略
+        4. 返回处理结果
+        """
+        pass
 
     def _determine_severity(self, error_type):
-        """确定错误的严重程度"""
-        fatal_errors = ["config_error", "permission_denied", "resource_exhausted"]
-        recoverable_errors = ["network_timeout", "api_rate_limit", "model_quality_low", "parsing_error"]
+        """确定错误的严重程度
 
-        if error_type in fatal_errors:
-            return "fatal"
-        elif error_type in recoverable_errors:
-            return "recoverable"
-        else:
-            return "warning"
+        将错误分为致命错误、可恢复错误和警告三类
+        """
+        pass
 
     def _handle_fatal_error(self, error_record, shared_state):
-        """处理致命错误"""
-        # 保存当前状态
-        self._save_checkpoint(shared_state)
+        """处理致命错误
 
-        # 通知用户
-        log_and_notify(
-            f"致命错误: {error_record['type']} 在节点 {error_record['node']}",
-            level="error",
-            notify=True
-        )
-
-        # 更新共享状态
-        shared_state["process_status"]["errors"].append({
-            "stage": error_record["node"],
-            "error": error_record["info"],
-            "severity": "fatal",
-            "timestamp": error_record["timestamp"]
-        })
-
-        return {
-            "success": False,
-            "error": error_record["info"],
-            "recoverable": False
-        }
+        1. 保存当前状态检查点
+        2. 通知用户
+        3. 更新共享状态
+        4. 返回错误信息
+        """
+        pass
 
     def _handle_recoverable_error(self, error_record, shared_state):
-        """处理可恢复错误"""
-        # 查找恢复策略
-        recovery_strategy = self.recovery_strategies.get(
-            error_record["type"],
-            self._default_recovery_strategy
-        )
+        """处理可恢复错误
 
-        # 尝试恢复
-        recovery_result = recovery_strategy(error_record, shared_state)
-
-        # 更新错误记录
-        error_record["recovered"] = recovery_result["success"]
-
-        # 更新共享状态
-        shared_state["process_status"]["errors"].append({
-            "stage": error_record["node"],
-            "error": error_record["info"],
-            "severity": "recoverable",
-            "recovery_attempted": True,
-            "recovery_success": recovery_result["success"],
-            "timestamp": error_record["timestamp"]
-        })
-
-        # 通知用户
-        if recovery_result["success"]:
-            log_and_notify(
-                f"已恢复错误: {error_record['type']} 在节点 {error_record['node']}",
-                level="warning"
-            )
-        else:
-            log_and_notify(
-                f"恢复失败: {error_record['type']} 在节点 {error_record['node']}",
-                level="error",
-                notify=True
-            )
-
-        return recovery_result
+        1. 查找适用的恢复策略
+        2. 尝试恢复
+        3. 更新错误记录和共享状态
+        4. 通知用户恢复结果
+        5. 返回恢复结果
+        """
+        pass
 
     def _handle_warning(self, error_record, shared_state):
-        """处理警告"""
-        # 记录警告
-        shared_state["process_status"]["warnings"].append({
-            "stage": error_record["node"],
-            "warning": error_record["info"],
-            "timestamp": error_record["timestamp"]
-        })
+        """处理警告
 
-        # 通知用户
-        log_and_notify(
-            f"警告: {error_record['info']} 在节点 {error_record['node']}",
-            level="warning"
-        )
-
-        return {
-            "success": True,
-            "warning": error_record["info"]
-        }
+        1. 记录警告信息
+        2. 通知用户
+        3. 返回警告信息
+        """
+        pass
 
     # 具体恢复策略
     def _handle_network_timeout(self, error_record, shared_state):
-        """处理网络超时"""
-        # 实现指数退避重试
-        max_retries = self.config.get("network_timeout_max_retries", 3)
-        current_retries = error_record.get("retries", 0)
-
-        if current_retries >= max_retries:
-            return {"success": False, "error": "超过最大重试次数"}
-
-        # 更新重试计数
-        error_record["retries"] = current_retries + 1
-
-        # 计算退避时间
-        backoff_time = 2 ** current_retries
-        time.sleep(backoff_time)
-
-        return {"success": True, "action": "retried"}
+        """处理网络超时，实现指数退避重试"""
+        pass
 
     def _handle_rate_limit(self, error_record, shared_state):
-        """处理API限流"""
-        # 实现限流处理逻辑
-        wait_time = self.config.get("rate_limit_wait_time", 60)
-        log_and_notify(f"API限流，等待{wait_time}秒后重试", "warning")
-        time.sleep(wait_time)
-
-        return {"success": True, "action": "waited"}
+        """处理API限流，等待一段时间后重试"""
+        pass
 
     def _handle_low_quality(self, error_record, shared_state):
-        """处理模型输出质量不足"""
-        # 尝试使用不同模型或提示
-        fallback_model = self.config.get("fallback_model")
-        if fallback_model:
-            log_and_notify(f"切换到备用模型: {fallback_model}", "info")
-            shared_state["current_model"] = fallback_model
-            return {"success": True, "action": "model_switched"}
-
-        # 如果没有备用模型，尝试调整提示
-        return {"success": True, "action": "prompt_adjusted"}
+        """处理模型输出质量不足，尝试使用备用模型或调整提示"""
+        pass
 
     def _handle_parsing_error(self, error_record, shared_state):
-        """处理解析错误"""
-        # 实现解析错误处理逻辑
-        return {"success": True, "action": "simplified_parsing"}
-
-    def _default_recovery_strategy(self, error_record, shared_state):
-        """默认恢复策略"""
-        return {"success": False, "error": "没有适用的恢复策略"}
+        """处理解析错误，尝试简化解析逻辑"""
+        pass
 
     def _save_checkpoint(self, shared_state):
         """保存当前处理状态的检查点"""
-        checkpoint_path = f"checkpoints/checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-
-        # 创建可序列化的状态副本
-        serializable_state = self._create_serializable_copy(shared_state)
-
-        with open(checkpoint_path, "w") as f:
-            json.dump(serializable_state, f, indent=2)
-
-        log_and_notify(f"状态检查点已保存: {checkpoint_path}", "info")
-
-    def _create_serializable_copy(self, obj):
-        """创建对象的可序列化副本"""
-        if isinstance(obj, dict):
-            return {k: self._create_serializable_copy(v) for k, v in obj.items()
-                   if not k.startswith('_') and k not in ['vector_index', 'embeddings']}
-        elif isinstance(obj, list):
-            return [self._create_serializable_copy(item) for item in obj]
-        elif isinstance(obj, (str, int, float, bool, type(None))):
-            return obj
-        else:
-            return str(obj)
+        pass
 ```
 
 ### 错误报告与分析
@@ -4374,30 +1270,7 @@ class GlobalErrorHandler:
    - 嵌套层级：不超过 2 层
    - 参数数量：函数参数不超过 5 个
 
-   ```python
-   # 在项目根目录创建 .flake8 配置文件
-   # .flake8
-   [flake8]
-   max-line-length = 88
-   max-complexity = 6  # 降低复杂度以限制嵌套
-   max-function-length = 30
-   ignore = E203, W503
-   per-file-ignores =
-       __init__.py: F401
-   ```
 
-   ```python
-   # 在项目根目录创建 pyproject.toml 配置文件
-   # pyproject.toml
-   [tool.black]
-   line-length = 88
-   target-version = ['py38']
-   include = '\.pyi?$'
-
-   [tool.isort]
-   profile = "black"
-   line_length = 88
-   ```
 
 3. **模块化设计**
    - 遵循 [PocketFlow](https://github.com/The-Pocket/PocketFlow) 的节点和流程设计模式
@@ -4435,10 +1308,6 @@ class GlobalErrorHandler:
    ```python
    from pydantic import BaseModel, Field
    from typing import Dict, List, Optional, Any, Union, Tuple
-   import os
-   import time
-   import json
-   import hashlib
    from litellm import completion
 
    class LLMResponse(BaseModel):
@@ -4460,71 +1329,6 @@ class GlobalErrorHandler:
        latency: float = Field(0.0, description="调用延迟（秒）")
        error: Optional[str] = Field(None, description="错误信息")
 
-   def _try_llm_call(
-       messages: List[Dict[str, str]],
-       model_info: Dict[str, str],
-       fallbacks: List[Dict[str, str]],
-       task_type: Optional[str],
-       llm_config: Dict[str, Any],
-       attempt: int
-   ) -> Tuple[Optional[str], bool, Dict[str, Any]]:
-       """尝试调用 LLM 并处理结果
-
-       Args:
-           messages: 消息列表
-           model_info: 模型信息
-           fallbacks: 回退模型列表
-           task_type: 任务类型
-           llm_config: LLM 配置
-           attempt: 当前尝试次数
-
-       Returns:
-           元组 (响应内容, 成功标志, 元数据)
-       """
-       start_time = time.time()
-       try:
-           # 使用 LiteLLM 统一调用接口
-           response = completion(
-               model=f"{model_info['provider']}/{model_info['model']}",
-               messages=messages,
-               fallbacks=fallbacks,
-               api_key=_get_api_key(model_info["provider"], llm_config),
-               max_tokens=llm_config.get("max_tokens", 4000),
-               temperature=_get_temperature(task_type)
-           )
-
-           # 计算延迟
-           latency = time.time() - start_time
-
-           # 提取响应内容
-           content = response.choices[0].message.content
-
-           # 提取使用的模型信息
-           used_model = response.model
-           provider, model = _parse_model_string(used_model)
-
-           # 验证响应
-           if _validate_response(content, task_type):
-               # 构建元数据
-               metadata = LLMMetadata(
-                   provider=provider,
-                   model=model,
-                   timestamp=time.time(),
-                   attempt=attempt + 1,
-                   fallback_used=provider != model_info["provider"] or model != model_info["model"],
-                   latency=latency
-               )
-
-               return content, True, metadata.dict()
-
-           return None, False, {"error": "响应验证失败"}
-
-       except Exception as e:
-           # 记录错误
-           error_msg = f"LLM 调用失败: {str(e)}"
-           log_and_notify(error_msg, level="warning")
-           return None, False, {"error": error_msg}
-
    def call_llm(
        prompt: str,
        context: Optional[str] = None,
@@ -4535,79 +1339,17 @@ class GlobalErrorHandler:
    ) -> Tuple[Optional[str], bool, Dict[str, Any]]:
        """增强的 LLM 调用函数，支持智能模型选择和回退机制
 
-       Args:
-           prompt: 主要提示内容
-           context: 上下文信息（可选）
-           task_type: 任务类型，用于智能模型选择
-           target_language: 目标语言
-           retry_count: 重试次数
-           config: 自定义配置
-
-       Returns:
-           元组 (响应内容, 成功标志, 元数据)
+       1. 加载配置
+       2. 构建完整提示
+       3. 检查缓存，如有则返回缓存结果
+       4. 智能选择最适合任务的模型
+       5. 准备模型回退链
+       6. 尝试调用主模型，失败时尝试回退模型
+       7. 实现重试机制和指数退避
+       8. 缓存成功结果
+       9. 返回生成内容、状态和元数据
        """
-       # 加载配置
-       llm_config = config or get_llm_config()
-
-       # 构建完整提示
-       full_prompt = _build_prompt(prompt, context, task_type, target_language)
-
-       # 检查缓存
-       cache_key = _generate_cache_key(full_prompt)
-       cached_result = get_from_cache(cache_key)
-       if cached_result:
-           metadata = LLMMetadata(
-               provider=cached_result["metadata"]["provider"],
-               model=cached_result["metadata"]["model"],
-               timestamp=cached_result["metadata"]["timestamp"],
-               from_cache=True,
-               latency=0.0
-           )
-           return cached_result["response"], True, metadata.dict()
-
-       # 智能模型选择
-       model_info = _select_model_for_task(task_type, llm_config)
-
-       # 准备 LiteLLM 调用参数
-       messages = [{"role": "user", "content": full_prompt}]
-
-       # 准备回退链
-       fallbacks = _prepare_fallback_models(model_info["provider"], model_info["model"], llm_config)
-
-       # 尝试调用 LLM，支持重试
-       for attempt in range(retry_count):
-           content, success, metadata = _try_llm_call(
-               messages, model_info, fallbacks, task_type, llm_config, attempt
-           )
-
-           if success:
-               # 缓存结果
-               save_to_cache(cache_key, {
-                   "response": content,
-                   "metadata": metadata
-               })
-
-               return content, True, metadata
-
-           # 如果不是最后一次尝试，等待后重试
-           if attempt < retry_count - 1:
-               # 指数退避
-               wait_time = 2 ** attempt
-               time.sleep(wait_time)
-
-       # 所有尝试都失败
-       error_msg = "所有 LLM 调用尝试均失败"
-       log_and_notify(error_msg, level="error")
-
-       metadata = LLMMetadata(
-           provider="none",
-           model="none",
-           timestamp=time.time(),
-           attempt=retry_count,
-           error=error_msg
-       )
-
-       return None, False, metadata.dict()
+       pass
    ```
 
 3. **输出解析与验证**
@@ -4625,66 +1367,22 @@ class GlobalErrorHandler:
    ) -> str:
        """构建完整的提示
 
-       Args:
-           prompt: 主要提示内容
-           context: 上下文信息
-           task_type: 任务类型
-           target_language: 目标语言
-
-       Returns:
-           完整的提示字符串
+       1. 根据任务类型添加特定指令
+       2. 添加目标语言指令
+       3. 组合提示、上下文和问题
+       4. 返回完整的提示字符串
        """
-       # 添加任务特定的指令
-       task_instructions = {
-           "summarize": "请总结以下内容，保持简洁和信息量：",
-           "explain_code": "请解释以下代码的功能和工作原理：",
-           "analyze_question": "请分析以下问题，提供结构化的理解：",
-           "generate_learning_path": "请基于以下信息生成个性化学习路径：",
-           "answer_question": "请回答以下问题，基于提供的上下文："
-       }
-
-       instruction = task_instructions.get(task_type, "")
-
-       # 添加语言指令
-       language_instruction = ""
-       if target_language and target_language.lower() != 'en':
-           language_instruction = f"\n请用{target_language}语言回答。"
-
-       # 组合提示
-       if context:
-           full_prompt = f"{instruction}\n\n上下文：\n{context}\n\n问题：\n{prompt}{language_instruction}"
-       else:
-           full_prompt = f"{instruction}\n\n{prompt}{language_instruction}"
-
-       return full_prompt
+       pass
 
    def _select_model_for_task(task_type: Optional[str], config: Dict[str, Any]) -> Dict[str, str]:
        """根据任务类型选择最合适的模型
 
-       Args:
-           task_type: 任务类型
-           config: LLM 配置
-
-       Returns:
-           包含 provider 和 model 的字典
+       1. 定义默认模型
+       2. 建立任务类型到模型的映射
+       3. 根据任务类型选择合适的模型
+       4. 返回包含提供商和模型的字典
        """
-       # 默认模型
-       default_model = {
-           "provider": config.get("provider", "openai"),
-           "model": config.get("model", "gpt-4")
-       }
-
-       # 任务特定模型映射
-       task_model_mapping = {
-           "summarize": {"provider": "openai", "model": "gpt-3.5-turbo"},
-           "explain_code": {"provider": "anthropic", "model": "claude-3-opus"},
-           "analyze_question": {"provider": "openai", "model": "gpt-4"},
-           "generate_learning_path": {"provider": "anthropic", "model": "claude-3-opus"},
-           "answer_question": {"provider": "openai", "model": "gpt-4"}
-       }
-
-       # 如果有任务特定模型，使用它，否则使用默认模型
-       return task_model_mapping.get(task_type, default_model)
+       pass
 
    def _prepare_fallback_models(
        primary_provider: str,
@@ -4693,164 +1391,48 @@ class GlobalErrorHandler:
    ) -> List[Dict[str, str]]:
        """准备模型回退链
 
-       Args:
-           primary_provider: 主要提供商
-           primary_model: 主要模型
-           config: LLM 配置
-
-       Returns:
-           回退模型列表
+       1. 创建回退模型列表
+       2. 添加各种提供商的备选模型
+       3. 确保不添加与主模型相同的模型
+       4. 返回回退模型列表
        """
-       # 添加备选模型
-       fallbacks = []
-
-       # 添加 OpenAI 回退
-       if primary_provider != "openai" or primary_model != "gpt-4":
-           fallbacks.append({
-               "model": "openai/gpt-4",
-               "api_key": os.getenv("OPENAI_API_KEY")
-           })
-
-       # 添加 Anthropic 回退
-       if primary_provider != "anthropic" or primary_model != "claude-3-opus":
-           fallbacks.append({
-               "model": "anthropic/claude-3-opus",
-               "api_key": os.getenv("ANTHROPIC_API_KEY")
-           })
-
-       # 添加 OpenRouter 回退
-       if primary_provider != "openrouter":
-           fallbacks.append({
-               "model": "openrouter/auto",
-               "api_key": os.getenv("OPENROUTER_API_KEY")
-           })
-
-       # 添加阿里百炼回退
-       if primary_provider != "alibaba":
-           fallbacks.append({
-               "model": "alibaba/qwen-max",
-               "api_key": os.getenv("ALIBABA_API_KEY")
-           })
-
-       # 添加火山引擎回退
-       if primary_provider != "volcengine":
-           fallbacks.append({
-               "model": "volcengine/volcengine-gpt-4",
-               "api_key": os.getenv("VOLCENGINE_API_KEY")
-           })
-
-       # 添加硅基流动回退
-       if primary_provider != "moonshot":
-           fallbacks.append({
-               "model": "moonshot/moonshot-v1-8k",
-               "api_key": os.getenv("MOONSHOT_API_KEY")
-           })
-
-       return fallbacks
-
-   def _get_api_key(provider: str, config: Dict[str, Any]) -> str:
-       """获取 API 密钥
-
-       Args:
-           provider: 提供商
-           config: LLM 配置
-
-       Returns:
-           API 密钥
-       """
-       # 首先尝试从配置中获取
-       if "api_key" in config:
-           return config["api_key"]
-
-       # 然后尝试从环境变量获取
-       env_var_map = {
-           "openai": "OPENAI_API_KEY",
-           "anthropic": "ANTHROPIC_API_KEY",
-           "openrouter": "OPENROUTER_API_KEY",
-           "alibaba": "ALIBABA_API_KEY",
-           "volcengine": "VOLCENGINE_API_KEY",
-           "moonshot": "MOONSHOT_API_KEY"
-       }
-
-       env_var = env_var_map.get(provider)
-       if env_var:
-           return os.getenv(env_var, "")
-
-       return ""
+       pass
 
    def _get_temperature(task_type: Optional[str]) -> float:
        """根据任务类型获取温度参数
 
-       Args:
-           task_type: 任务类型
-
-       Returns:
-           温度参数
+       1. 定义低温度任务（需要确定性和准确性）
+       2. 定义高温度任务（需要创造性）
+       3. 根据任务类型返回合适的温度值
        """
-       # 低温度任务（需要确定性和准确性）
-       low_temp_tasks = ["explain_code", "summarize", "analyze_question"]
-
-       # 高温度任务（需要创造性）
-       high_temp_tasks = ["generate_learning_path"]
-
-       if task_type in low_temp_tasks:
-           return 0.2
-       elif task_type in high_temp_tasks:
-           return 0.8
-       else:
-           return 0.7
+       pass
 
    def _parse_model_string(model_string: str) -> Tuple[str, str]:
        """解析模型字符串
 
-       Args:
-           model_string: 模型字符串，格式为 "provider/model"
-
-       Returns:
-           (provider, model) 元组
+       1. 解析格式为 "provider/model" 的模型字符串
+       2. 如果没有提供商前缀，使用默认提供商
+       3. 返回 (provider, model) 元组
        """
-       if "/" in model_string:
-           parts = model_string.split("/", 1)
-           return parts[0], parts[1]
-       else:
-           # 如果没有提供商前缀，假设是 OpenAI
-           return "openai", model_string
+       pass
 
    def _generate_cache_key(prompt: str) -> str:
        """生成缓存键
 
-       Args:
-           prompt: 提示字符串
-
-       Returns:
-           缓存键
+       1. 使用哈希算法生成提示字符串的唯一标识
+       2. 返回缓存键
        """
-       # 使用 MD5 哈希作为缓存键
-       return hashlib.md5(prompt.encode()).hexdigest()
+       pass
 
    def _validate_response(response: str, task_type: Optional[str]) -> bool:
        """验证 LLM 响应
 
-       Args:
-           response: LLM 响应内容
-           task_type: 任务类型
-
-       Returns:
-           响应是否有效
+       1. 检查响应是否为空
+       2. 进行基本验证（如长度检查）
+       3. 根据任务类型进行特定验证
+       4. 返回响应是否有效
        """
-       if not response:
-           return False
-
-       # 基本验证
-       if len(response.strip()) < 10:
-           return False
-
-       # 任务特定验证
-       if task_type == "generate_learning_path":
-           # 检查是否包含 JSON 结构
-           return "{" in response and "}" in response
-
-       return True
+       pass
    ```
 
 4. **成本与性能优化**
@@ -4864,86 +1446,31 @@ class GlobalErrorHandler:
    def get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
        """从缓存中获取结果
 
-       Args:
-           cache_key: 缓存键
-
-       Returns:
-           缓存的结果，如果不存在则返回 None
+       1. 根据缓存键构建缓存文件路径
+       2. 检查缓存文件是否存在
+       3. 检查缓存是否过期
+       4. 读取并返回缓存内容
        """
-       cache_dir = os.path.join(os.path.dirname(__file__), ".cache", "llm")
-       cache_file = os.path.join(cache_dir, f"{cache_key}.json")
-
-       if not os.path.exists(cache_file):
-           return None
-
-       try:
-           # 检查缓存是否过期
-           cache_ttl = int(os.getenv("LLM_CACHE_TTL", "86400"))  # 默认 24 小时
-           if time.time() - os.path.getmtime(cache_file) > cache_ttl:
-               return None
-
-           with open(cache_file, "r", encoding="utf-8") as f:
-               return json.load(f)
-       except Exception as e:
-           log_and_notify(f"读取缓存失败: {str(e)}", level="warning")
-           return None
+       pass
 
    def save_to_cache(cache_key: str, data: Dict[str, Any]) -> bool:
        """保存结果到缓存
 
-       Args:
-           cache_key: 缓存键
-           data: 要缓存的数据
-
-       Returns:
-           是否成功保存
+       1. 检查是否启用缓存
+       2. 创建缓存目录（如果不存在）
+       3. 将数据序列化并写入缓存文件
+       4. 返回操作是否成功
        """
-       # 检查是否启用缓存
-       if os.getenv("LLM_CACHE_ENABLED", "true").lower() != "true":
-           return False
-
-       cache_dir = os.path.join(os.path.dirname(__file__), ".cache", "llm")
-       os.makedirs(cache_dir, exist_ok=True)
-       cache_file = os.path.join(cache_dir, f"{cache_key}.json")
-
-       try:
-           with open(cache_file, "w", encoding="utf-8") as f:
-               json.dump(data, f, ensure_ascii=False, indent=2)
-           return True
-       except Exception as e:
-           log_and_notify(f"保存缓存失败: {str(e)}", level="warning")
-           return False
+       pass
 
    def log_and_notify(message: str, level: str = "info", notify: bool = False) -> None:
        """记录日志并可选择通知用户
 
-       Args:
-           message: 消息内容
-           level: 日志级别 (info, warning, error)
-           notify: 是否通知用户
+       1. 配置日志记录器
+       2. 根据级别记录日志
+       3. 如果需要，通知用户（如显示通知、发送邮件等）
        """
-       import logging
-
-       # 配置日志
-       logging.basicConfig(
-           level=logging.INFO,
-           format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-       )
-
-       logger = logging.getLogger("codebase-knowledge-builder")
-
-       # 根据级别记录日志
-       if level == "warning":
-           logger.warning(message)
-       elif level == "error":
-           logger.error(message)
-       else:
-           logger.info(message)
-
-       # 如果需要通知用户，可以在这里实现
-       if notify:
-           # 这里可以实现用户通知逻辑，如发送邮件、显示通知等
-           print(f"[通知] {message}")
+       pass
    ```
 
 ### 错误处理与日志
@@ -5004,29 +1531,15 @@ class GlobalErrorHandler:
    # 加载环境变量
    def load_env_vars(env_file: Optional[str] = None) -> None:
        """加载环境变量，优先从指定的 .env 文件加载，然后从系统环境变量加载"""
-       if env_file and os.path.exists(env_file):
-           load_dotenv(env_file)
-       else:
-           # 尝试从默认位置加载
-           load_dotenv()
+       # 实现从 .env 文件或系统环境变量加载配置的逻辑
 
    # 获取 LLM 配置
    def get_llm_config() -> Dict[str, Any]:
        """从环境变量获取 LLM 配置"""
-       config = {
-           "api_key": os.getenv("LLM_API_KEY"),
-           "base_url": os.getenv("LLM_BASE_URL"),
-           "model": os.getenv("LLM_MODEL", "gpt-4"),
-           "timeout": int(os.getenv("LLM_TIMEOUT", "60")),
-           "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4000")),
-           "provider": os.getenv("LLM_PROVIDER", "openai"),
-       }
-
-       # 验证必要的配置
-       if not config["api_key"]:
-           raise ValueError("LLM API 密钥未设置，请在环境变量中设置 LLM_API_KEY")
-
-       return config
+       # 从环境变量中读取 LLM 相关配置
+       # 设置默认值并进行必要的类型转换
+       # 验证必要的配置（如 API 密钥）
+       # 返回配置字典
    ```
 
 2. **AI 伦理准则**
@@ -5065,130 +1578,34 @@ class GlobalErrorHandler:
 
 为确保项目的一致性、可维护性和高效开发，本项目采用以下技术栈约束：
 
-### Pydantic 数据模型示例
+### Pydantic 数据模型
 
 使用 Pydantic 进行数据验证和类型检查，确保配置、API 请求/响应和节点输入/输出的正确性：
 
 ```python
-from pydantic import BaseModel, Field, validator, ConfigDict
+# 核心数据模型示例
+from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Optional, Union, Literal
 from enum import Enum
-import os
 from datetime import datetime
 
-# 枚举类型定义
+# 枚举类型示例
 class LLMProvider(str, Enum):
     OPENAI = "openai"
     OPENROUTER = "openrouter"
     ALIBABA = "alibaba"
-    VOLCENGINE = "volcengine"
-    MOONSHOT = "moonshot"
-    ANTHROPIC = "anthropic"
+    # 其他提供商...
 
-class CacheStrategy(str, Enum):
-    LRU = "lru"
-    LFU = "lfu"
-    SIZE = "size"
-    CUSTOM = "custom"
-
-# 配置模型
+# 配置模型示例
 class LLMConfig(BaseModel):
     """LLM 配置模型"""
-    model_config = ConfigDict(extra="forbid")  # 禁止额外字段
-
     provider: LLMProvider
     model: str
     api_key: str = Field(..., description="API 密钥")
-    base_url: Optional[str] = None
     max_tokens: int = Field(4000, ge=1, le=32000)
-    temperature: float = Field(0.7, ge=0, le=2.0)
+    # 其他配置字段...
 
-    @validator("api_key")
-    def validate_api_key(cls, v):
-        if not v or len(v) < 8:
-            raise ValueError("API 密钥不能为空且长度必须大于 8")
-        return v
-
-    @classmethod
-    def from_env(cls):
-        """从环境变量加载配置"""
-        return cls(
-            provider=os.getenv("LLM_PROVIDER", "openai"),
-            model=os.getenv("LLM_MODEL", "gpt-4"),
-            api_key=os.getenv("LLM_API_KEY", ""),
-            base_url=os.getenv("LLM_BASE_URL"),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4000")),
-            temperature=float(os.getenv("LLM_TEMPERATURE", "0.7"))
-        )
-
-class CacheConfig(BaseModel):
-    """缓存配置模型"""
-    enabled: bool = True
-    ttl: int = Field(86400, description="缓存有效期（秒）")
-    max_size_gb: float = Field(5.0, ge=0.1, le=100.0)
-    optimization_interval: int = 3600
-    priority_strategy: CacheStrategy = CacheStrategy.LRU
-
-class PerformanceConfig(BaseModel):
-    """性能配置模型"""
-    parallel: Dict[str, Union[bool, int]] = {
-        "enabled": True,
-        "max_workers": 8,
-        "chunk_size": 5,
-        "show_progress": True
-    }
-    cache: CacheConfig = CacheConfig()
-
-class NodeConfig(BaseModel):
-    """节点配置基类"""
-    model_config = ConfigDict(extra="allow")  # 允许额外字段，便于扩展
-
-class PrepareRepoNodeConfig(NodeConfig):
-    """PrepareRepoNode 配置"""
-    max_repo_size: int = 100_000_000  # 100MB
-    split_threshold: int = 50_000_000  # 50MB
-
-class AIUnderstandNodeConfig(NodeConfig):
-    """AIUnderstandCoreModulesNode 配置"""
-    retry_count: int = Field(3, ge=1, le=10)
-    quality_threshold: float = Field(0.7, ge=0, le=1.0)
-    model: str = "${LLM_MODEL:-gpt-4}"
-    language_detection: bool = True
-    terminology_extraction: bool = True
-
-# 完整配置模型
-class AppConfig(BaseModel):
-    """应用配置模型"""
-    general: Dict[str, Union[str, bool, Dict]] = {
-        "target_language": "zh",
-        "output_format": "markdown",
-        "cache_enabled": True
-    }
-    performance: PerformanceConfig = PerformanceConfig()
-    nodes: Dict[str, NodeConfig] = {}
-
-    @validator("nodes")
-    def validate_nodes(cls, v):
-        """验证节点配置"""
-        # 确保必要的节点存在
-        required_nodes = ["PrepareRepoNode", "AIUnderstandCoreModulesNode"]
-        for node in required_nodes:
-            if node not in v:
-                v[node] = NodeConfig()
-        return v
-
-    def get_node_config(self, node_name: str) -> NodeConfig:
-        """获取节点配置"""
-        if node_name not in self.nodes:
-            # 返回默认配置
-            if node_name == "PrepareRepoNode":
-                return PrepareRepoNodeConfig()
-            elif node_name == "AIUnderstandCoreModulesNode":
-                return AIUnderstandNodeConfig()
-            return NodeConfig()
-        return self.nodes[node_name]
-
-# 节点输入/输出模型
+# 节点输入/输出模型示例
 class NodeInput(BaseModel):
     """节点输入基类"""
     pass
@@ -5198,42 +1615,13 @@ class NodeOutput(BaseModel):
     success: bool
     error: Optional[str] = None
 
-class PrepareRepoInput(NodeInput):
-    """PrepareRepoNode 输入"""
-    repo_url: str
-    local_path: Optional[str] = None
-    branch: Optional[str] = None
-    use_cache: bool = True
-
-class PrepareRepoOutput(NodeOutput):
-    """PrepareRepoNode 输出"""
-    repo_path: Optional[str] = None
-    file_count: Optional[int] = None
-    total_size: Optional[int] = None
-    from_cache: bool = False
-
-# API 请求/响应模型
+# API 请求/响应模型示例
 class GenerateDocRequest(BaseModel):
     """生成文档请求"""
     repo_url: str
     target_language: str = "zh"
     output_format: Literal["markdown", "pdf"] = "markdown"
     include_sections: List[str] = ["overview", "architecture", "modules", "examples"]
-
-    @validator("repo_url")
-    def validate_repo_url(cls, v):
-        """验证仓库 URL"""
-        if not v.startswith(("http://", "https://", "git@")):
-            raise ValueError("仓库 URL 必须以 http://, https:// 或 git@ 开头")
-        return v
-
-class GenerateDocResponse(BaseModel):
-    """生成文档响应"""
-    success: bool
-    doc_files: List[str] = []
-    error: Optional[str] = None
-    processing_time: float
-    timestamp: datetime = Field(default_factory=datetime.now)
 ```
 
 这个示例展示了如何使用 Pydantic 定义各种数据模型，包括：
@@ -5468,76 +1856,12 @@ def detect_repository_changes(repo_path, previous_state_file=None):
     Returns:
         变更信息字典，包含新增、修改、删除的文件列表和元数据
     """
-    # 获取当前代码库状态
-    current_state = {}
-
-    # 遍历所有文件
-    for root, _, files in os.walk(repo_path):
-        for file in files:
-            # 跳过隐藏文件和特定目录
-            if file.startswith('.') or any(p in root for p in ['.git', '__pycache__', 'node_modules']):
-                continue
-
-            file_path = os.path.join(root, file)
-            rel_path = os.path.relpath(file_path, repo_path)
-
-            # 计算文件哈希
-            file_hash = compute_file_hash(file_path)
-
-            # 记录文件信息
-            current_state[rel_path] = {
-                'hash': file_hash,
-                'mtime': os.path.getmtime(file_path),
-                'size': os.path.getsize(file_path)
-            }
-
-    # 如果没有之前的状态，则所有文件都视为新增
-    if not previous_state_file or not os.path.exists(previous_state_file):
-        return {
-            'added': list(current_state.keys()),
-            'modified': [],
-            'deleted': [],
-            'unchanged': [],
-            'current_state': current_state
-        }
-
-    # 加载之前的状态
-    with open(previous_state_file, 'r') as f:
-        previous_state = json.load(f)
-
-    # 比较状态，识别变更
-    added = []
-    modified = []
-    unchanged = []
-
-    for file_path, current_info in current_state.items():
-        if file_path not in previous_state:
-            added.append(file_path)
-        elif current_info['hash'] != previous_state[file_path]['hash']:
-            modified.append(file_path)
-        else:
-            unchanged.append(file_path)
-
-    # 识别删除的文件
-    deleted = [f for f in previous_state if f not in current_state]
-
-    return {
-        'added': added,
-        'modified': modified,
-        'deleted': deleted,
-        'unchanged': unchanged,
-        'current_state': current_state
-    }
-
-def compute_file_hash(file_path):
-    """计算文件哈希值"""
-    hasher = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        buf = f.read(65536)
-        while len(buf) > 0:
-            hasher.update(buf)
-            buf = f.read(65536)
-    return hasher.hexdigest()
+    # 1. 遍历代码库中的所有文件，计算每个文件的哈希值
+    # 2. 跳过隐藏文件和特定目录（如 .git, __pycache__, node_modules）
+    # 3. 如果没有之前的状态记录，则所有文件都视为新增
+    # 4. 否则，与之前的状态比较，识别新增、修改、删除和未变更的文件
+    # 5. 返回变更信息字典，包含各类文件列表和当前状态
+    pass
 ```
 
 #### 增量处理策略
@@ -5560,64 +1884,14 @@ def determine_processing_strategy(changes, dependency_graph):
     Returns:
         处理策略字典，包含处理模式和需要处理的文件/模块列表
     """
-    # 变更文件数量
-    total_changed = len(changes['added']) + len(changes['modified']) + len(changes['deleted'])
-    total_files = total_changed + len(changes['unchanged'])
-    change_ratio = total_changed / total_files if total_files > 0 else 1.0
-
-    # 检查是否有关键文件变更
-    critical_patterns = ['setup.py', 'requirements.txt', 'package.json', 'config.', 'settings.']
-    has_critical_changes = any(
-        any(pattern in f for pattern in critical_patterns)
-        for f in changes['added'] + changes['modified'] + changes['deleted']
-    )
-
-    # 确定基本策略
-    if change_ratio > 0.3 or has_critical_changes:
-        # 变更超过30%或有关键文件变更，执行全量处理
-        return {
-            'mode': 'full',
-            'reason': 'Large changes or critical files modified',
-            'process_all': True
-        }
-
-    # 构建需要处理的文件集合
-    files_to_process = set(changes['added'] + changes['modified'])
-
-    # 添加受影响的依赖文件
-    affected_files = set()
-    for changed_file in files_to_process:
-        # 获取依赖于此文件的其他文件
-        if changed_file in dependency_graph:
-            affected_files.update(dependency_graph[changed_file]['dependents'])
-
-    # 合并直接变更和受影响的文件
-    all_affected = files_to_process.union(affected_files)
-
-    # 按模块分组
-    modules_to_process = {}
-    for file in all_affected:
-        module = determine_module(file)
-        if module not in modules_to_process:
-            modules_to_process[module] = []
-        modules_to_process[module].append(file)
-
-    # 确定最终策略
-    if len(modules_to_process) > len(all_affected) * 0.7:
-        # 如果影响了大部分模块，执行全量处理
-        return {
-            'mode': 'full',
-            'reason': 'Changes affect most modules',
-            'process_all': True
-        }
-    else:
-        # 执行增量处理
-        return {
-            'mode': 'incremental',
-            'files': list(all_affected),
-            'modules': modules_to_process,
-            'process_all': False
-        }
+    # 1. 计算变更比例（变更文件数/总文件数）
+    # 2. 检查是否有关键文件变更（如配置文件、依赖声明等）
+    # 3. 如果变更比例大于阈值或有关键文件变更，执行全量处理
+    # 4. 否则，分析变更文件的依赖关系，找出所有受影响的文件
+    # 5. 按模块分组受影响的文件，确定需要重新处理的模块
+    # 6. 如果影响了大部分模块，仍执行全量处理
+    # 7. 否则，返回增量处理策略，包含需要处理的文件和模块列表
+    pass
 ```
 
 #### 文档更新机制
@@ -5641,43 +1915,15 @@ def update_documentation(new_content, existing_file, user_sections_marker='<!-- 
     Returns:
         合并后的文档内容
     """
-    # 如果文件不存在，直接使用新内容
-    if not os.path.exists(existing_file):
-        return new_content
-
-    # 读取现有文档
-    with open(existing_file, 'r', encoding='utf-8') as f:
-        existing_content = f.read()
-
-    # 提取用户自定义部分
-    user_sections = []
-    pattern = f"{user_sections_marker}\\s*?START\\s*?-->([\\s\\S]*?)<!--\\s*?{user_sections_marker}\\s*?END"
-    for match in re.finditer(pattern, existing_content):
-        user_sections.append({
-            'content': match.group(1),
-            'start_marker': f"{user_sections_marker} START -->",
-            'end_marker': f"<!-- {user_sections_marker} END",
-            'full_match': match.group(0)
-        })
-
-    # 如果没有用户自定义部分，直接使用新内容
-    if not user_sections:
-        return new_content
-
-    # 合并内容
-    merged_content = new_content
-    for section in user_sections:
-        # 检查新内容中是否有相同位置的标记
-        if section['start_marker'] in merged_content and section['end_marker'] in merged_content:
-            # 替换新内容中的标记部分
-            pattern = f"{section['start_marker']}[\\s\\S]*?{section['end_marker']}"
-            merged_content = re.sub(pattern, section['full_match'], merged_content)
-        else:
-            # 如果新内容中没有标记，尝试找到合适的位置插入
-            # 这里可以实现更复杂的逻辑，如基于章节标题匹配等
-            merged_content += f"\n\n{section['full_match']}\n"
-
-    return merged_content
+    # 1. 检查现有文档是否存在，不存在则直接使用新内容
+    # 2. 读取现有文档内容
+    # 3. 使用正则表达式提取用户自定义部分（标记为 <!-- USER CONTENT START --> 和 <!-- USER CONTENT END -->）
+    # 4. 如果没有找到用户自定义部分，直接使用新内容
+    # 5. 否则，将用户自定义部分合并到新内容中
+    # 6. 如果新内容中有相同位置的标记，替换这些部分
+    # 7. 如果新内容中没有对应标记，尝试找到合适位置插入用户内容
+    # 8. 返回合并后的文档内容
+    pass
 ```
 
 #### 用户自定义内容保护
