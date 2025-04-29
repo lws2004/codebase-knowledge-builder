@@ -92,3 +92,6 @@ coverage/
 
 # Optional REPL history
 .node_repl_history
+
+# Generated documentation
+docs_output/

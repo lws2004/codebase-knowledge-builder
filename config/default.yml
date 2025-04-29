@@ -50,6 +50,16 @@ git:
 
 # 节点配置
 nodes:
+  input:
+    default_repo_url: ""
+    default_branch: ""
+    default_output_dir: "docs_output"
+    default_language: "zh"
+
+  prepare_repo:
+    cache_ttl: 86400  # 24小时，单位：秒
+    force_clone: false
+
   analyze_history:
     max_commits: 100
     include_file_history: true
@@ -71,3 +81,240 @@ nodes:
       5. 任何其他有价值的见解
 
       请以 Markdown 格式输出，使用适当的标题、列表和强调。
+
+  parse_code_batch:
+    max_files: 1000
+    batch_size: 100
+    ignore_patterns:
+      - ".git"
+      - ".vscode"
+      - ".idea"
+      - "__pycache__"
+      - "node_modules"
+      - "venv"
+      - ".env"
+      - ".venv"
+      - ".DS_Store"
+      - ".pytest_cache"
+      - ".coverage"
+      - "htmlcov"
+      - "dist"
+      - "build"
+      - ".cache"
+    binary_extensions:
+      - "png"
+      - "jpg"
+      - "jpeg"
+      - "gif"
+      - "bmp"
+      - "ico"
+      - "svg"
+      - "pdf"
+      - "doc"
+      - "docx"
+      - "ppt"
+      - "pptx"
+      - "xls"
+      - "xlsx"
+      - "zip"
+      - "tar"
+      - "gz"
+      - "rar"
+      - "7z"
+      - "exe"
+      - "dll"
+      - "so"
+      - "dylib"
+      - "pyc"
+      - "pyo"
+      - "pyd"
+      - "class"
+      - "o"
+      - "obj"
+      - "bin"
+      - "dat"
+
+  ai_understand_core_modules:
+    retry_count: 3
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    language_detection: true
+    terminology_extraction: true
+    core_modules_prompt_template: |
+      你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
+
+      代码库结构:
+      {code_structure}
+
+      依赖关系:
+      {dependencies}
+
+      请提供以下内容:
+      1. 核心模块列表，每个模块包括:
+         - 模块名称
+         - 模块路径
+         - 模块功能描述
+         - 模块重要性评分 (1-10)
+         - 模块依赖关系
+      2. 整体架构概述
+      3. 模块之间的关系
+
+      以 JSON 格式输出，格式如下:
+      ```json
+      {
+        "core_modules": [
+          {
+            "name": "模块名称",
+            "path": "模块路径",
+            "description": "模块功能描述",
+            "importance": 评分,
+            "dependencies": ["依赖模块1", "依赖模块2"]
+          }
+        ],
+        "architecture": "整体架构概述",
+        "module_relationships": [
+          "模块A 依赖 模块B",
+          "模块C 调用 模块D"
+        ]
+      }
+      ```
+
+  prepare_rag_data:
+    max_chunk_size: 1000
+    chunk_overlap: 200
+    max_files: 100
+    exclude_extensions:
+      - "jpg"
+      - "jpeg"
+      - "png"
+      - "gif"
+      - "svg"
+      - "ico"
+      - "pdf"
+      - "zip"
+      - "tar"
+      - "gz"
+    include_extensions:
+      - "py"
+      - "js"
+      - "ts"
+      - "java"
+      - "c"
+      - "cpp"
+      - "h"
+      - "hpp"
+      - "cs"
+      - "go"
+      - "rs"
+      - "md"
+      - "txt"
+      - "json"
+      - "yml"
+      - "yaml"
+      - "toml"
+
+  generate_overall_architecture:
+    retry_count: 3
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    output_format: "markdown"
+    architecture_prompt_template: |
+      你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
+
+      代码库结构:
+      {code_structure}
+
+      核心模块:
+      {core_modules}
+
+      历史分析:
+      {history_analysis}
+
+      请提供以下内容:
+      1. 代码库概述
+         - 项目名称和简介
+         - 主要功能和用途
+         - 技术栈概述
+      2. 系统架构
+         - 高层架构图（用 ASCII 或 Markdown 表示）
+         - 主要组件和它们的职责
+         - 组件之间的交互
+      3. 核心模块详解
+         - 每个核心模块的功能和职责
+         - 模块之间的依赖关系
+         - 关键接口和数据流
+      4. 设计模式和原则
+         - 使用的主要设计模式
+         - 代码组织原则
+         - 最佳实践
+      5. 部署架构（如果适用）
+         - 部署环境
+         - 部署流程
+         - 扩展性考虑
+
+      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+
+  content_quality_check:
+    retry_count: 2
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    auto_fix: true
+    check_aspects:
+      - "completeness"
+      - "accuracy"
+      - "readability"
+      - "formatting"
+    quality_check_prompt_template: |
+      你是一个内容质量检查专家。请评估以下文档的质量，并提供改进建议。
+
+      文档内容:
+      {content}
+
+      请从以下方面评估文档质量:
+      1. 完整性: 文档是否涵盖了所有必要的信息？是否有明显的遗漏？
+      2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
+      3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
+      4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
+
+      对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
+
+      如果需要修复，请提供修复后的完整文档。
+
+  generate_module_details:
+    retry_count: 3
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    output_format: "markdown"
+    max_modules_per_batch: 5
+    module_details_prompt_template: |
+      你是一个代码库文档专家。请为以下模块生成详细的文档。
+
+      模块信息:
+      {module_info}
+
+      代码内容:
+      {code_content}
+
+      请提供以下内容:
+      1. 模块概述
+         - 模块名称和路径
+         - 模块的主要功能和用途
+         - 模块在整个代码库中的角色
+      2. 类和函数详解
+         - 每个类的功能、属性和方法
+         - 每个函数的功能、参数和返回值
+         - 重要的代码片段解释
+      3. 使用示例
+         - 如何使用该模块的主要功能
+         - 常见用例和模式
+      4. 依赖关系
+         - 该模块依赖的其他模块
+         - 依赖该模块的其他模块
+      5. 注意事项和最佳实践
+         - 使用该模块时需要注意的事项
+         - 推荐的最佳实践
+
+      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      确保文档中的代码引用能够链接到源代码。

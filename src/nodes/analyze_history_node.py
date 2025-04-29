@@ -91,11 +91,15 @@ class AnalyzeHistoryNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
 
+        # 获取分支名称
+        branch = shared.get("branch", "main")
+
         # 获取 LLM 配置
         llm_config = shared.get("llm_config", {})
 
         return {
             "repo_path": repo_path,
+            "branch": branch,
             "llm_config": llm_config,
             "max_commits": self.config.max_commits,
             "include_file_history": self.config.include_file_history,
@@ -118,6 +122,7 @@ class AnalyzeHistoryNode(Node):
             return {"error": prep_res["error"], "success": False}
 
         repo_path = prep_res["repo_path"]
+        branch = prep_res["branch"]
         max_commits = prep_res["max_commits"]
         include_file_history = prep_res["include_file_history"]
         analyze_contributors = prep_res["analyze_contributors"]
@@ -128,7 +133,7 @@ class AnalyzeHistoryNode(Node):
 
             # 获取提交历史
             log_and_notify(f"获取提交历史，最大数量: {max_commits}", "info")
-            commit_history = analyzer.get_commit_history(max_count=max_commits)
+            commit_history = analyzer.get_commit_history(max_count=max_commits, branch=branch)
 
             result = {
                 "commit_history": commit_history,

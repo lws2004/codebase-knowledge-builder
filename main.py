@@ -6,10 +6,9 @@ import argparse
 from pocketflow import Flow
 from dotenv import load_dotenv
 
-from src.nodes import AnalyzeHistoryNode
+from src.nodes import AnalyzeHistoryNode, InputNode, PrepareRepoNode
 from src.utils.env_manager import load_env_vars, get_llm_config
 from src.utils.config_loader import ConfigLoader
-from tests.test_flow import InputNode, PrepareRepoNode
 
 def create_flow():
     """创建流程
@@ -32,9 +31,12 @@ def main():
     """主函数"""
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="代码库知识构建器")
-    parser.add_argument("--repo-url", type=str, required=True, help="Git 仓库 URL")
-    parser.add_argument("--branch", type=str, default=None, help="分支名称")
-    parser.add_argument("--output", type=str, default="history_analysis.json", help="输出文件路径")
+    parser.add_argument("--repo-url", type=str, help="Git 仓库 URL")
+    parser.add_argument("--branch", type=str, help="分支名称")
+    parser.add_argument("--output-dir", type=str, help="输出目录")
+    parser.add_argument("--language", type=str, help="输出语言")
+    parser.add_argument("--local-path", type=str, help="本地仓库路径")
+    parser.add_argument("--output", type=str, default="history_analysis.json", help="历史分析输出文件路径")
     parser.add_argument("--env", type=str, default="default", help="环境名称，用于加载对应的配置文件")
     args = parser.parse_args()
 
@@ -44,27 +46,26 @@ def main():
     # 获取 LLM 配置
     llm_config = get_llm_config()
 
-    # 获取配置加载器
-    config_loader = ConfigLoader()
-
-    # 获取默认分支
-    default_branch = config_loader.get("git.default_branch", "main")
-    branch = args.branch or default_branch
-
     # 创建共享存储
     shared = {
         "llm_config": llm_config,
-        "input": {
-            "repo_url": args.repo_url,
-            "branch": branch
-        }
+        "args": [
+            f"--repo-url={args.repo_url}" if args.repo_url else "",
+            f"--branch={args.branch}" if args.branch else "",
+            f"--output-dir={args.output_dir}" if args.output_dir else "",
+            f"--language={args.language}" if args.language else "",
+            f"--local-path={args.local_path}" if args.local_path else ""
+        ]
     }
+
+    # 过滤掉空参数
+    shared["args"] = [arg for arg in shared["args"] if arg]
 
     # 创建流程
     flow = create_flow()
 
     # 运行流程
-    print(f"开始分析仓库: {args.repo_url}, 分支: {branch}")
+    print(f"开始分析仓库: {args.repo_url or '未指定'}")
     flow.run(shared)
 
     # 输出结果
