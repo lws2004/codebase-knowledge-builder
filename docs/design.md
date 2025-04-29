@@ -671,12 +671,23 @@ flowchart TD
     import hashlib
     import json
     import os
+    from datetime import datetime
+    from langfuse import Langfuse
+    from langfuse.decorators import observe
     from .env_manager import get_llm_config
     from .cache_manager import get_from_cache, save_to_cache
 
+    # 初始化 Langfuse 客户端
+    langfuse = Langfuse(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY", ""),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY", ""),
+        host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    )
+
+    @observe(langfuse=langfuse, name="call_llm")
     def call_llm(prompt, context=None, task_type=None, target_language='en',
                 retry_count=3, config=None):
-        """调用 LLM API 生成文本"""
+        """调用 LLM API 生成文本，并使用 Langfuse 进行追踪"""
         # 加载配置，优先使用传入的配置，否则从环境变量加载
         llm_config = config or get_llm_config()
 
@@ -687,7 +698,15 @@ flowchart TD
         cache_key = _generate_cache_key(full_prompt)
         cached_result = get_from_cache(cache_key)
         if cached_result:
-            return cached_result, True
+            # 记录缓存命中
+            langfuse.generation(
+                name="llm_call_cached",
+                model=llm_config.get("model", "unknown"),
+                input={"prompt": prompt, "task_type": task_type},
+                output=cached_result["response"],
+                metadata={"from_cache": True, **cached_result.get("metadata", {})}
+            )
+            return cached_result["response"], True, {"from_cache": True, **cached_result.get("metadata", {})}
 
         # 获取 LLM 提供商
         provider = llm_config.get("provider", "openai").lower()
@@ -727,27 +746,102 @@ flowchart TD
             if llm_config.get("base_url"):
                 params["api_base"] = llm_config["base_url"]
 
+        # 创建 Langfuse 跟踪
+        generation = langfuse.generation(
+            name=f"llm_call_{task_type or 'default'}",
+            model=params["model"],
+            model_parameters={
+                "temperature": params.get("temperature", 0.7),
+                "max_tokens": params.get("max_tokens", 4000),
+                "provider": provider
+            },
+            input={"prompt": full_prompt, "task_type": task_type},
+            metadata={
+                "target_language": target_language,
+                "provider": provider
+            }
+        )
+
         # 重试机制
         for attempt in range(retry_count):
             try:
+                # 记录开始时间
+                start_time = time.time()
+
+                # 调用 API
                 response = completion(**params)
+
+                # 计算延迟
+                latency = time.time() - start_time
+
+                # 提取结果
                 result = response.choices[0].message.content
 
-                # 缓存结果
-                save_to_cache(cache_key, result)
+                # 收集元数据
+                metadata = {
+                    "model": params["model"],
+                    "provider": provider,
+                    "latency": latency,
+                    "tokens": {
+                        "prompt": response.usage.prompt_tokens,
+                        "completion": response.usage.completion_tokens,
+                        "total": response.usage.total_tokens
+                    },
+                    "attempt": attempt + 1,
+                    "timestamp": datetime.now().isoformat()
+                }
 
-                return result, True
+                # 更新 Langfuse 跟踪
+                generation.end(
+                    output=result,
+                    usage={
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens
+                    },
+                    metadata={
+                        "latency": latency,
+                        "success": True,
+                        "attempt": attempt + 1
+                    }
+                )
+
+                # 缓存结果
+                save_to_cache(cache_key, {
+                    "response": result,
+                    "metadata": metadata
+                })
+
+                # 记录模型性能
+                _record_model_performance(params["model"], task_type, latency,
+                                        response.usage.total_tokens, True)
+
+                return result, True, metadata
             except Exception as e:
                 # 记录错误
-                log_and_notify(f"LLM API 调用失败 (尝试 {attempt+1}/{retry_count}): {str(e)}",
-                              "error")
+                error_message = f"LLM API 调用失败 (尝试 {attempt+1}/{retry_count}): {str(e)}"
+                log_and_notify(error_message, "error")
 
-                # 最后一次尝试失败，返回错误
+                # 记录模型性能 (失败)
+                _record_model_performance(params["model"], task_type,
+                                        time.time() - start_time, 0, False)
+
+                # 最后一次尝试失败
                 if attempt == retry_count - 1:
-                    return f"LLM API 调用失败: {str(e)}", False
+                    # 更新 Langfuse 跟踪为失败
+                    generation.end(
+                        output=f"LLM API 调用失败: {str(e)}",
+                        metadata={
+                            "success": False,
+                            "error": str(e),
+                            "attempts": attempt + 1
+                        }
+                    )
+                    return f"LLM API 调用失败: {str(e)}", False, {"error": str(e)}
 
                 # 指数退避
-                time.sleep(2 ** attempt)
+                backoff_time = 2 ** attempt
+                time.sleep(backoff_time)
 
     def get_llm_config():
         """从环境变量加载 LLM 配置"""
@@ -784,31 +878,197 @@ flowchart TD
             # OpenAI 或其他提供商
             config["base_url"] = os.getenv("LLM_BASE_URL", "")
 
+        # 加载 Langfuse 配置
+        config["langfuse"] = {
+            "enabled": os.getenv("LANGFUSE_ENABLED", "true").lower() == "true",
+            "public_key": os.getenv("LANGFUSE_PUBLIC_KEY", ""),
+            "secret_key": os.getenv("LANGFUSE_SECRET_KEY", ""),
+            "host": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+            "project_name": os.getenv("LANGFUSE_PROJECT", "codebase-knowledge-builder")
+        }
+
         return config
     ```
 
-2.  **`evaluate_llm_output(output, task_type, criteria=None)`** (`utils/llm_evaluator.py`) - **质量保证**
-    - _输入_: LLM 输出 (str), 任务类型 (str), 可选的评估标准 (dict)
+2.  **`evaluate_llm_output(output, task_type, criteria=None, trace_id=None)`** (`utils/llm_evaluator.py`) - **质量保证**
+    - _输入_: LLM 输出 (str), 任务类型 (str), 可选的评估标准 (dict), Langfuse 跟踪 ID (str, 可选)
     - _输出_: 质量评分 (float), 问题标记 (list), 改进建议 (str)
     - _必要性_: 评估 LLM 生成内容的质量，确保满足预期标准。
-    - _实现建议_: 可使用规则基础检查或另一个 LLM 调用进行评估。
+    - _实现建议_: 可使用规则基础检查或另一个 LLM 调用进行评估，并通过 Langfuse 记录评估结果。
+
+    ```python
+    # 实现示例
+    from langfuse import Langfuse
+
+    def evaluate_llm_output(output, task_type, criteria=None, trace_id=None):
+        """评估 LLM 输出质量，并记录到 Langfuse"""
+        # 加载配置
+        config = get_llm_config()
+
+        # 初始化评估结果
+        evaluation = {
+            "score": 0.0,
+            "issues": [],
+            "suggestions": ""
+        }
+
+        # 根据任务类型选择评估标准
+        if criteria is None:
+            criteria = get_default_criteria(task_type)
+
+        # 执行评估 (可以使用规则或另一个 LLM 调用)
+        evaluation = perform_evaluation(output, criteria)
+
+        # 如果提供了 trace_id 且 Langfuse 已启用，记录评估结果
+        if trace_id and config.get("langfuse", {}).get("enabled", False):
+            try:
+                # 初始化 Langfuse 客户端
+                langfuse = Langfuse(
+                    public_key=config["langfuse"]["public_key"],
+                    secret_key=config["langfuse"]["secret_key"],
+                    host=config["langfuse"]["host"]
+                )
+
+                # 记录评估结果
+                langfuse.score(
+                    trace_id=trace_id,
+                    name=f"quality_{task_type}",
+                    value=evaluation["score"],
+                    comment=evaluation["suggestions"],
+                    metadata={
+                        "issues": evaluation["issues"],
+                        "task_type": task_type,
+                        "criteria": criteria
+                    }
+                )
+            except Exception as e:
+                # 记录错误但不中断流程
+                log_and_notify(f"Langfuse 评估记录失败: {str(e)}", "warning")
+
+        return evaluation["score"], evaluation["issues"], evaluation["suggestions"]
+    ```
+
+3.  **`collect_user_feedback(content_id, feedback_type, rating, comment=None, trace_id=None)`** (`utils/feedback_collector.py`) - **用户反馈**
+    - _输入_: 内容 ID (str), 反馈类型 (str), 评分 (float), 评论 (str, 可选), Langfuse 跟踪 ID (str, 可选)
+    - _输出_: 反馈 ID (str), 成功/失败状态 (bool)
+    - _必要性_: 收集用户对生成内容的反馈，用于改进系统。
+    - _实现建议_: 使用 Langfuse 记录用户反馈，并存储到本地数据库。
+
+    ```python
+    # 实现示例
+    from langfuse import Langfuse
+    import uuid
+    import json
+    import os
+    from datetime import datetime
+
+    def collect_user_feedback(content_id, feedback_type, rating, comment=None, trace_id=None):
+        """收集用户反馈并记录到 Langfuse"""
+        # 加载配置
+        config = get_llm_config()
+
+        # 生成反馈 ID
+        feedback_id = str(uuid.uuid4())
+
+        # 准备反馈数据
+        feedback_data = {
+            "id": feedback_id,
+            "content_id": content_id,
+            "type": feedback_type,
+            "rating": rating,
+            "comment": comment,
+            "timestamp": datetime.now().isoformat(),
+            "trace_id": trace_id
+        }
+
+        # 保存到本地数据库
+        success = save_feedback_to_db(feedback_data)
+
+        # 如果提供了 trace_id 且 Langfuse 已启用，记录反馈
+        if trace_id and config.get("langfuse", {}).get("enabled", False):
+            try:
+                # 初始化 Langfuse 客户端
+                langfuse = Langfuse(
+                    public_key=config["langfuse"]["public_key"],
+                    secret_key=config["langfuse"]["secret_key"],
+                    host=config["langfuse"]["host"]
+                )
+
+                # 记录用户反馈
+                langfuse.score(
+                    trace_id=trace_id,
+                    name=f"user_feedback_{feedback_type}",
+                    value=float(rating),
+                    comment=comment or "",
+                    metadata={
+                        "content_id": content_id,
+                        "feedback_id": feedback_id
+                    }
+                )
+            except Exception as e:
+                # 记录错误但不中断流程
+                log_and_notify(f"Langfuse 反馈记录失败: {str(e)}", "warning")
+
+        return feedback_id, success
+
+    def save_feedback_to_db(feedback_data):
+        """保存反馈到本地数据库"""
+        try:
+            # 确保目录存在
+            feedback_dir = "data/feedback"
+            os.makedirs(feedback_dir, exist_ok=True)
+
+            # 保存反馈数据
+            feedback_file = os.path.join(feedback_dir, f"{feedback_data['id']}.json")
+            with open(feedback_file, "w") as f:
+                json.dump(feedback_data, f, indent=2)
+
+            # 更新索引
+            index_file = os.path.join(feedback_dir, "index.json")
+            index_data = {}
+
+            if os.path.exists(index_file):
+                with open(index_file, "r") as f:
+                    index_data = json.load(f)
+
+            # 添加到索引
+            if "feedback" not in index_data:
+                index_data["feedback"] = []
+
+            index_data["feedback"].append({
+                "id": feedback_data["id"],
+                "content_id": feedback_data["content_id"],
+                "type": feedback_data["type"],
+                "rating": feedback_data["rating"],
+                "timestamp": feedback_data["timestamp"]
+            })
+
+            # 保存更新后的索引
+            with open(index_file, "w") as f:
+                json.dump(index_data, f, indent=2)
+
+            return True
+        except Exception as e:
+            log_and_notify(f"保存反馈失败: {str(e)}", "error")
+            return False
+    ```
 
 ### 代码分析函数
 
-3.  **`parse_code(code_path, language=None, max_file_size=10*1024*1024)`** (`utils/code_parser.py`) - **AI 输入提供者**
+4.  **`parse_code(code_path, language=None, max_file_size=10*1024*1024)`** (`utils/code_parser.py`) - **AI 输入提供者**
     - _输入_: 代码文件或目录路径 (str), 编程语言 (str, 可选自动检测), 最大文件大小限制 (int)
     - _输出_: 代码基础结构 (AST, 函数/类签名, 原始注释) (dict/object), 依赖关系 (dict)
     - _必要性_: 为 `call_llm` 提供准确、结构化的代码上下文。
     - _错误处理_: 处理不支持的语言、过大文件、解析错误等情况，提供降级解析选项。
     - _语言支持_: 实现对多种常见编程语言的支持，包括混合语言项目的处理策略。
 
-4.  **`detect_programming_language(file_path)`** (`utils/code_parser.py`)
+5.  **`detect_programming_language(file_path)`** (`utils/code_parser.py`)
     - _输入_: 文件路径 (str)
     - _输出_: 检测到的编程语言 (str), 置信度 (float)
     - _必要性_: 自动识别代码文件的编程语言，支持混合语言项目。
     - _实现建议_: 结合文件扩展名、shebang 行和内容特征进行检测。
 
-5.  **`analyze_code_size(repo_path)`** (`utils/code_parser.py`)
+6.  **`analyze_code_size(repo_path)`** (`utils/code_parser.py`)
     - _输入_: 代码库路径 (str)
     - _输出_: 代码库大小统计 (dict)，包含总大小、文件数、各语言代码行数等
     - _必要性_: 评估代码库规模，决定是否需要分割处理。
@@ -816,14 +1076,14 @@ flowchart TD
 
 ### Git 相关函数
 
-6.  **`get_commit_history(repo_path, max_commits=1000, filter_criteria=None)`** (`utils/git_utils.py`) - **AI 输入提供者**
+7.  **`get_commit_history(repo_path, max_commits=1000, filter_criteria=None)`** (`utils/git_utils.py`) - **AI 输入提供者**
     - _输入_: 本地仓库路径 (str), 最大提交数 (int), 过滤条件 (dict)
     - _输出_: Commit 历史列表 (list of dicts)
     - _必要性_: 为 `call_llm` 提供代码演变历史上下文。
     - _错误处理_: 处理 Git 操作失败、空仓库等情况。
     - _优化_: 实现智能过滤，只提取关键的架构变更提交。
 
-7.  **`git_clone(repo_url, local_path, depth=None, branch=None, auth=None, use_cache=True, cache_ttl=86400)`** (`utils/git_utils.py`)
+8.  **`git_clone(repo_url, local_path, depth=None, branch=None, auth=None, use_cache=True, cache_ttl=86400)`** (`utils/git_utils.py`)
     - _输入_: 仓库 URL (str), 本地目标路径 (str), 克隆深度 (int), 分支 (str), 认证信息 (dict), 是否使用缓存 (bool), 缓存有效期 (int, 秒)
     - _输出_: 克隆是否成功 (bool), 详细信息 (dict), 是否使用了缓存 (bool)
     - _必要性_: 从远程 URL 获取代码库。
@@ -950,7 +1210,7 @@ flowchart TD
 
 ### 可视化函数
 
-8.  **`generate_mermaid(data, type, theme=None, config=None)`** (`utils/viz_generator.py`)
+9.  **`generate_mermaid(data, type, theme=None, config=None)`** (`utils/viz_generator.py`)
     - _输入_: 结构化数据 (dict/list), 图表类型 ('flowchart', 'graph' 等) (str), 主题 (str), 配置 (dict)
     - _输出_: Mermaid 语法的字符串 (str)
     - _必要性_: 生成架构图、依赖关系图等可视化内容。
@@ -959,26 +1219,26 @@ flowchart TD
 
 ### RAG 相关函数
 
-9.  **`chunk_text(text, chunk_size=1000, overlap=200, smart_chunking=True)`** (`utils/rag_utils.py`)
+10.  **`chunk_text(text, chunk_size=1000, overlap=200, smart_chunking=True)`** (`utils/rag_utils.py`)
     - _输入_: 文本 (str), 块大小 (int), 重叠大小 (int), 智能分块标志 (bool)
     - _输出_: 文本块列表 (list of str)
     - _必要性_: 将代码和文档分割成适合嵌入和检索的块。
     - _智能分块_: 如果启用，尊重代码和文档的自然边界（如函数、类、段落）。
 
-10. **`get_embedding(text, model='default', batch=False)`** (`utils/embedding.py`)
+11. **`get_embedding(text, model='default', batch=False)`** (`utils/embedding.py`)
     - _输入_: 文本 (str 或 list of str), 模型名称 (str), 批处理标志 (bool)
     - _输出_: 文本的向量表示 (list of float 或 list of list of float)
     - _必要性_: 用于 RAG 中的文本嵌入，以便进行相似度搜索。
     - _错误处理_: 处理 API 错误、超长文本等情况。
     - _批处理_: 支持批量处理多个文本，提高效率。
 
-11. **`vector_search(query_embedding, index, top_k=5, similarity_threshold=0.7)`** (`utils/vector_db.py`)
+12. **`vector_search(query_embedding, index, top_k=5, similarity_threshold=0.7)`** (`utils/vector_db.py`)
     - _输入_: 查询向量 (list of float), 向量索引 (object), 返回数量 (int), 相似度阈值 (float)
     - _输出_: 最相似的文档片段 ID 和相似度 (list of tuples)
     - _必要性_: 用于 RAG 中根据用户问题检索相关代码或文档片段。
     - _过滤_: 根据相似度阈值过滤结果，确保只返回相关内容。
 
-12. **`create_vector_index(embeddings, metadata=None, index_type='flat')`** (`utils/vector_db.py`)
+13. **`create_vector_index(embeddings, metadata=None, index_type='flat')`** (`utils/vector_db.py`)
     - _输入_: 嵌入向量列表 (list of list of float), 元数据 (list of dict), 索引类型 (str)
     - _输出_: 向量索引对象 (object)
     - _必要性_: 构建 RAG 所需的向量数据库索引。
@@ -987,7 +1247,7 @@ flowchart TD
 
 ### 格式化与发布函数
 
-13. **`split_content_into_files(content_dict, output_dir, file_structure=None, repo_structure=None, justdoc_compatible=True)`** (`utils/formatter.py`)
+14. **`split_content_into_files(content_dict, output_dir, file_structure=None, repo_structure=None, justdoc_compatible=True)`** (`utils/formatter.py`)
     - _输入_: 包含教程各部分内容的字典 (dict), 输出目录 (str), 文件结构配置 (dict), 代码仓库结构 (dict), 是否生成 JustDoc 兼容文档 (bool)
     - _输出_: 生成的文件路径列表 (list of str)
     - _必要性_: 将生成的内容拆分为多个 Markdown 文件，便于导航和阅读。
@@ -1160,7 +1420,7 @@ flowchart TD
       }
       ```
 
-14. **`generate_navigation_links(files_info, current_file, related_content=None)`** (`utils/formatter.py`)
+15. **`generate_navigation_links(files_info, current_file, related_content=None)`** (`utils/formatter.py`)
     - _输入_: 文件信息列表 (list of dict), 当前文件路径 (str), 相关内容信息 (list of dict, 可选)
     - _输出_: 导航链接 HTML/Markdown 代码 (str)
     - _必要性_: 在多文件文档中生成导航链接，便于用户浏览。
@@ -1254,7 +1514,7 @@ flowchart TD
       ---
       ```
 
-15. **`create_code_links(code_references, repo_url=None, branch='main', context_text=None)`** (`utils/formatter.py`)
+16. **`create_code_links(code_references, repo_url=None, branch='main', context_text=None)`** (`utils/formatter.py`)
     - _输入_: 代码引用信息 (dict), 仓库 URL (str), 分支名 (str), 上下文文本 (str, 可选)
     - _输出_: 带有源码链接的代码引用 Markdown (str) 或嵌入了链接的上下文文本
     - _必要性_: 为代码引用创建直接链接到源代码的链接，便于用户查看完整代码。
@@ -1371,7 +1631,7 @@ flowchart TD
           return "\n\n".join(result_paragraphs)
       ```
 
-16. **`generate_module_detail_page(module_name, module_info, related_modules, code_references, repo_url)`** (`utils/formatter.py`)
+17. **`generate_module_detail_page(module_name, module_info, related_modules, code_references, repo_url)`** (`utils/formatter.py`)
     - _输入_: 模块名称 (str), 模块信息 (dict), 相关模块列表 (list), 代码引用信息 (list), 仓库 URL (str)
     - _输出_: 模块详情页面的 Markdown 内容 (str)
     - _必要性_: 生成模块详情页面，将相关模块链接自然嵌入到文本中，使文档更加流畅。
@@ -5025,31 +5285,65 @@ Pydantic 提供了强大的数据验证功能，包括：
    - 使用 `uv pip compile` 生成锁定版本的 `requirements.txt`
    - 明确指定依赖的版本范围，避免自动升级到不兼容版本
 
+### 技术实现约束
+
+1. **技术栈简化原则**
+   - 优先使用现有技术栈实现功能，避免引入冗余技术
+   - 不引入额外库实现当前技术栈已能实现的功能
+   - 减少依赖数量，降低维护成本和潜在兼容性问题
+   - 遵循"最小依赖原则"，只引入必要的外部库
+
+2. **统一接口使用**
+   - 使用 LiteLLM 统一管理与大模型的交互，不直接引入 OpenAI、Anthropic 等特定提供商的 SDK
+   - 使用 Langfuse 统一处理可观测性和追踪，不引入其他监控工具
+   - 使用 Pydantic 统一处理数据验证，不引入其他验证库
+
+3. **技术选择标准**
+   - 功能完备性：能够满足核心需求
+   - 维护活跃度：有持续更新和社区支持
+   - 兼容性：与现有技术栈良好集成
+   - 性能：在资源消耗和执行效率间取得平衡
+   - 文档质量：有完善的文档和示例
+
 ### 核心依赖
 
 1. **LLM 集成**
    - 使用 [LiteLLM](https://github.com/BerriAI/litellm) (^0.12.0) 统一调用不同的 LLM API
    - 支持 OpenAI, Anthropic, Gemini 等主流 LLM 提供商
+   - 简化多模型供应商集成，提供统一的接口和错误处理
+   - **约束**: 不直接引入 OpenAI、Anthropic 等特定提供商的 SDK，所有 LLM 调用必须通过 LiteLLM 进行
 
-2. **代码分析**
+2. **LLM 可观测性与追踪**
+   - 使用 [Langfuse](https://github.com/langfuse/langfuse) (^2.0.0) 进行 LLM 应用的可观测性和追踪
+   - 支持记录 LLM 调用、评估生成质量和性能监控
+   - 提供详细的调用历史、token 使用统计和成本分析
+   - 支持用户反馈收集和模型性能评估
+   - **约束**: 不引入其他监控或日志工具进行 LLM 调用追踪
+
+3. **代码分析**
    - 使用 [tree-sitter](https://github.com/tree-sitter/py-tree-sitter) (^0.20.1) 进行代码解析
    - 使用 [GitPython](https://github.com/gitpython-developers/GitPython) (^3.1.40) 处理 Git 仓库和历史
+   - **约束**: 不使用其他代码解析库或Git操作库，避免功能重复
 
-3. **向量检索**
+4. **向量检索**
    - 使用 [FAISS](https://github.com/facebookresearch/faiss) (^1.7.4) 进行向量索引和检索
    - 使用 [sentence-transformers](https://github.com/UKPLab/sentence-transformers) (^2.2.2) 生成文本嵌入
+   - **约束**: 不引入其他向量数据库或嵌入模型库，充分利用FAISS的高性能特性
 
-4. **数据验证与类型检查**
+5. **数据验证与类型检查**
    - 使用 [Pydantic](https://docs.pydantic.dev/) (^2.5.0) 进行数据验证和类型检查
    - 支持配置模型、API 请求/响应模型和节点输入/输出验证
+   - **约束**: 不使用其他数据验证库，统一使用Pydantic进行所有数据验证和类型检查
 
-5. **文档生成**
+6. **文档生成**
    - 使用 [Markdown](https://python-markdown.github.io/) (^3.5) 处理 Markdown 文本
    - 使用 [WeasyPrint](https://weasyprint.org/) (^60.1) 将 Markdown 转换为 PDF
+   - **约束**: 不引入其他Markdown处理或PDF生成库，保持文档生成流程的一致性
 
-6. **Web 框架** (可选)
+7. **Web 框架** (可选)
    - 使用 [FastAPI](https://fastapi.tiangolo.com/) (^0.104.1) 构建 API 接口
    - 使用 [Streamlit](https://streamlit.io/) (^1.28.0) 构建简单的 Web UI
+   - **约束**: 如需Web功能，仅使用这两个框架，不引入其他Web框架
 
 ### 开发工具
 
@@ -5120,6 +5414,8 @@ codebase-knowledge-builder/
 
 6. **多种输出格式**：支持 Markdown 和 PDF 输出，并能一键发布到 GitHub Pages。
 
+7. **技术栈简化与约束**：优先使用现有技术栈实现功能，避免引入冗余技术，如使用LiteLLM统一管理与大模型交互而非直接引入OpenAI等SDK，减少依赖数量，降低维护成本和潜在兼容性问题。
+
 ### 后续步骤
 
 基于本设计文档，建议按以下步骤进行实施：
@@ -5128,6 +5424,7 @@ codebase-knowledge-builder/
    - 实现核心工具函数和基本节点结构
    - 搭建项目骨架和配置系统
    - 建立开发环境和测试框架
+   - 严格遵循技术实现约束，确保不引入冗余依赖
 
 2. **核心功能实现**（2-3周）
    - 实现代码解析和 AI 理解功能
@@ -5415,3 +5712,134 @@ def update_documentation(new_content, existing_file, user_sections_marker='<!-- 
    - 缓解：实现术语表、翻译检查和专业领域适配
 
 通过遵循本设计文档中的原则和最佳实践，团队可以构建一个高质量、可靠且易于扩展的代码库教程生成 Agent，为不同用户角色提供有价值的学习资源。
+
+### 文档生成增强功能
+
+#### JustDoc 支持与文件命名约定
+
+为了更好地支持 JustDoc 等文档发布平台，系统采用以下文件命名和组织约定：
+
+1. **文件命名规则**
+   - 主文档：`README.md` 或 `index.md`（包含项目概述和导航）
+   - 模块文档：直接使用模块名作为文件名，如 `core.md`、`utils.md`
+   - 功能文档：使用功能名称作为文件名，如 `installation.md`、`api.md`
+   - 避免使用空格和特殊字符，使用连字符（`-`）代替空格
+
+2. **目录结构**
+   - 所有生成的文档统一放置在代码仓库的 `docs/` 目录下
+   - 按照概览-模块方式组织文件，便于导航和查找
+   - 示例结构：
+     ```
+     docs/
+     ├── README.md                # 项目概述和导航
+     ├── architecture.md          # 架构概述
+     ├── installation.md          # 安装指南
+     ├── modules/                 # 模块文档目录
+     │   ├── core.md              # 核心模块文档
+     │   ├── utils.md             # 工具模块文档
+     │   └── ...
+     ├── api/                     # API 文档目录
+     │   ├── endpoints.md         # API 端点文档
+     │   └── ...
+     └── examples/                # 示例目录
+         ├── basic.md             # 基本示例
+         └── ...
+     ```
+
+3. **JustDoc 配置**
+   - 自动生成 `justdoc.json` 配置文件，指定文档结构和导航
+   - 支持 JustDoc 的元数据格式，如 frontmatter
+   - 示例配置：
+     ```json
+     {
+       "name": "项目名称",
+       "version": "1.0.0",
+       "description": "项目描述",
+       "basePath": "/docs",
+       "theme": "default",
+       "navigation": [
+         {
+           "title": "概述",
+           "path": "/README.md"
+         },
+         {
+           "title": "架构",
+           "path": "/architecture.md"
+         },
+         {
+           "title": "模块",
+           "items": [
+             {
+               "title": "核心模块",
+               "path": "/modules/core.md"
+             },
+             {
+               "title": "工具模块",
+               "path": "/modules/utils.md"
+             }
+           ]
+         }
+       ]
+     }
+     ```
+
+#### Emoji 支持
+
+为了使文档更加生动和易于理解，系统支持在生成的文档中添加 Emoji：
+
+1. **Emoji 使用策略**
+   - 标题 Emoji：每个主要标题前添加相关的 Emoji，增强视觉层次
+   - 列表 Emoji：在列表项前使用 Emoji 代替传统的无序列表标记
+   - 重点标记：使用 Emoji 标记重要信息、警告或提示
+   - 内容相关：根据内容主题自动选择相关的 Emoji
+
+2. **Emoji 映射**
+   - 维护主题-Emoji 映射表，确保一致性
+   - 示例映射：
+     ```json
+     {
+       "architecture": "🏗️",
+       "installation": "📥",
+       "configuration": "⚙️",
+       "api": "🔌",
+       "examples": "💡",
+       "warning": "⚠️",
+       "tip": "💡",
+       "note": "📝",
+       "important": "❗",
+       "module": "📦",
+       "function": "🔧",
+       "class": "🧩",
+       "interface": "🔄"
+     }
+     ```
+
+3. **智能 Emoji 选择**
+   - 分析内容主题和上下文，选择最相关的 Emoji
+   - 避免过度使用，保持文档的专业性
+   - 根据用户配置调整 Emoji 使用密度
+
+#### 模块链接嵌入
+
+为了提高文档的流畅性和可读性，系统将模块链接直接嵌入到相关引用部分，而非单独列出：
+
+1. **内联链接策略**
+   - 在提到模块或功能时，直接将其转换为链接
+   - 示例：「核心功能由 [数据处理模块](modules/data_processing.md) 实现」
+   - 避免在段落末尾堆积链接引用
+
+2. **上下文感知链接**
+   - 根据上下文确定链接目标，避免冗余
+   - 同一模块在同一段落中只链接一次
+   - 为链接添加悬停提示，显示简短描述
+
+3. **代码引用链接**
+   - 代码片段中的类、函数等符号直接链接到源代码
+   - 示例：
+     ```python
+     # 这个函数链接到源代码文件
+     def process_data(input_data):
+         # 实现细节...
+     ```
+
+通过这些增强功能，生成的文档不仅结构清晰、内容准确，还具有良好的可读性和导航体验，同时符合现代文档平台的最佳实践。
