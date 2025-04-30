@@ -2,15 +2,18 @@
 使用 requests 库测试 AnalyzeHistoryNode 节点。
 这个脚本模拟了一个简单的 Git 仓库，并使用 AnalyzeHistoryNode 节点分析它。
 """
-import os
+
 import json
-import tempfile
+import os
 import shutil
 import subprocess
+import tempfile
+
 import requests
-from dotenv import load_dotenv
+
 from src.nodes import AnalyzeHistoryNode
-from src.utils.env_manager import load_env_vars, get_llm_config
+from src.utils.env_manager import get_llm_config, load_env_vars
+
 
 def create_test_repo():
     """创建一个测试 Git 仓库
@@ -53,6 +56,7 @@ def create_test_repo():
         shutil.rmtree(temp_dir)
         return None
 
+
 def test_with_real_repo(repo_url):
     """使用真实的 Git 仓库测试
 
@@ -75,6 +79,7 @@ def test_with_real_repo(repo_url):
         print(f"清理临时目录: {temp_dir}")
         shutil.rmtree(temp_dir)
 
+
 def test_node(repo_path):
     """测试 AnalyzeHistoryNode 节点
 
@@ -88,17 +93,10 @@ def test_node(repo_path):
     llm_config = get_llm_config()
 
     # 创建共享存储
-    shared = {
-        "repo_path": repo_path,
-        "llm_config": llm_config
-    }
+    shared = {"repo_path": repo_path, "llm_config": llm_config}
 
     # 创建节点配置
-    node_config = {
-        "max_commits": 20,
-        "include_file_history": True,
-        "analyze_contributors": True
-    }
+    node_config = {"max_commits": 20, "include_file_history": True, "analyze_contributors": True}
 
     # 创建节点
     node = AnalyzeHistoryNode(config=node_config)
@@ -114,7 +112,7 @@ def test_node(repo_path):
         analysis = shared["history_analysis"]
 
         # 打印摘要信息
-        print(f"\n分析完成:")
+        print("\n分析完成:")
         print(f"- 提交数量: {analysis.get('commit_count', 0)}")
         print(f"- 贡献者数量: {analysis.get('contributor_count', 0)}")
         print(f"- 分析的文件数量: {len(analysis.get('file_histories', {}))}")
@@ -139,6 +137,7 @@ def test_node(repo_path):
         error = shared.get("history_analysis", {}).get("error", "未知错误")
         print(f"\n分析失败: {error}")
 
+
 def test_with_requests():
     """使用 requests 库测试 GitHub API
 
@@ -157,17 +156,18 @@ def test_with_requests():
         # 解析响应
         repo_data = response.json()
 
-        print(f"仓库信息:")
+        print("仓库信息:")
         print(f"- 名称: {repo_data.get('name')}")
         print(f"- 描述: {repo_data.get('description')}")
         print(f"- 星标数: {repo_data.get('stargazers_count')}")
         print(f"- Fork 数: {repo_data.get('forks_count')}")
 
         # 使用断言而不是返回值
-        assert repo_data.get('name') is not None, "仓库名称不应为空"
+        assert repo_data.get("name") is not None, "仓库名称不应为空"
     except requests.RequestException as e:
         print(f"请求失败: {str(e)}")
         assert False, f"请求失败: {str(e)}"
+
 
 def main():
     """主函数"""
@@ -196,6 +196,7 @@ def main():
         shutil.rmtree(repo_path)
 
     print("\n测试完成")
+
 
 if __name__ == "__main__":
     main()
