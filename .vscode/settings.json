@@ -8,21 +8,7 @@
     
     // 代码格式化设置
     "editor.formatOnSave": true,
-    "python.formatting.provider": "black",
-    "python.formatting.blackArgs": [
-        "--line-length",
-        "100"
-    ],
-    
-    // 代码检查设置
-    "python.linting.enabled": true,
-    "python.linting.pylintEnabled": false,
-    "python.linting.flake8Enabled": true,
-    "python.linting.flake8Args": [
-        "--max-line-length=100",
-        "--ignore=E203,E501,W503"
-    ],
-    
+
     // 文件排除设置
     "files.exclude": {
         "**/__pycache__": true,
