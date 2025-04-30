@@ -742,7 +742,7 @@ flowchart TD
       本模块被 [`formatter`](../utils/formatter.md) 模块依赖，用于处理文本格式化前的预处理工作。
 
       ---
-      
+
       **相关模块:** [Formatter](../utils/formatter.md) | [Text Processor](../utils/text-processor.md)
 
 17. **`format_markdown(content_dict, template=None, toc=True, nav_links=True, add_emojis=True)`** (`utils/formatter.py`)
@@ -1256,15 +1256,13 @@ class GlobalErrorHandler:
 
 1. **一致的代码风格**
    - 遵循 [PEP 8](https://peps.python.org/pep-0008/) 编码规范
-   - 使用 [Black](https://github.com/psf/black) 自动格式化代码
-   - 使用 [isort](https://pycqa.github.io/isort/) 对导入进行排序
-   - 使用 [flake8](https://flake8.pycqa.org/) 进行代码质量检查
-   - 在项目根目录提供配置文件，确保 AI 和人类遵循相同标准
+   - 使用 [Ruff](https://github.com/astral-sh/ruff) 进行代码格式化、导入排序和代码质量检查
+   - 在项目根目录的 `pyproject.toml` 中提供统一配置，确保 AI 和人类遵循相同标准
 
 2. **代码长度约束**
    - 单文件代码行数：不超过 300 行（不含注释和空行）
    - 单个函数/方法行数：不超过 30 行
-   - 单行长度：不超过 120 个字符（与 Black 默认设置一致）
+   - 单行长度：不超过 120 个字符
    - 单个类行数：不超过 200 行
    - 单个节点类：不超过 100 行
    - 嵌套层级：不超过 2 层
@@ -1736,9 +1734,7 @@ Pydantic 提供了强大的数据验证功能，包括：
 ### 开发工具
 
 1. **代码质量**
-   - 使用 [Black](https://github.com/psf/black) (^23.10.0) 自动格式化代码
-   - 使用 [isort](https://pycqa.github.io/isort/) (^5.12.0) 对导入进行排序
-   - 使用 [flake8](https://flake8.pycqa.org/) (^6.1.0) 进行代码质量检查
+   - 使用 [Ruff](https://github.com/astral-sh/ruff) (^0.1.6) 进行代码格式化、导入排序和代码质量检查
    - 使用 [Pydantic](https://docs.pydantic.dev/) (^2.5.0) 进行数据验证和类型检查
 
 2. **测试工具**

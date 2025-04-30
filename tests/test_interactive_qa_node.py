@@ -15,7 +15,7 @@ class TestInteractiveQANode(unittest.TestCase):
         self.node = InteractiveQANode()
         self.shared = {
             "user_query": "如何使用这个代码库？",
-            "vector_index": {},
+            "vector_index": {"dummy": "index"},  # 确保不为空
             "text_chunks": ["这是第一个文本块", "这是第二个文本块"],
             "llm_config": {},
             "language": "zh",

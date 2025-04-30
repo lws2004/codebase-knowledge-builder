@@ -2,8 +2,7 @@
     "recommendations": [
         "ms-python.python",
         "ms-python.vscode-pylance",
-        "ms-python.black-formatter",
-        "ms-python.flake8",
+        "charliermarsh.ruff", // 替代 Black、isort 和 Flake8
         "njpwerner.autodocstring",
         "streetsidesoftware.code-spell-checker",
         "yzhang.markdown-all-in-one",

@@ -8,10 +8,8 @@ version = "0.1.1"
 description = "A tool for analyzing Git repositories and generating knowledge documents"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
-authors = [
-    {name = "yuanyu", email = "lws2004@163.com"},
-]
+license = { text = "MIT" }
+authors = [{ name = "yuanyu", email = "lws2004@163.com" }]
 dependencies = [
     "pocketflow>=0.0.2",
     "litellm>=0.13.0",
@@ -25,23 +23,36 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "black>=24.0.0",
-    "isort>=5.12.0",
-    "mypy>=1.0.0",
-]
+dev = ["pytest>=8.0.0", "black>=24.0.0", "isort>=5.12.0", "mypy>=1.0.0"]
 
 [tool.setuptools]
 packages = ["src"]
 
-[tool.black]
-line-length = 100
-target-version = ["py310"]
+# 所有格式化和 linting 功能现在由 Ruff 提供
 
-[tool.isort]
-profile = "black"
-line_length = 100
+[tool.ruff]
+# Python linter 配置
+line-length = 120
+target-version = "py310"
+# E: pycodestyle 错误
+# F: pyflakes 错误
+# W: pycodestyle 警告
+# I: isort 规则
+# C: McCabe 复杂度
+# N: PEP8 命名规则
+# D: pydocstyle 文档规则
+select = ["E", "F", "W", "I", "C", "N", "D"]
+ignore = ["E203", "D203", "D212"]
+exclude = [".git", "__pycache__", "build", "dist", ".venv"]
+# 允许自动修复
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.mccabe]
+max-complexity = 10
+
+[tool.ruff.pydocstyle]
+convention = "google"
 
 [tool.mypy]
 python_version = "3.10"
@@ -54,3 +65,50 @@ disallow_incomplete_defs = true
 module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+python_classes = "Test*"
+addopts = "--verbose"
+
+[tool.code-style]
+# 代码长度约束
+max_file_lines = 300
+max_function_lines = 30
+max_line_length = 120
+max_class_lines = 200
+max_node_class_lines = 100
+max_nesting_level = 2
+max_function_params = 5
+
+# 文档风格约束
+[tool.code-style.documentation]
+require_docstrings = ["class", "function", "method", "module"]
+docstring_style = "google"
+max_docstring_lines = 20
+
+[tool.code-style.documentation.required_sections]
+function = ["Args", "Returns", "Raises"]
+class = ["Attributes", "Methods"]
+
+# 命名约定
+[tool.code-style.naming]
+class_pattern = "[A-Z][a-zA-Z0-9]+"
+function_pattern = "[a-z][a-z0-9_]+"
+variable_pattern = "[a-z][a-z0-9_]+"
+constant_pattern = "[A-Z][A-Z0-9_]+"
+private_pattern = "_[a-z][a-z0-9_]+"
+node_class_pattern = "[A-Z][a-zA-Z0-9]+(Node|Flow)"
+
+# 导入规则
+[tool.code-style.imports]
+forbidden_imports = ["from __future__ import *", "import *"]
+import_order = [
+    "standard_library",
+    "third_party",
+    "first_party",
+    "local_folder",
+]
+import_group_spacing = 1
