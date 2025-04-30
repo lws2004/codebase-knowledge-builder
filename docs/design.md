@@ -555,30 +555,30 @@ flowchart TD
 
 ### 格式化与发布函数
 
-14. **`split_content_into_files(content_dict, output_dir, file_structure=None, repo_structure=None, justdoc_compatible=True)`** (`utils/formatter.py`)
-    - _输入_: 包含教程各部分内容的字典 (dict), 输出目录 (str), 文件结构配置 (dict), 代码仓库结构 (dict), 是否生成 JustDoc 兼容文档 (bool)
+14. **`split_content_into_files(content_dict, output_dir, file_structure=None, repo_structure=None, just_the_docs_compatible=True)`** (`utils/formatter.py`)
+    - _输入_: 包含教程各部分内容的字典 (dict), 输出目录 (str), 文件结构配置 (dict), 代码仓库结构 (dict), 是否生成 [Just the Docs](https://just-the-docs.com/) 兼容文档 (bool)
     - _输出_: 生成的文件路径列表 (list of str)
     - _必要性_: 将生成的内容拆分为多个 Markdown 文件，便于导航和阅读。
     - _文件结构_: 采用概览-模块方式组织文件，文件放置在与代码仓库结构对应的目录中。
-    - _JustDoc 命名约定_:
+    - _Just the Docs 命名约定_:
       - 使用 `index.md` 作为目录索引文件
       - 目录和文件名使用小写字母
       - 多单词名称使用连字符（-）分隔，而非下划线
-      - 每个文件包含 JustDoc 兼容的元数据（title, category, order 等）
-    - _文档放置_: 生成的文档统一放置到代码仓库对应的目录结构中，与源代码保持一致，便于查找和通过 JustDoc 输出线上文档。
+      - 每个文件包含 [Just the Docs](https://just-the-docs.com/) 兼容的元数据（title, parent, nav_order 等）
+    - _文档放置_: 生成的文档统一放置到代码仓库对应的目录结构中，与源代码保持一致，便于查找和通过 Just the Docs 输出线上文档。
     - _路径映射实现_:
       ```python
       def map_module_to_docs_path(module_name, repo_structure):
-          """将模块名映射到文档路径，符合 JustDoc 命名约定"""
+          """将模块名映射到文档路径，符合 Just the Docs 命名约定"""
           # 1. 查找模块在代码仓库中的位置
           # 2. 将源代码路径转换为文档路径
           # 3. 处理特殊情况（如找不到对应路径）
-          # 4. 将下划线转换为连字符，符合 JustDoc 命名约定
+          # 4. 将下划线转换为连字符，符合 Just the Docs 命名约定
           # 5. 返回完整的文档路径
       ```
     - _文件结构示例_:
       ```python
-      # 文件结构示例 - 符合 JustDoc 的命名约定
+      # 文件结构示例 - 符合 Just the Docs 的命名约定
       default_structure = {
           # 概览文件固定位置
           "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
@@ -587,11 +587,11 @@ flowchart TD
           "docs/glossary.md": {"title": "术语表", "sections": ["glossary"]},
           "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
 
-          # 模块文档放置在与代码仓库结构对应的目录中，使用 JustDoc 兼容的命名
+          # 模块文档放置在与代码仓库结构对应的目录中，使用 Just the Docs 兼容的命名
           "docs/{module_dir}/{module_file}.md": {"title": "{module_title}", "sections": ["description", "api", "examples"]}
       }
 
-      # 模块文件生成示例 - 符合 JustDoc 命名约定
+      # 模块文件生成示例 - 符合 Just the Docs 命名约定
       # 源代码: src/auth/service.py -> 文档: docs/auth/service.md
       # 源代码: src/data_processor/main.py -> 文档: docs/data-processor/main.md
       # 源代码: utils/helpers/string_utils.py -> 文档: docs/utils/helpers/string-utils.md
@@ -677,7 +677,7 @@ flowchart TD
 
       > 此函数位于 `src/utils/formatter.py` 模块中，负责将生成的内容转换为格式化的 Markdown。
 
-      <!-- JustDoc 兼容的代码引用元数据 -->
+      <!-- Just the Docs 兼容的代码引用元数据 -->
       ```yaml
       source:
         file: src/utils/formatter.py
@@ -782,7 +782,7 @@ flowchart TD
       - **Docsify**: 生成 Docsify 配置文件
       - **VuePress**: 生成 VuePress 配置文件
       - **MkDocs**: 生成 MkDocs 配置文件
-      - **JustDoc**: 支持 JustDoc 文档系统
+      - **Just the Docs**: 支持 [Just the Docs](https://just-the-docs.com/) 文档系统
     - _错误处理_: 处理认证失败、权限问题、网络错误等情况。
     - _验证_: 发布后验证内容是否正确显示，链接是否有效。
     - _多文件支持_: 保持目录结构和文件间链接关系，确保发布后的导航正常工作。
@@ -1015,29 +1015,29 @@ graph TD
 
 下表概述了主要节点/流程在各流程阶段中的对应关系、错误处理策略和可扩展性设计：
 
-| 节点/流程 (Node/Flow)           | 对应流程阶段 | 错误处理策略 | 可扩展性设计 |
-| :------------------------------ | :------------ | :----------- | :----------- |
-| `InputNode`                     | 🏷️ 1: 输入与准备 | 输入验证，提供默认值 | 支持自定义参数扩展 |
-| `PrepareRepoNode`               | 🏷️ 1: 输入与准备 | 处理网络错误，权限问题 | 支持多种代码库来源 |
-| `AnalyzeRepoFlow`               | 🏷️ 2: AI 理解 | 合并可用分析结果 | 模块化设计，支持新分析器 |
-| ↳ `ParseCodeBatchNode`          | 🏷️ 2.1: 代码解析 | 降级解析，跳过问题文件 | 支持多种编程语言 |
-| ↳ `AIUnderstandCoreModulesNode` | 🏷️ 2.2: AI 核心理解 | LLM 调用重试，结果验证 | 可配置理解深度，支持多语言 |
-| ↳ `AnalyzeHistoryNode`          | 🏷️ 2.1: 代码解析 | 处理空仓库，历史截断 | 支持过滤和聚焦 |
-| ↳ `PrepareRAGDataNode`          | 🏷️ 2.3: RAG 数据准备 | 处理大文件，优化分块 | 可配置索引类型和参数 |
-| `GenerateContentFlow`           | 🏷️ 3: AI 生成 | 内容质量检查，重新生成 | 插件式内容生成器 |
-| ↳ `GenerateOverallArchitectureNode` | 🏷️ 3.1: 生成整体内容 | 结构验证，降级生成 | 支持多种架构表示，增强可视化 |
-| ↳ `GenerateApiDocsNode`         | 🏷️ 3.1: 生成整体内容 | API 提取失败处理 | 支持多种 API 风格 |
-| ↳ `ContentQualityCheckNode`     | 🏷️ 3.1: 生成整体内容 | 质量评估反馈 | 可配置质量标准 |
-| ↳ `GenerateModuleDetailsNode`   | 🏷️ 3.2: 生成模块细节 | 模块缺失处理 | 支持自定义模块模板 |
-| ↳ `ModuleQualityCheckNode`      | 🏷️ 3.2: 生成模块细节 | 质量评估反馈 | 可配置质量标准 |
-| ↳ `GenerateTimelineNode`        | 🏷️ 3.1: 生成整体内容 | 历史数据不足处理 | 支持多种时间线格式 |
-| ↳ `GenerateDependencyNode`      | 🏷️ 3.1: 生成整体内容 | 依赖分析失败处理 | 支持多种依赖图表示 |
-| ↳ `GenerateGlossaryNode`        | 🏷️ 3.1: 生成整体内容 | 术语提取失败处理 | 支持领域特定术语 |
-| ↳ `GenerateQuickLookNode`       | 🏷️ 3.1: 生成整体内容 | 内容不足处理 | 可配置概览深度 |
-| `CombineAndTranslateNode`       | 🏷️ 4.1: 内容组合 & 4.2.1: 翻译检查 | 内容缺失处理，翻译错误 | 支持多语言和自定义模板，增强术语处理 |
-| `FormatOutputNode`              | 🏷️ 4.2.2: 格式化输出 | 格式转换错误处理 | 支持多种输出格式 |
-| `InteractiveQANode`             | 🏷️ 5: 交互问答 | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈 |
-| `PublishNode`                   | 🏷️ 6: 发布 | 认证失败，网络错误 | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 JustDoc |
+| 节点/流程 (Node/Flow)               | 对应流程阶段                      | 错误处理策略               | 可扩展性设计                                                                                                                                                     |
+| :---------------------------------- | :-------------------------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InputNode`                         | 🏷️ 1: 输入与准备                   | 输入验证，提供默认值       | 支持自定义参数扩展                                                                                                                                               |
+| `PrepareRepoNode`                   | 🏷️ 1: 输入与准备                   | 处理网络错误，权限问题     | 支持多种代码库来源                                                                                                                                               |
+| `AnalyzeRepoFlow`                   | 🏷️ 2: AI 理解                      | 合并可用分析结果           | 模块化设计，支持新分析器                                                                                                                                         |
+| ↳ `ParseCodeBatchNode`              | 🏷️ 2.1: 代码解析                   | 降级解析，跳过问题文件     | 支持多种编程语言                                                                                                                                                 |
+| ↳ `AIUnderstandCoreModulesNode`     | 🏷️ 2.2: AI 核心理解                | LLM 调用重试，结果验证     | 可配置理解深度，支持多语言                                                                                                                                       |
+| ↳ `AnalyzeHistoryNode`              | 🏷️ 2.1: 代码解析                   | 处理空仓库，历史截断       | 支持过滤和聚焦                                                                                                                                                   |
+| ↳ `PrepareRAGDataNode`              | 🏷️ 2.3: RAG 数据准备               | 处理大文件，优化分块       | 可配置索引类型和参数                                                                                                                                             |
+| `GenerateContentFlow`               | 🏷️ 3: AI 生成                      | 内容质量检查，重新生成     | 插件式内容生成器                                                                                                                                                 |
+| ↳ `GenerateOverallArchitectureNode` | 🏷️ 3.1: 生成整体内容               | 结构验证，降级生成         | 支持多种架构表示，增强可视化                                                                                                                                     |
+| ↳ `GenerateApiDocsNode`             | 🏷️ 3.1: 生成整体内容               | API 提取失败处理           | 支持多种 API 风格                                                                                                                                                |
+| ↳ `ContentQualityCheckNode`         | 🏷️ 3.1: 生成整体内容               | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
+| ↳ `GenerateModuleDetailsNode`       | 🏷️ 3.2: 生成模块细节               | 模块缺失处理               | 支持自定义模块模板                                                                                                                                               |
+| ↳ `ModuleQualityCheckNode`          | 🏷️ 3.2: 生成模块细节               | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
+| ↳ `GenerateTimelineNode`            | 🏷️ 3.1: 生成整体内容               | 历史数据不足处理           | 支持多种时间线格式                                                                                                                                               |
+| ↳ `GenerateDependencyNode`          | 🏷️ 3.1: 生成整体内容               | 依赖分析失败处理           | 支持多种依赖图表示                                                                                                                                               |
+| ↳ `GenerateGlossaryNode`            | 🏷️ 3.1: 生成整体内容               | 术语提取失败处理           | 支持领域特定术语                                                                                                                                                 |
+| ↳ `GenerateQuickLookNode`           | 🏷️ 3.1: 生成整体内容               | 内容不足处理               | 可配置概览深度                                                                                                                                                   |
+| `CombineAndTranslateNode`           | 🏷️ 4.1: 内容组合 & 4.2.1: 翻译检查 | 内容缺失处理，翻译错误     | 支持多语言和自定义模板，增强术语处理                                                                                                                             |
+| `FormatOutputNode`                  | 🏷️ 4.2.2: 格式化输出               | 格式转换错误处理           | 支持多种输出格式                                                                                                                                                 |
+| `InteractiveQANode`                 | 🏷️ 5: 交互问答                     | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈                                                                                                                                               |
+| `PublishNode`                       | 🏷️ 6: 发布                         | 认证失败，网络错误         | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 [Just the Docs](https://just-the-docs.com/) |
 
 #### 核心节点详细设计
 
@@ -1132,11 +1132,11 @@ graph TD
 
 ### 错误处理策略
 
-| 错误类型 | 严重程度 | 处理策略 | 恢复机制 | 通知级别 |
-|---------|---------|---------|---------|---------|
-| **致命错误** | 高 | 停止流程，保存状态 | 需要人工干预 | 立即通知用户 |
-| **可恢复错误** | 中 | 重试、降级处理 | 自动恢复或回退到备选方案 | 警告通知 |
-| **警告** | 低 | 记录并继续 | 不需要恢复 | 日志记录 |
+| 错误类型       | 严重程度 | 处理策略           | 恢复机制                 | 通知级别     |
+| -------------- | -------- | ------------------ | ------------------------ | ------------ |
+| **致命错误**   | 高       | 停止流程，保存状态 | 需要人工干预             | 立即通知用户 |
+| **可恢复错误** | 中       | 重试、降级处理     | 自动恢复或回退到备选方案 | 警告通知     |
+| **警告**       | 低       | 记录并继续         | 不需要恢复               | 日志记录     |
 
 ### 全局错误处理器设计
 
@@ -1959,7 +1959,7 @@ def update_documentation(new_content, existing_file, user_sections_marker='<!-- 
 
 #### JustDoc 支持与文件命名约定
 
-为了更好地支持 JustDoc 等文档发布平台，系统采用以下文件命名和组织约定：
+为了更好地支持 [Just the Docs](https://just-the-docs.com/) 等文档发布平台，系统采用以下文件命名和组织约定：
 
 1. **文件命名规则**
    - 主文档：`README.md` 或 `index.md`（包含项目概述和导航）
@@ -1988,41 +1988,43 @@ def update_documentation(new_content, existing_file, user_sections_marker='<!-- 
          └── ...
      ```
 
-3. **JustDoc 配置**
-   - 自动生成 `justdoc.json` 配置文件，指定文档结构和导航
-   - 支持 JustDoc 的元数据格式，如 frontmatter
+3. **Just the Docs 配置**
+   - 自动生成 `_config.yml` 配置文件，指定文档结构和导航
+   - 支持 [Just the Docs](https://just-the-docs.com/) 的元数据格式，如 frontmatter
    - 示例配置：
-     ```json
-     {
-       "name": "项目名称",
-       "version": "1.0.0",
-       "description": "项目描述",
-       "basePath": "/docs",
-       "theme": "default",
-       "navigation": [
-         {
-           "title": "概述",
-           "path": "/README.md"
-         },
-         {
-           "title": "架构",
-           "path": "/architecture.md"
-         },
-         {
-           "title": "模块",
-           "items": [
-             {
-               "title": "核心模块",
-               "path": "/modules/core.md"
-             },
-             {
-               "title": "工具模块",
-               "path": "/modules/utils.md"
-             }
-           ]
-         }
-       ]
-     }
+     ```yaml
+     # Just the Docs 配置示例
+     title: 项目名称
+     description: 项目描述
+     baseurl: "/docs"
+     url: "https://example.github.io"
+
+     # 主题设置
+     theme: just-the-docs
+     color_scheme: light
+
+     # 导航设置
+     nav_external_links:
+       - title: 项目仓库
+         url: https://github.com/username/repo
+         hide_icon: false
+
+     # 辅助导航
+     aux_links:
+       "GitHub":
+         - "//github.com/username/repo"
+
+     # 页面排序
+     nav_sort: case_sensitive
+
+     # 搜索设置
+     search_enabled: true
+     search:
+       heading_level: 2
+       previews: 3
+       preview_words_before: 5
+       preview_words_after: 10
+       tokenizer_separator: /[\s/]+/
      ```
 
 #### Emoji 支持
