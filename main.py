@@ -1,14 +1,22 @@
 """
 代码库知识构建器的主入口点。
 """
-import os
 import argparse
 from pocketflow import Flow
-from dotenv import load_dotenv
 
-from src.nodes import AnalyzeHistoryNode, InputNode, PrepareRepoNode
+from src.nodes import (
+    InputNode,
+    PrepareRepoNode,
+    AnalyzeRepoFlow,
+    GenerateContentFlow,
+    CombineAndTranslateNode,
+    FormatOutputNode,
+    InteractiveQANode,
+    PublishNode
+)
 from src.utils.env_manager import load_env_vars, get_llm_config
 from src.utils.config_loader import ConfigLoader
+
 
 def create_flow():
     """创建流程
@@ -16,16 +24,46 @@ def create_flow():
     Returns:
         流程
     """
+    # 加载配置
+    config_loader = ConfigLoader()
+
     # 创建节点
-    input_node = InputNode()
-    prepare_repo_node = PrepareRepoNode()
-    analyze_history_node = AnalyzeHistoryNode()
+    input_node = InputNode(
+        config_loader.get_node_config("input")
+    )
+    prepare_repo_node = PrepareRepoNode(
+        config_loader.get_node_config("prepare_repo")
+    )
+    analyze_repo_flow = AnalyzeRepoFlow(
+        config_loader.get("nodes.analyze_repo")
+    )
+    generate_content_flow = GenerateContentFlow(
+        config_loader.get("nodes.generate_content")
+    )
+    combine_translate_node = CombineAndTranslateNode(
+        config_loader.get_node_config("combine_translate")
+    )
+    format_output_node = FormatOutputNode(
+        config_loader.get_node_config("format_output")
+    )
+    interactive_qa_node = InteractiveQANode(
+        config_loader.get_node_config("interactive_qa")
+    )
+    publish_node = PublishNode(
+        config_loader.get_node_config("publish")
+    )
 
     # 连接节点
-    input_node >> prepare_repo_node >> analyze_history_node
+    input_node >> prepare_repo_node >> analyze_repo_flow
+    analyze_repo_flow >> generate_content_flow
+    generate_content_flow >> combine_translate_node
+    combine_translate_node >> format_output_node
+    format_output_node >> interactive_qa_node
+    interactive_qa_node >> publish_node
 
     # 创建流程
     return Flow(start=input_node)
+
 
 def main():
     """主函数"""
@@ -36,12 +74,30 @@ def main():
     parser.add_argument("--output-dir", type=str, help="输出目录")
     parser.add_argument("--language", type=str, help="输出语言")
     parser.add_argument("--local-path", type=str, help="本地仓库路径")
-    parser.add_argument("--output", type=str, default="history_analysis.json", help="历史分析输出文件路径")
-    parser.add_argument("--env", type=str, default="default", help="环境名称，用于加载对应的配置文件")
+    parser.add_argument("--user-query", type=str, help="用户问题")
+    parser.add_argument("--publish-target", type=str, help="发布目标平台")
+    parser.add_argument("--publish-repo", type=str, help="发布目标仓库")
+    parser.add_argument(
+        "--output-format",
+        type=str,
+        default="markdown",
+        help="输出格式"
+    )
+    parser.add_argument(
+        "--env",
+        type=str,
+        default="default",
+        help="环境名称，用于加载对应的配置文件"
+    )
     args = parser.parse_args()
 
     # 加载环境变量和配置
     load_env_vars(env=args.env)
+
+    # 加载配置
+    config_loader = ConfigLoader()
+    if args.env != "default":
+        config_loader.load_env_config(args.env)
 
     # 获取 LLM 配置
     llm_config = get_llm_config()
@@ -49,17 +105,20 @@ def main():
     # 创建共享存储
     shared = {
         "llm_config": llm_config,
-        "args": [
-            f"--repo-url={args.repo_url}" if args.repo_url else "",
-            f"--branch={args.branch}" if args.branch else "",
-            f"--output-dir={args.output_dir}" if args.output_dir else "",
-            f"--language={args.language}" if args.language else "",
-            f"--local-path={args.local_path}" if args.local_path else ""
-        ]
+        "repo_url": args.repo_url,
+        "branch": args.branch,
+        "output_dir": args.output_dir or config_loader.get(
+            "nodes.input.default_output_dir", "docs_output"
+        ),
+        "language": args.language or config_loader.get(
+            "nodes.input.default_language", "zh"
+        ),
+        "local_path": args.local_path,
+        "user_query": args.user_query,
+        "publish_target": args.publish_target,
+        "publish_repo": args.publish_repo,
+        "output_format": args.output_format
     }
-
-    # 过滤掉空参数
-    shared["args"] = [arg for arg in shared["args"] if arg]
 
     # 创建流程
     flow = create_flow()
@@ -69,35 +128,32 @@ def main():
     flow.run(shared)
 
     # 输出结果
-    if "history_analysis" in shared and shared["history_analysis"].get("success", False):
-        analysis = shared["history_analysis"]
+    if "output_files" in shared and shared["output_files"]:
+        # 打印输出文件信息
+        print("\n文档生成完成:")
+        print(f"- 输出目录: {shared.get('output_dir', '未指定')}")
+        print(f"- 生成的文件数量: {len(shared['output_files'])}")
 
-        # 打印摘要信息
-        print(f"\n分析完成:")
-        print(f"- 提交数量: {analysis.get('commit_count', 0)}")
-        print(f"- 贡献者数量: {analysis.get('contributor_count', 0)}")
-        print(f"- 分析的文件数量: {len(analysis.get('file_histories', {}))}")
+        # 打印文件列表
+        print("\n生成的文件:")
+        for file_path in shared["output_files"]:
+            print(f"- {file_path}")
 
-        # 保存结果到文件
-        import json
-        with open(args.output, "w", encoding="utf-8") as f:
-            # 移除过大的字段以减小文件大小
-            output_analysis = analysis.copy()
-            if "commit_history" in output_analysis:
-                output_analysis["commit_history"] = output_analysis["commit_history"][:10]  # 只保留前 10 个提交
+        # 如果有发布 URL，打印发布信息
+        if "publish_url" in shared and shared["publish_url"]:
+            print(f"\n文档已发布到: {shared['publish_url']}")
 
-            json.dump(output_analysis, f, indent=2, ensure_ascii=False)
+    # 如果有用户问题和回答，打印问答结果
+    if "user_query" in shared and shared["user_query"] and "answer" in shared:
+        print(f"\n问题: {shared['user_query']}")
+        print(f"\n回答: {shared['answer']}")
 
-        print(f"\n结果已保存到: {args.output}")
+    # 如果有错误，打印错误信息
+    if "error" in shared:
+        print(f"\n处理失败: {shared['error']}")
+    elif "output_files" not in shared or not shared["output_files"]:
+        print("\n处理完成，但没有生成文档文件")
 
-        # 打印历史总结
-        if "history_summary" in analysis and analysis["history_summary"]:
-            print("\n历史总结:")
-            print(analysis["history_summary"])
-    elif "error" in shared:
-        print(f"\n分析失败: {shared['error']}")
-    else:
-        print("\n分析完成，但没有生成历史分析结果")
 
 if __name__ == "__main__":
     main()

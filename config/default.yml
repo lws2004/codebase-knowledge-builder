@@ -318,3 +318,127 @@ nodes:
       请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
       使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
       确保文档中的代码引用能够链接到源代码。
+
+  module_quality_check:
+    retry_count: 2
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    auto_fix: true
+    check_aspects:
+      - "completeness"
+      - "accuracy"
+      - "readability"
+      - "formatting"
+    quality_check_prompt_template: |
+      你是一个模块文档质量检查专家。请评估以下模块文档的质量，并提供改进建议。
+
+      文档内容:
+      {content}
+
+      请从以下方面评估文档质量:
+      1. 完整性: 文档是否涵盖了模块的所有重要方面？是否有明显的遗漏？
+      2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
+      3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
+      4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
+
+      对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
+
+      如果需要修复，请提供修复后的完整文档。
+
+  combine_translate:
+    retry_count: 3
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    preserve_technical_terms: true
+    translation_prompt_template: |
+      你是一个专业的技术文档翻译专家。请将以下技术文档内容翻译成{target_language}语言。
+
+      请注意以下要求：
+      1. 保持代码、变量名和技术术语的原始形式，不要翻译它们
+      2. 保持 Markdown 格式，包括标题、列表、表格、代码块等
+      3. 保持文档结构和链接
+      4. 翻译应该准确、流畅、符合技术文档风格
+      5. 保留原文中的表情符号
+
+      以下是需要保留原样的技术术语列表：
+      {technical_terms}
+
+      需要翻译的内容：
+      {content}
+
+    consistency_check_prompt_template: |
+      你是一个技术文档质量检查专家。请检查以下技术文档内容的一致性问题，并提供修复建议。
+
+      请检查以下方面：
+      1. 术语一致性：同一概念在整个文档中应使用相同的术语
+      2. 格式一致性：标题、列表、表格等格式应保持一致
+      3. 风格一致性：语言风格、语气应保持一致
+      4. 链接一致性：确保所有内部链接正确指向目标
+      5. 结构一致性：文档结构应合理、层次分明
+
+      文档内容：
+      {content}
+
+  format_output:
+    output_format: "markdown"
+    add_toc: true
+    add_nav_links: true
+    add_emojis: true
+    justdoc_compatible: true
+    template: |
+      # {title}
+
+      {toc}
+
+      ## 简介
+
+      {introduction}
+
+      ## 系统架构
+
+      {architecture}
+
+      ## 核心模块
+
+      {core_modules}
+
+      ## 使用示例
+
+      {examples}
+
+      ## 常见问题
+
+      {faq}
+
+      ## 参考资料
+
+      {references}
+
+  interactive_qa:
+    retry_count: 3
+    quality_threshold: 0.7
+    model: "${LLM_MODEL:-gpt-4}"
+    max_context_chunks: 5
+    qa_prompt_template: |
+      你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。
+
+      代码库信息:
+      {code_info}
+
+      相关上下文:
+      {context}
+
+      用户问题:
+      {question}
+
+      请提供准确、全面的回答，包括相关代码引用和解释。如果无法回答，请说明原因。
+
+  publish:
+    platforms:
+      - "github"
+    github_pages_branch: "gh-pages"
+    github_pages_dir: "docs"
+    github_pages_index: "index.md"
+    github_pages_theme: "jekyll-theme-cayman"
+    github_pages_title: "代码库文档"
+    github_pages_description: "自动生成的代码库文档"

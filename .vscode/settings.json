@@ -26,5 +26,9 @@
         ".pytest_cache": true,
         ".coverage": true,
         "htmlcov": true
-    }
+    },
+
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+    {"file": ".gitmessage"}
+  ],
 }
