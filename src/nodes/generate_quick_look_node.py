@@ -1,14 +1,14 @@
-"""
-生成速览文档节点，用于生成代码库的速览文档。
-"""
-import os
+"""生成速览文档节点，用于生成代码库的速览文档。"""
 import json
-from typing import Dict, List, Any, Optional, Tuple
-from pydantic import BaseModel, Field
-from pocketflow import Node
+import os
+from typing import Any, Dict, Optional, Tuple
 
-from ..utils.logger import log_and_notify
+from pocketflow import Node
+from pydantic import BaseModel, Field
+
 from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class GenerateQuickLookNodeConfig(BaseModel):
     """GenerateQuickLookNode 配置"""
@@ -355,7 +355,7 @@ class GenerateQuickLookNode(Node):
         # 检查简洁性
         lines = content.split("\n")
         word_count = sum(len(line.split()) for line in lines)
-        
+
         # 理想的速览文档应该在500-800字之间
         if word_count < 500:
             conciseness_score = 0.7  # 可能太简短

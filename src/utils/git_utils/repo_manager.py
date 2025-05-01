@@ -1,12 +1,13 @@
-"""
-Git 仓库管理器，提供 Git 仓库的基本操作。
-"""
+"""Git 仓库管理器，提供 Git 仓库的基本操作。"""
 import os
 import shutil
 import tempfile
-from typing import Optional, List, Dict, Any
-from git import Repo, GitCommandError
+from typing import List, Optional
+
+from git import GitCommandError, Repo
+
 from ..logger import log_and_notify
+
 
 class GitRepoManager:
     """Git 仓库管理器，提供 Git 仓库的基本操作"""

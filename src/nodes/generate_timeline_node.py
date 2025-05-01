@@ -1,14 +1,14 @@
-"""
-生成时间线文档节点，用于生成代码库的演变时间线文档。
-"""
-import os
+"""生成时间线文档节点，用于生成代码库的演变时间线文档。"""
 import json
-from typing import Dict, List, Any, Optional, Tuple
-from pydantic import BaseModel, Field
-from pocketflow import Node
+import os
+from typing import Any, Dict, Optional, Tuple
 
-from ..utils.logger import log_and_notify
+from pocketflow import Node
+from pydantic import BaseModel, Field
+
 from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class GenerateTimelineNodeConfig(BaseModel):
     """GenerateTimelineNode 配置"""

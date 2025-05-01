@@ -1,8 +1,7 @@
-"""
-测试 InteractiveQANode
-"""
+"""测试 InteractiveQANode"""
+
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.nodes.interactive_qa_node import InteractiveQANode
 
@@ -21,7 +20,7 @@ class TestInteractiveQANode(unittest.TestCase):
             "language": "zh",
             "code_structure": {},
             "core_modules": {},
-            "conversation_history": []
+            "conversation_history": [],
         }
 
     def test_prep_with_query(self):
@@ -77,7 +76,7 @@ class TestInteractiveQANode(unittest.TestCase):
             "retry_count": 3,
             "quality_threshold": 0.7,
             "model": "gpt-4",
-            "max_context_chunks": 5
+            "max_context_chunks": 5,
         }
 
         # 模拟方法
@@ -103,8 +102,8 @@ class TestInteractiveQANode(unittest.TestCase):
             "quality_score": 0.8,
             "conversation_history": [
                 {"role": "user", "content": "如何使用这个代码库？"},
-                {"role": "assistant", "content": "这是回答"}
-            ]
+                {"role": "assistant", "content": "这是回答"},
+            ],
         }
 
         # 执行后处理阶段

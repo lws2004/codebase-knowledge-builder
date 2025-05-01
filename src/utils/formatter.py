@@ -1,13 +1,17 @@
-"""
-格式化工具，用于格式化生成的文档内容。
-"""
+"""格式化工具，用于格式化生成的文档内容。"""
+
 import os
 import re
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 
-def format_markdown(content_dict: Dict[str, str], template: Optional[str] = None,
-                   toc: bool = True, nav_links: bool = True, add_emojis: bool = True) -> str:
+def format_markdown(
+    content_dict: Dict[str, str],
+    template: Optional[str] = None,
+    toc: bool = True,
+    nav_links: bool = True,
+    add_emojis: bool = True,
+) -> str:
     """格式化 Markdown 内容
 
     Args:
@@ -52,8 +56,7 @@ def format_markdown(content_dict: Dict[str, str], template: Optional[str] = None
 """
 
     # 填充模板，处理可能缺失的键
-    for key in ["title", "introduction", "architecture", "core_modules",
-                "examples", "faq", "references", "toc"]:
+    for key in ["title", "introduction", "architecture", "core_modules", "examples", "faq", "references", "toc"]:
         if key not in content_dict:
             content_dict[key] = ""
 
@@ -72,7 +75,7 @@ def format_markdown(content_dict: Dict[str, str], template: Optional[str] = None
         nav_content = generate_navigation_links(
             content_dict.get("files_info", []),
             content_dict.get("current_file", ""),
-            content_dict.get("related_content", [])
+            content_dict.get("related_content", []),
         )
         content = nav_content + content
 
@@ -97,18 +100,18 @@ def generate_toc(markdown_text: str) -> str:
 
     for line in lines:
         # 匹配标题行，处理可能的前导空格
-        match = re.match(r'^\s*(#{2,6})\s+(.+)$', line)
+        match = re.match(r"^\s*(#{2,6})\s+(.+)$", line)
         if match:
             level = len(match.group(1)) - 1  # 减去1，因为我们不包括一级标题
             title = match.group(2)
 
             # 移除可能存在的emoji
-            title = re.sub(r'[\U00010000-\U0010ffff]', '', title)
+            title = re.sub(r"[\U00010000-\U0010ffff]", "", title)
 
             # 创建锚点
             anchor = title.lower().strip()
-            anchor = re.sub(r'[^\w\s-]', '', anchor)  # 移除特殊字符
-            anchor = re.sub(r'\s+', '-', anchor)      # 空格替换为连字符
+            anchor = re.sub(r"[^\w\s-]", "", anchor)  # 移除特殊字符
+            anchor = re.sub(r"\s+", "-", anchor)  # 空格替换为连字符
 
             # 添加到目录
             indent = "  " * (level - 1)
@@ -117,9 +120,9 @@ def generate_toc(markdown_text: str) -> str:
     return "\n".join(toc_lines)
 
 
-def generate_navigation_links(files_info: List[Dict[str, str]],
-                             current_file: str,
-                             related_content: List[Dict[str, str]]) -> str:
+def generate_navigation_links(
+    files_info: List[Dict[str, str]], current_file: str, related_content: List[Dict[str, str]]
+) -> str:
     """生成导航链接
 
     Args:
@@ -193,10 +196,12 @@ def generate_navigation_links(files_info: List[Dict[str, str]],
     return f"{nav_html}\n\n{breadcrumb}\n{related_html}\n---\n"
 
 
-def create_code_links(code_references: List[Dict[str, Any]],
-                     repo_url: Optional[str] = None,
-                     branch: str = "main",
-                     context_text: Optional[str] = None) -> str:
+def create_code_links(
+    code_references: List[Dict[str, Any]],
+    repo_url: Optional[str] = None,
+    branch: str = "main",
+    context_text: Optional[str] = None,
+) -> str:
     """创建代码引用链接
 
     Args:
@@ -222,22 +227,14 @@ def create_code_links(code_references: List[Dict[str, Any]],
             # 创建模块链接
             if module_name:
                 module_doc_path = f"../utils/{module_name.replace('_', '-').lower()}.md"
-                result = re.sub(
-                    r'`(' + re.escape(module_name) + r')`',
-                    r'[`\1`](' + module_doc_path + r')',
-                    result
-                )
+                result = re.sub(r"`(" + re.escape(module_name) + r")`", r"[`\1`](" + module_doc_path + r")", result)
 
             # 创建函数链接
             if function_name and repo_url and file_path:
                 line_start = ref.get("line_start", 1)
                 line_end = ref.get("line_end", line_start)
                 code_url = f"{repo_url}/blob/{branch}/{file_path}#L{line_start}-L{line_end}"
-                result = re.sub(
-                    r'`(' + re.escape(function_name) + r')`',
-                    r'[`\1`](' + code_url + r')',
-                    result
-                )
+                result = re.sub(r"`(" + re.escape(function_name) + r")`", r"[`\1`](" + code_url + r")", result)
 
         return result
     else:
@@ -293,7 +290,7 @@ def add_emojis_to_headings(markdown_text: str) -> str:
         "### ": "🔍 ",  # 三级标题: 放大镜
         "#### ": "🔹 ",  # 四级标题: 蓝色小菱形
         "##### ": "✏️ ",  # 五级标题: 铅笔
-        "###### ": "📎 "  # 六级标题: 回形针
+        "###### ": "📎 ",  # 六级标题: 回形针
     }
 
     # 特定内容的 emoji 映射
@@ -325,7 +322,7 @@ def add_emojis_to_headings(markdown_text: str) -> str:
         "参考": "📚",
         "结论": "🎯",
         "总结": "📝",
-        "附录": "📎"
+        "附录": "📎",
     }
 
     lines = markdown_text.split("\n")
@@ -339,8 +336,8 @@ def add_emojis_to_headings(markdown_text: str) -> str:
         for heading_prefix, emoji in heading_emojis.items():
             if line_stripped.startswith(heading_prefix):
                 # 提取标题文本，保留原始缩进
-                indent = line[:len(line) - len(line.lstrip())]
-                title_text = line_stripped[len(heading_prefix):].strip()
+                indent = line[: len(line) - len(line.lstrip())]
+                title_text = line_stripped[len(heading_prefix) :].strip()
                 custom_emoji = None
 
                 for content_key, content_emoji in content_emojis.items():
@@ -366,10 +363,13 @@ def add_emojis_to_headings(markdown_text: str) -> str:
     return "\n".join(result_lines)
 
 
-def split_content_into_files(content_dict: Dict[str, Any], output_dir: str,
-                           file_structure: Optional[Dict[str, Any]] = None,
-                           repo_structure: Optional[Dict[str, Any]] = None,
-                           justdoc_compatible: bool = True) -> List[str]:
+def split_content_into_files(
+    content_dict: Dict[str, Any],
+    output_dir: str,
+    file_structure: Optional[Dict[str, Any]] = None,
+    repo_structure: Optional[Dict[str, Any]] = None,
+    justdoc_compatible: bool = True,
+) -> List[str]:
     """将内容拆分为多个文件
 
     Args:
@@ -391,9 +391,11 @@ def split_content_into_files(content_dict: Dict[str, Any], output_dir: str,
             "docs/overview.md": {"title": "系统架构", "sections": ["overall_architecture", "core_modules_summary"]},
             "docs/glossary.md": {"title": "术语表", "sections": ["glossary"]},
             "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
-
             # 模块文档放置在与代码仓库结构对应的目录中
-            "docs/{module_dir}/{module_file}.md": {"title": "{module_title}", "sections": ["description", "api", "examples"]}
+            "docs/{module_dir}/{module_file}.md": {
+                "title": "{module_title}",
+                "sections": ["description", "api", "examples"],
+            },
         }
 
     # 创建输出目录
@@ -434,7 +436,7 @@ def split_content_into_files(content_dict: Dict[str, Any], output_dir: str,
         if justdoc_compatible:
             # 提取目录和文件名
             dir_parts = os.path.dirname(file_path).split("/")
-            file_name = os.path.basename(file_path).replace(".md", "")
+            os.path.basename(file_path).replace(".md", "")
 
             # 创建元数据
             metadata = f"---\ntitle: {title}\n"
@@ -523,12 +525,14 @@ def split_content_into_files(content_dict: Dict[str, Any], output_dir: str,
             if dir_path not in module_index:
                 module_index[dir_path] = []
 
-            module_index[dir_path].append({
-                "name": module_name,
-                "title": module_title,
-                "path": os.path.basename(doc_path),
-                "description": module_description.split(".")[0] if module_description else ""  # 只取第一句
-            })
+            module_index[dir_path].append(
+                {
+                    "name": module_name,
+                    "title": module_title,
+                    "path": os.path.basename(doc_path),
+                    "description": module_description.split(".")[0] if module_description else "",  # 只取第一句
+                }
+            )
 
         # 生成模块索引文件
         for dir_path, modules in module_index.items():
@@ -615,9 +619,13 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
     return f"docs/{'/'.join(justdoc_parts)}.md"
 
 
-def generate_module_detail_page(module_name: str, module_info: Dict[str, Any],
-                              code_references: List[Dict[str, Any]],
-                              repo_url: str, related_modules: List[str]) -> str:
+def generate_module_detail_page(
+    module_name: str,
+    module_info: Dict[str, Any],
+    code_references: List[Dict[str, Any]],
+    repo_url: str,
+    related_modules: List[str],
+) -> str:
     """生成模块详情页面
 
     Args:
@@ -637,22 +645,14 @@ def generate_module_detail_page(module_name: str, module_info: Dict[str, Any],
     # 模块描述
     description = module_info.get("description", "")
     # 在描述中嵌入相关模块链接
-    description_with_links = create_code_links(
-        code_references,
-        repo_url=repo_url,
-        context_text=description
-    )
+    description_with_links = create_code_links(code_references, repo_url=repo_url, context_text=description)
     content += f"## 📋 概述\n\n{description_with_links}\n\n"
 
     # API 部分
     if "api_description" in module_info:
         api_desc = module_info["api_description"]
         # 在API描述中嵌入相关函数链接
-        api_with_links = create_code_links(
-            code_references,
-            repo_url=repo_url,
-            context_text=api_desc
-        )
+        api_with_links = create_code_links(code_references, repo_url=repo_url, context_text=api_desc)
         content += f"## 🔌 API\n\n{api_with_links}\n\n"
 
     # 示例部分

@@ -1,14 +1,14 @@
-"""
-生成术语表文档节点，用于生成代码库的术语表文档。
-"""
-import os
+"""生成术语表文档节点，用于生成代码库的术语表文档。"""
 import json
-from typing import Dict, List, Any, Optional, Tuple
-from pydantic import BaseModel, Field
-from pocketflow import Node
+import os
+from typing import Any, Dict, Optional, Tuple
 
-from ..utils.logger import log_and_notify
+from pocketflow import Node
+from pydantic import BaseModel, Field
+
 from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class GenerateGlossaryNodeConfig(BaseModel):
     """GenerateGlossaryNode 配置"""

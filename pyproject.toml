@@ -34,6 +34,8 @@ packages = ["src"]
 # Python linter 配置
 line-length = 120
 target-version = "py310"
+
+[tool.ruff.lint]
 # E: pycodestyle 错误
 # F: pyflakes 错误
 # W: pycodestyle 警告
@@ -42,16 +44,27 @@ target-version = "py310"
 # N: PEP8 命名规则
 # D: pydocstyle 文档规则
 select = ["E", "F", "W", "I", "C", "N", "D"]
-ignore = ["E203", "D203", "D212"]
+ignore = ["E203", "D203", "D212", "D415"]
 exclude = [".git", "__pycache__", "build", "dist", ".venv"]
 # 允许自动修复
 fixable = ["ALL"]
 unfixable = []
 
-[tool.ruff.mccabe]
+[tool.ruff.lint.mccabe]
 max-complexity = 10
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.per-file-ignores]
+# 忽略特定文件中的复杂度问题
+"src/nodes/combine_and_translate_node.py" = ["C901"]
+"src/nodes/generate_content_flow.py" = ["C901"]
+"src/nodes/module_quality_check_node.py" = ["C901"]
+"src/utils/code_parser.py" = ["C901"]
+"src/utils/env_manager.py" = ["C901"]
+"src/utils/formatter.py" = ["C901"]
+"tests/test_generate_content_flow.py" = ["C901"]
+"tests/test_generate_docs.py" = ["C901"]
+
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.mypy]

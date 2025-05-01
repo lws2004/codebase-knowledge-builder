@@ -1,14 +1,16 @@
-"""
-环境变量管理模块，用于加载和管理环境变量和配置。
-"""
+"""环境变量管理模块，用于加载和管理环境变量和配置。"""
+
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from dotenv import load_dotenv
-from .config_loader import ConfigLoader
-from ..utils.logger import log_and_notify
+
+from src.utils.config_loader import ConfigLoader
+from src.utils.logger import log_and_notify
 
 # 创建全局配置加载器实例
 config_loader = ConfigLoader()
+
 
 def load_env_vars(env_file: Optional[str] = None, env: str = "default") -> None:
     """加载环境变量和配置文件
@@ -31,6 +33,7 @@ def load_env_vars(env_file: Optional[str] = None, env: str = "default") -> None:
         config_loader.load_env_config(env)
         log_and_notify(f"已加载环境配置: {env}", "info")
 
+
 def get_llm_config() -> Dict[str, Any]:
     """获取 LLM 配置，从配置文件获取默认值，只有关键配置（如 API 密钥）从环境变量获取
 
@@ -49,29 +52,42 @@ def get_llm_config() -> Dict[str, Any]:
     config["api_key"] = os.getenv("LLM_API_KEY", "")
 
     # 如果环境变量中明确设置了这些值，则覆盖配置文件中的值
-    if os.getenv("LLM_PROVIDER"):
-        config["provider"] = os.getenv("LLM_PROVIDER")
-    if os.getenv("LLM_MODEL"):
-        config["model"] = os.getenv("LLM_MODEL")
-    if os.getenv("LLM_MAX_TOKENS"):
-        config["max_tokens"] = int(os.getenv("LLM_MAX_TOKENS"))
-    if os.getenv("LLM_TEMPERATURE"):
-        config["temperature"] = float(os.getenv("LLM_TEMPERATURE"))
+    if provider := os.getenv("LLM_PROVIDER"):
+        config["provider"] = provider
+    if model := os.getenv("LLM_MODEL"):
+        config["model"] = model
+    if max_tokens := os.getenv("LLM_MAX_TOKENS"):
+        config["max_tokens"] = int(max_tokens)
+    if temperature := os.getenv("LLM_TEMPERATURE"):
+        config["temperature"] = float(temperature)
 
     # 根据提供商加载特定配置
     if config["provider"] == "openai":
-        config["base_url"] = os.getenv("OPENAI_BASE_URL", config_loader.get("llm.openai.base_url", "https://api.openai.com/v1"))
+        config["base_url"] = os.getenv(
+            "OPENAI_BASE_URL", config_loader.get("llm.openai.base_url", "https://api.openai.com/v1")
+        )
     elif config["provider"] == "openrouter":
-        config["base_url"] = os.getenv("OPENROUTER_BASE_URL", config_loader.get("llm.openrouter.base_url", "https://openrouter.ai/api/v1"))
+        config["base_url"] = os.getenv(
+            "OPENROUTER_BASE_URL", config_loader.get("llm.openrouter.base_url", "https://openrouter.ai/api/v1")
+        )
         config["app_url"] = os.getenv("APP_URL", config_loader.get("llm.openrouter.app_url", ""))
-        config["app_name"] = os.getenv("APP_NAME", config_loader.get("llm.openrouter.app_name", "Codebase Knowledge Builder"))
+        config["app_name"] = os.getenv(
+            "APP_NAME", config_loader.get("llm.openrouter.app_name", "Codebase Knowledge Builder")
+        )
     elif config["provider"] in ["alibaba", "tongyi"]:
-        config["base_url"] = os.getenv("ALIBABA_BASE_URL", config_loader.get("llm.alibaba.base_url", "https://dashscope.aliyuncs.com/api/v1"))
+        config["base_url"] = os.getenv(
+            "ALIBABA_BASE_URL", config_loader.get("llm.alibaba.base_url", "https://dashscope.aliyuncs.com/api/v1")
+        )
     elif config["provider"] == "volcengine":
-        config["base_url"] = os.getenv("VOLCENGINE_BASE_URL", config_loader.get("llm.volcengine.base_url", "https://api.volcengine.com/ml/api/v1/services"))
+        config["base_url"] = os.getenv(
+            "VOLCENGINE_BASE_URL",
+            config_loader.get("llm.volcengine.base_url", "https://api.volcengine.com/ml/api/v1/services"),
+        )
         config["service_id"] = os.getenv("VOLCENGINE_SERVICE_ID", config_loader.get("llm.volcengine.service_id", ""))
     elif config["provider"] == "moonshot":
-        config["base_url"] = os.getenv("MOONSHOT_BASE_URL", config_loader.get("llm.moonshot.base_url", "https://api.moonshot.cn/v1"))
+        config["base_url"] = os.getenv(
+            "MOONSHOT_BASE_URL", config_loader.get("llm.moonshot.base_url", "https://api.moonshot.cn/v1")
+        )
 
     # 加载 Langfuse 配置
     langfuse_config = config_loader.get("langfuse", {})
@@ -86,13 +102,14 @@ def get_llm_config() -> Dict[str, Any]:
 
     # 如果环境变量中明确设置了这些值，则覆盖配置文件中的值
     if os.getenv("LANGFUSE_ENABLED"):
-        config["langfuse"]["enabled"] = os.getenv("LANGFUSE_ENABLED").lower() == "true"
+        config["langfuse"]["enabled"] = os.getenv("LANGFUSE_ENABLED", "").lower() == "true"
     if os.getenv("LANGFUSE_HOST"):
         config["langfuse"]["host"] = os.getenv("LANGFUSE_HOST")
     if os.getenv("LANGFUSE_PROJECT"):
         config["langfuse"]["project_name"] = os.getenv("LANGFUSE_PROJECT")
 
     return config
+
 
 def get_node_config(node_name: str) -> Dict[str, Any]:
     """获取节点配置

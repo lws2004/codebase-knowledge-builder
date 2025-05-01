@@ -1,13 +1,13 @@
-"""
-模块质量检查节点，用于检查模块文档的质量。
-"""
+"""模块质量检查节点，用于检查模块文档的质量。"""
 import re
-from typing import Dict, List, Any, Optional, Tuple
-from pydantic import BaseModel, Field
-from pocketflow import Node
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..utils.logger import log_and_notify
+from pocketflow import Node
+from pydantic import BaseModel, Field
+
 from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class ModuleQualityCheckNodeConfig(BaseModel):
     """ModuleQualityCheckNode 配置"""
@@ -147,10 +147,10 @@ class ModuleQualityCheckNode(Node):
         llm_config = prep_res["llm_config"]
         target_language = prep_res["target_language"]
         retry_count = prep_res["retry_count"]
-        quality_threshold = prep_res["quality_threshold"]
+        prep_res["quality_threshold"]
         model = prep_res["model"]
         auto_fix = prep_res["auto_fix"]
-        check_aspects = prep_res["check_aspects"]
+        prep_res["check_aspects"]
 
         # 获取模块列表
         modules = module_details.get("modules", [])
@@ -191,7 +191,7 @@ class ModuleQualityCheckNode(Node):
                             # 检查是否需要修复
                             needs_fix = evaluation.get("needs_fix", False)
                             if needs_fix and auto_fix and fixed_content:
-                                log_and_notify(f"自动修复模块内容", "info")
+                                log_and_notify("自动修复模块内容", "info")
                                 module["content"] = fixed_content
                                 module["quality_score"] = quality_score
                                 module["evaluation"] = evaluation
@@ -208,7 +208,7 @@ class ModuleQualityCheckNode(Node):
 
                 # 如果所有重试都失败，保留原始模块
                 if "quality_score" not in module:
-                    log_and_notify(f"无法检查模块质量，保留原始模块", "warning")
+                    log_and_notify("无法检查模块质量，保留原始模块", "warning")
                     checked_modules.append(module)
             except Exception as e:
                 log_and_notify(f"检查模块质量失败: {str(e)}", "error")

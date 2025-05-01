@@ -1,9 +1,7 @@
-"""
-代码解析工具，用于解析代码库中的代码文件。
-"""
+"""代码解析工具，用于解析代码库中的代码文件。"""
 import os
 import re
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from ..utils.logger import log_and_notify
 

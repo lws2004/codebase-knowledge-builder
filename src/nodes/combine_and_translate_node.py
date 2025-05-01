@@ -1,20 +1,20 @@
-"""
-组合和翻译节点，用于组合生成的内容并进行翻译检查。
-"""
-import os
-import re
-import json
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
-from pocketflow import Node
+"""组合和翻译节点，用于组合生成的内容并进行翻译检查。"""
 
-from ..utils.logger import log_and_notify
-from ..utils.llm_client import LLMClient
+import json
+import re
+from typing import Any, Dict, List, Optional
+
+from pocketflow import Node
+from pydantic import BaseModel, Field
+
 from ..utils.language_utils import detect_natural_language, extract_technical_terms
+from ..utils.llm_client import LLMClient
+from ..utils.logger import log_and_notify
 
 
 class CombineAndTranslateNodeConfig(BaseModel):
     """CombineAndTranslateNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
     model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
@@ -36,7 +36,7 @@ class CombineAndTranslateNodeConfig(BaseModel):
         需要翻译的内容：
         {content}
         """,
-        description="翻译提示模板"
+        description="翻译提示模板",
     )
     consistency_check_prompt_template: str = Field(
         """
@@ -52,7 +52,7 @@ class CombineAndTranslateNodeConfig(BaseModel):
         文档内容：
         {content}
         """,
-        description="一致性检查提示模板"
+        description="一致性检查提示模板",
     )
 
 
@@ -89,7 +89,7 @@ class CombineAndTranslateNode(Node):
             "dependency_doc",
             "glossary_doc",
             "quick_look_doc",
-            "module_details"
+            "module_details",
         ]
 
         content_dict = {}
@@ -131,7 +131,7 @@ class CombineAndTranslateNode(Node):
             "retry_count": self.config.retry_count,
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
-            "preserve_technical_terms": self.config.preserve_technical_terms
+            "preserve_technical_terms": self.config.preserve_technical_terms,
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,11 +197,7 @@ class CombineAndTranslateNode(Node):
 
                         # 调用 LLM 进行翻译
                         translated_content, quality_score, success = self._translate_content(
-                            combined_content,
-                            technical_terms,
-                            target_language,
-                            llm_config,
-                            model
+                            combined_content, technical_terms, target_language, llm_config, model
                         )
 
                         if success and quality_score >= quality_threshold:
@@ -230,7 +226,7 @@ class CombineAndTranslateNode(Node):
                 "repo_url": repo_url,
                 "repo_branch": repo_branch,
                 "target_language": target_language,
-                "success": True
+                "success": True,
             }
         except Exception as e:
             error_msg = f"组合和翻译内容失败: {str(e)}"
@@ -319,21 +315,13 @@ class CombineAndTranslateNode(Node):
 请以 JSON 格式返回结果，包含问题列表，每个问题包含问题描述、问题位置和修复建议。"""
 
             # 准备用户提示
-            user_prompt = self.config.consistency_check_prompt_template.format(
-                content=content
-            )
+            user_prompt = self.config.consistency_check_prompt_template.format(content=content)
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="检查内容一致性"
+                messages=messages, temperature=0.3, model=model, trace_name="检查内容一致性"
             )
 
             # 获取响应内容
@@ -342,7 +330,7 @@ class CombineAndTranslateNode(Node):
             # 解析 JSON 响应
             try:
                 # 提取 JSON 部分
-                json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
+                json_match = re.search(r"```json\n(.*?)\n```", response_content, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
@@ -386,12 +374,7 @@ class CombineAndTranslateNode(Node):
         return fixed_content
 
     def _translate_content(
-        self,
-        content: str,
-        technical_terms: List[str],
-        target_language: str,
-        llm_config: Dict[str, Any],
-        model: str
+        self, content: str, technical_terms: List[str], target_language: str, llm_config: Dict[str, Any], model: str
     ) -> tuple:
         """翻译内容
 
@@ -418,23 +401,13 @@ class CombineAndTranslateNode(Node):
 
             # 准备用户提示
             user_prompt = self.config.translation_prompt_template.format(
-                target_language=target_language,
-                technical_terms="\n".join(technical_terms),
-                content=content
+                target_language=target_language, technical_terms="\n".join(technical_terms), content=content
             )
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
-            response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="翻译内容"
-            )
+            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="翻译内容")
 
             # 获取响应内容
             translated_content = llm_client.get_completion_content(response)
@@ -467,13 +440,13 @@ class CombineAndTranslateNode(Node):
                 score -= 0.05
 
         # 检查 Markdown 格式是否保留
-        original_headings = len(re.findall(r'^#+\s+', original, re.MULTILINE))
-        translated_headings = len(re.findall(r'^#+\s+', translated, re.MULTILINE))
+        original_headings = len(re.findall(r"^#+\s+", original, re.MULTILINE))
+        translated_headings = len(re.findall(r"^#+\s+", translated, re.MULTILINE))
         if original_headings != translated_headings:
             score -= 0.1
 
-        original_code_blocks = len(re.findall(r'```', original))
-        translated_code_blocks = len(re.findall(r'```', translated))
+        original_code_blocks = len(re.findall(r"```", original))
+        translated_code_blocks = len(re.findall(r"```", translated))
         if original_code_blocks != translated_code_blocks:
             score -= 0.1
 
@@ -496,7 +469,10 @@ class CombineAndTranslateNode(Node):
             "docs/overview.md": {"title": "系统架构", "sections": ["overall_architecture", "core_modules_summary"]},
             "docs/glossary.md": {"title": "术语表", "sections": ["glossary"]},
             "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
-            "docs/{module_dir}/{module_file}.md": {"title": "{module_title}", "sections": ["description", "api", "examples"]}
+            "docs/{module_dir}/{module_file}.md": {
+                "title": "{module_title}",
+                "sections": ["description", "api", "examples"],
+            },
         }
 
         return file_structure
@@ -517,9 +493,6 @@ class CombineAndTranslateNode(Node):
         # 添加核心模块
         for module_name, module_info in core_modules.items():
             if isinstance(module_info, dict) and "path" in module_info:
-                repo_structure[module_name] = {
-                    "path": module_info["path"],
-                    "type": module_info.get("type", "module")
-                }
+                repo_structure[module_name] = {"path": module_info["path"], "type": module_info.get("type", "module")}
 
         return repo_structure

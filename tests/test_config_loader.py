@@ -1,14 +1,13 @@
-"""
-测试配置加载器的脚本。
-"""
+"""测试配置加载器的脚本。"""
+import json
 import os
 import sys
-import json
 
 # 确保当前目录在 Python 路径中
 sys.path.insert(0, os.path.abspath("."))
 
 from src.utils.config_loader import ConfigLoader
+
 
 def main():
     """主函数"""

@@ -1,30 +1,17 @@
-"""
-测试生成文档节点的脚本。
-"""
+"""测试生成文档节点的脚本。"""
+
+import argparse
 import os
 import sys
-import argparse
+
 from pocketflow import Flow
 
 # 确保当前目录在 Python 路径中
 sys.path.insert(0, os.path.abspath("."))
 
-from src.nodes import (
-    InputNode,
-    PrepareRepoNode,
-    AnalyzeRepoFlow,
-    GenerateOverallArchitectureNode,
-    GenerateApiDocsNode,
-    GenerateTimelineNode,
-    GenerateDependencyNode,
-    GenerateGlossaryNode,
-    GenerateQuickLookNode,
-    ContentQualityCheckNode,
-    GenerateModuleDetailsNode,
-    ModuleQualityCheckNode,
-    GenerateContentFlow
-)
-from src.utils.env_manager import load_env_vars, get_llm_config
+from src.nodes import AnalyzeRepoFlow, GenerateContentFlow, InputNode, PrepareRepoNode
+from src.utils.env_manager import get_llm_config, load_env_vars
+
 
 def create_flow():
     """创建流程
@@ -38,25 +25,28 @@ def create_flow():
     analyze_repo_flow = AnalyzeRepoFlow()
 
     # 创建内容生成节点
-    generate_content_flow = GenerateContentFlow({
-        "generate_overall_architecture": {"retry_count": 1},
-        "generate_api_docs": {"retry_count": 1},
-        "generate_timeline": {"retry_count": 1},
-        "generate_dependency": {"retry_count": 1},
-        "generate_glossary": {"retry_count": 1},
-        "generate_quick_look": {"retry_count": 1},
-        "content_quality_check": {"retry_count": 1},
-        "generate_module_details": {"retry_count": 1},
-        "module_quality_check": {"retry_count": 1}
-    })
+    generate_content_flow = GenerateContentFlow(
+        {
+            "generate_overall_architecture": {"retry_count": 1},
+            "generate_api_docs": {"retry_count": 1},
+            "generate_timeline": {"retry_count": 1},
+            "generate_dependency": {"retry_count": 1},
+            "generate_glossary": {"retry_count": 1},
+            "generate_quick_look": {"retry_count": 1},
+            "content_quality_check": {"retry_count": 1},
+            "generate_module_details": {"retry_count": 1},
+            "module_quality_check": {"retry_count": 1},
+        }
+    )
 
     # 连接节点
-    input_node >> prepare_repo_node
+    input_node >> prepare_repo_node  # type: ignore
 
     # 创建流程
     flow = Flow(start=input_node)
 
     return flow, prepare_repo_node, analyze_repo_flow, generate_content_flow
+
 
 def main():
     """主函数"""
@@ -86,8 +76,8 @@ def main():
             f"--repo-url={args.repo_url}",
             f"--branch={args.branch}",
             f"--output-dir={args.output_dir}",
-            f"--language={args.language}"
-        ]
+            f"--language={args.language}",
+        ],
     }
 
     if args.local_path:
@@ -199,12 +189,13 @@ def main():
 
         # 输出每个模块的信息
         for i, module in enumerate(shared["module_details"]["modules"]):
-            print(f"\n模块 {i+1}: {module.get('name', 'unknown')}")
+            print(f"\n模块 {i + 1}: {module.get('name', 'unknown')}")
             print(f"- 文件路径: {module.get('file_path', '')}")
             print(f"- 质量分数: {module.get('quality_score', {}).get('overall', 0)}")
             print(f"- 是否修复: {module.get('fixed', False)}")
     else:
         print("\n未能生成模块详细文档")
+
 
 if __name__ == "__main__":
     main()

@@ -1,19 +1,19 @@
-"""
-生成内容流程，用于协调各个内容生成节点。
-"""
-from typing import Dict, Any, Optional
+"""生成内容流程，用于协调各个内容生成节点。"""
+from typing import Any, Dict, Optional
+
 from pocketflow import Flow
 
 from ..utils.logger import log_and_notify
-from .generate_overall_architecture_node import GenerateOverallArchitectureNode
+from .content_quality_check_node import ContentQualityCheckNode
 from .generate_api_docs_node import GenerateApiDocsNode
-from .generate_timeline_node import GenerateTimelineNode
 from .generate_dependency_node import GenerateDependencyNode
 from .generate_glossary_node import GenerateGlossaryNode
-from .generate_quick_look_node import GenerateQuickLookNode
-from .content_quality_check_node import ContentQualityCheckNode
 from .generate_module_details_node import GenerateModuleDetailsNode
+from .generate_overall_architecture_node import GenerateOverallArchitectureNode
+from .generate_quick_look_node import GenerateQuickLookNode
+from .generate_timeline_node import GenerateTimelineNode
 from .module_quality_check_node import ModuleQualityCheckNode
+
 
 class GenerateContentFlow:
     """生成内容流程，用于协调各个内容生成节点"""

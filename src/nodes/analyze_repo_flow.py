@@ -1,14 +1,14 @@
-"""
-分析仓库流程，用于分析代码库。
-"""
-from typing import Dict, Any, Optional
+"""分析仓库流程，用于分析代码库。"""
+from typing import Any, Dict, Optional
+
 from pocketflow import Flow
 
 from ..utils.logger import log_and_notify
-from .parse_code_batch_node import ParseCodeBatchNode
 from .ai_understand_core_modules_node import AIUnderstandCoreModulesNode
 from .analyze_history_node import AnalyzeHistoryNode
+from .parse_code_batch_node import ParseCodeBatchNode
 from .prepare_rag_data_node import PrepareRAGDataNode
+
 
 class AnalyzeRepoFlow:
     """分析仓库流程，用于分析代码库"""

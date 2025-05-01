@@ -1,10 +1,8 @@
-"""
-测试 FormatOutputNode
-"""
-import unittest
-from unittest.mock import patch, MagicMock
+"""测试 FormatOutputNode"""
 import os
 import shutil
+import unittest
+from unittest.mock import patch
 
 from src.nodes.format_output_node import FormatOutputNode
 

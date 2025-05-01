@@ -1,28 +1,26 @@
-"""
-语言工具，用于检测语言和提取技术术语。
-"""
+"""语言工具，用于检测语言和提取技术术语。"""
 import re
-from typing import List, Tuple, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 
 def detect_natural_language(text: str) -> Tuple[str, float]:
     """检测文本的自然语言
-    
+
     Args:
         text: 文本
-        
+
     Returns:
         检测到的语言和置信度
     """
     # 简单实现：根据中文字符比例判断
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
     total_chars = len(text)
-    
+
     if total_chars == 0:
         return "en", 0.0
-    
+
     chinese_ratio = chinese_chars / total_chars
-    
+
     if chinese_ratio > 0.1:
         return "zh", chinese_ratio
     else:
@@ -31,55 +29,55 @@ def detect_natural_language(text: str) -> Tuple[str, float]:
 
 def extract_technical_terms(text: str, domain: Optional[str] = None, language: Optional[str] = None) -> List[str]:
     """提取技术术语
-    
+
     Args:
         text: 文本
         domain: 领域
         language: 语言
-        
+
     Returns:
         技术术语列表
     """
     # 如果未指定语言，检测语言
     if language is None:
         language, _ = detect_natural_language(text)
-    
+
     # 提取技术术语
     terms = set()
-    
+
     # 提取代码块中的术语
     code_blocks = re.findall(r'```.*?\n(.*?)```', text, re.DOTALL)
     for block in code_blocks:
         # 提取变量名、函数名、类名等
         identifiers = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', block)
         terms.update(identifiers)
-    
+
     # 提取行内代码中的术语
     inline_codes = re.findall(r'`([^`]+)`', text)
     for code in inline_codes:
         # 提取变量名、函数名、类名等
         identifiers = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', code)
         terms.update(identifiers)
-    
+
     # 提取常见技术术语
     common_terms = _get_common_technical_terms(domain, language)
     for term in common_terms:
         if term.lower() in text.lower():
             terms.add(term)
-    
+
     # 过滤掉常见的非技术词
     filtered_terms = _filter_common_words(terms)
-    
+
     return list(filtered_terms)
 
 
 def _get_common_technical_terms(domain: Optional[str] = None, language: Optional[str] = None) -> Set[str]:
     """获取常见技术术语
-    
+
     Args:
         domain: 领域
         language: 语言
-        
+
     Returns:
         常见技术术语集合
     """
@@ -101,7 +99,7 @@ def _get_common_technical_terms(domain: Optional[str] = None, language: Optional
         "Generation", "Prompt", "Completion", "Fine-tuning", "Transfer Learning",
         "Langfuse", "LiteLLM", "PocketFlow", "Node", "Flow", "Agent", "Agentic"
     }
-    
+
     # 根据领域添加特定术语
     if domain == "web":
         common_terms.update({
@@ -120,7 +118,7 @@ def _get_common_technical_terms(domain: Optional[str] = None, language: Optional
             "BigQuery", "Databricks", "Delta Lake", "Iceberg", "Hudi", "Parquet",
             "Avro", "ORC", "Arrow", "Dask", "Ray", "Polars", "DuckDB", "ClickHouse"
         })
-    
+
     # 根据语言添加特定术语
     if language == "zh":
         common_terms.update({
@@ -130,16 +128,16 @@ def _get_common_technical_terms(domain: Optional[str] = None, language: Optional
             "嵌入", "向量", "检索增强生成", "提示", "补全", "微调", "迁移学习",
             "大语言模型", "生成式人工智能", "代码库", "知识库", "文档生成", "教程生成"
         })
-    
+
     return common_terms
 
 
 def _filter_common_words(terms: Set[str]) -> Set[str]:
     """过滤常见的非技术词
-    
+
     Args:
         terms: 术语集合
-        
+
     Returns:
         过滤后的术语集合
     """
@@ -174,6 +172,6 @@ def _filter_common_words(terms: Set[str]) -> Set[str]:
         "hear", "heard", "hearing", "listen", "listened", "listening", "speak", "spoke",
         "spoken", "speaking", "read", "reading", "write", "wrote", "written", "writing"
     }
-    
+
     # 过滤掉常见的非技术词和长度小于 2 的词
     return {term for term in terms if term.lower() not in common_words and len(term) > 1}

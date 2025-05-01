@@ -1,18 +1,18 @@
-"""
-运行所有测试的脚本。
-"""
-import os
-import sys
+"""运行所有测试的脚本。"""
 import argparse
 import importlib
+import os
+import sys
+
 from dotenv import load_dotenv
+
 
 def run_test(test_name):
     """运行指定的测试
-    
+
     Args:
         test_name: 测试名称
-        
+
     Returns:
         是否成功
     """
@@ -20,7 +20,7 @@ def run_test(test_name):
         # 导入测试模块
         module_name = f"tests.{test_name}"
         module = importlib.import_module(module_name)
-        
+
         # 运行测试
         if hasattr(module, "main"):
             module.main()
@@ -42,13 +42,13 @@ def main():
     parser.add_argument("--test", type=str, help="要运行的测试名称，不包含 'test_' 前缀和 '.py' 后缀")
     parser.add_argument("--all", action="store_true", help="运行所有测试")
     args = parser.parse_args()
-    
+
     # 加载环境变量
     load_dotenv()
-    
+
     # 确保当前目录在 Python 路径中
     sys.path.insert(0, os.path.abspath("."))
-    
+
     # 运行测试
     if args.test:
         # 运行指定的测试
@@ -59,7 +59,7 @@ def main():
         # 运行所有测试
         test_dir = os.path.join(os.path.dirname(__file__), "tests")
         test_files = [f[:-3] for f in os.listdir(test_dir) if f.startswith("test_") and f.endswith(".py")]
-        
+
         success = True
         for test_file in test_files:
             print(f"\n运行测试: {test_file}")
@@ -67,7 +67,7 @@ def main():
             if not run_test(test_file):
                 success = False
             print("=" * 80)
-        
+
         sys.exit(0 if success else 1)
     else:
         parser.print_help()

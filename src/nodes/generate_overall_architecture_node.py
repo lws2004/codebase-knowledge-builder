@@ -1,14 +1,14 @@
-"""
-生成整体架构节点，用于生成代码库的整体架构文档。
-"""
-import os
+"""生成整体架构节点，用于生成代码库的整体架构文档。"""
 import json
-from typing import Dict, Any, Optional
+import os
+from typing import Any, Dict, Optional
+
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.logger import log_and_notify
 from ..utils.llm_wrapper import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class GenerateOverallArchitectureNodeConfig(BaseModel):
     """GenerateOverallArchitectureNode 配置"""

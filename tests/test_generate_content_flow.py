@@ -1,21 +1,16 @@
-"""
-测试生成内容流程的脚本。
-"""
+"""测试生成内容流程的脚本。"""
+import argparse
 import os
 import sys
-import argparse
+
 from pocketflow import Flow
 
 # 确保当前目录在 Python 路径中
 sys.path.insert(0, os.path.abspath("."))
 
-from src.nodes import (
-    InputNode,
-    PrepareRepoNode,
-    AnalyzeRepoFlow,
-    GenerateContentFlow
-)
-from src.utils.env_manager import load_env_vars, get_llm_config
+from src.nodes import AnalyzeRepoFlow, GenerateContentFlow, InputNode, PrepareRepoNode
+from src.utils.env_manager import get_llm_config, load_env_vars
+
 
 def create_flow():
     """创建流程
@@ -27,7 +22,7 @@ def create_flow():
     input_node = InputNode()
     prepare_repo_node = PrepareRepoNode()
     analyze_repo_flow = AnalyzeRepoFlow()
-    
+
     # 创建内容生成流程，所有节点的重试次数设置为1
     generate_content_flow = GenerateContentFlow({
         "generate_overall_architecture": {"retry_count": 1},

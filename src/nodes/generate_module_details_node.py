@@ -1,14 +1,14 @@
-"""
-生成模块详细文档节点，用于生成代码库中各模块的详细文档。
-"""
-import os
+"""生成模块详细文档节点，用于生成代码库中各模块的详细文档。"""
 import json
-from typing import Dict, Any, List, Optional
+import os
+from typing import Any, Dict, List, Optional
+
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.logger import log_and_notify
 from ..utils.llm_wrapper import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class GenerateModuleDetailsNodeConfig(BaseModel):
     """GenerateModuleDetailsNode 配置"""
@@ -176,7 +176,7 @@ class GenerateModuleDetailsNode(Node):
         quality_threshold = prep_res["quality_threshold"]
         model = prep_res["model"]
         output_format = prep_res["output_format"]
-        max_modules_per_batch = prep_res["max_modules_per_batch"]
+        prep_res["max_modules_per_batch"]
 
         # 获取模块列表
         modules = core_modules.get("modules", [])

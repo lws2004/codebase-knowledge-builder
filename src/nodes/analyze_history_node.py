@@ -1,15 +1,15 @@
-"""
-Git 历史分析节点，用于分析 Git 仓库的提交历史。
-"""
-import os
+"""Git 历史分析节点，用于分析 Git 仓库的提交历史。"""
 import json
-from typing import Dict, Any, List, Optional
+import os
+from typing import Any, Dict, List, Optional
+
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.logger import log_and_notify
 from ..utils.git_utils import GitHistoryAnalyzer
 from ..utils.llm_wrapper import LLMClient
+from ..utils.logger import log_and_notify
+
 
 class AnalyzeHistoryNodeConfig(BaseModel):
     """AnalyzeHistoryNode 配置"""

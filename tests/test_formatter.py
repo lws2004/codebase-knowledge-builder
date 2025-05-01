@@ -1,23 +1,22 @@
-"""
-测试格式化工具的脚本。
-"""
+"""测试格式化工具的脚本。"""
+
 import os
-import sys
 import shutil
+import sys
 import unittest
 
 # 确保当前目录在 Python 路径中
 sys.path.insert(0, os.path.abspath("."))
 
 from src.utils.formatter import (
-    format_markdown,
-    generate_toc,
-    generate_navigation_links,
-    create_code_links,
     add_emojis_to_headings,
-    split_content_into_files,
+    create_code_links,
+    format_markdown,
+    generate_module_detail_page,
+    generate_navigation_links,
+    generate_toc,
     map_module_to_docs_path,
-    generate_module_detail_page
+    split_content_into_files,
 )
 
 
@@ -46,7 +45,7 @@ class TestFormatter(unittest.TestCase):
             "core_modules": "这是核心模块部分。",
             "examples": "这是示例部分。",
             "faq": "这是常见问题部分。",
-            "references": "这是参考资料部分。"
+            "references": "这是参考资料部分。",
         }
 
         # 调用函数，禁用导航链接、目录和emoji
@@ -120,12 +119,12 @@ class TestFormatter(unittest.TestCase):
         files_info = [
             {"path": "docs/page1.md", "title": "页面1"},
             {"path": "docs/page2.md", "title": "页面2"},
-            {"path": "docs/page3.md", "title": "页面3"}
+            {"path": "docs/page3.md", "title": "页面3"},
         ]
         current_file = "docs/page2.md"
         related_content = [
             {"group": "相关页面", "title": "相关1", "path": "docs/related1.md"},
-            {"group": "相关页面", "title": "相关2", "path": "docs/related2.md"}
+            {"group": "相关页面", "title": "相关2", "path": "docs/related2.md"},
         ]
 
         # 调用函数
@@ -150,7 +149,7 @@ class TestFormatter(unittest.TestCase):
                 "line_start": 10,
                 "line_end": 20,
                 "description": "格式化 Markdown 的核心函数",
-                "code": "def format_markdown(...):\n    ..."
+                "code": "def format_markdown(...):\n    ...",
             }
         ]
         repo_url = "https://github.com/user/repo"
@@ -161,7 +160,9 @@ class TestFormatter(unittest.TestCase):
 
         # 验证结果
         self.assertIn("[`formatter`](../utils/formatter.md)", result)
-        self.assertIn("[`format_markdown`](https://github.com/user/repo/blob/main/src/utils/formatter.py#L10-L20)", result)
+        self.assertIn(
+            "[`format_markdown`](https://github.com/user/repo/blob/main/src/utils/formatter.py#L10-L20)", result
+        )
 
         # 调用函数 - 标准模式
         result = create_code_links(code_references, repo_url, "main")
@@ -223,21 +224,18 @@ class TestFormatter(unittest.TestCase):
                     "path": "src/utils/formatter.py",
                     "description": "这是格式化模块。",
                     "api": "这是API描述。",
-                    "examples": "这是示例。"
+                    "examples": "这是示例。",
                 },
                 {
                     "name": "parser",
                     "path": "src/utils/parser.py",
                     "description": "这是解析模块。",
                     "api": "这是API描述。",
-                    "examples": "这是示例。"
-                }
-            ]
+                    "examples": "这是示例。",
+                },
+            ],
         }
-        repo_structure = {
-            "formatter": {"path": "src/utils/formatter.py"},
-            "parser": {"path": "src/utils/parser.py"}
-        }
+        repo_structure = {"formatter": {"path": "src/utils/formatter.py"}, "parser": {"path": "src/utils/parser.py"}}
 
         # 创建特殊目录，确保测试通过
         os.makedirs(os.path.join(self.test_output_dir, "docs/utils"), exist_ok=True)
@@ -247,7 +245,7 @@ class TestFormatter(unittest.TestCase):
             f.write("# 测试")
 
         # 调用函数
-        files = split_content_into_files(content_dict, self.test_output_dir, repo_structure=repo_structure)
+        split_content_into_files(content_dict, self.test_output_dir, repo_structure=repo_structure)
 
         # 验证结果
         self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "README.md")))
@@ -267,7 +265,7 @@ class TestFormatter(unittest.TestCase):
             "auth_service": {"path": "src/auth/service.py"},
             "data_processor": {"path": "src/data_processor/main.py"},
             "string_utils": {"path": "utils/helpers/string_utils.py"},
-            "unknown_module": {}
+            "unknown_module": {},
         }
 
         # 调用函数
@@ -288,8 +286,14 @@ class TestFormatter(unittest.TestCase):
         module_name = "string_utils"
         module_info = {
             "description": "`string_utils` 模块提供了一系列字符串处理函数，用于在 `formatter` 模块中进行文本格式化。",
-            "api_description": "### `clean_text`\n\n清理文本中的特殊字符和多余空白。\n\n### `format_code_block`\n\n格式化代码块。",
-            "examples": "```python\nfrom utils.string_utils import clean_text\n\ntext = clean_text('  Hello,   World!  ')\nprint(text)  # 输出: 'Hello, World!'\n```"
+            "api_description": (
+                "### `clean_text`\n\n清理文本中的特殊字符和多余空白。\n\n### `format_code_block`\n\n格式化代码块。"
+            ),
+            "examples": (
+                "```python\nfrom utils.string_utils import clean_text\n\n"
+                "text = clean_text('  Hello,   World!  ')\n"
+                "print(text)  # 输出: 'Hello, World!'\n```"
+            ),
         }
         code_references = [
             {
@@ -297,15 +301,15 @@ class TestFormatter(unittest.TestCase):
                 "function_name": "clean_text",
                 "file_path": "src/utils/string_utils.py",
                 "line_start": 10,
-                "line_end": 25
+                "line_end": 25,
             },
             {
                 "module_name": "formatter",
                 "function_name": "format_markdown",
                 "file_path": "src/utils/formatter.py",
                 "line_start": 30,
-                "line_end": 45
-            }
+                "line_end": 45,
+            },
         ]
         repo_url = "https://github.com/user/repo"
         related_modules = ["formatter", "parser"]
@@ -319,7 +323,9 @@ class TestFormatter(unittest.TestCase):
         self.assertIn("[`string_utils`](../utils/string-utils.md)", result)
         self.assertIn("[`formatter`](../utils/formatter.md)", result)
         self.assertIn("## 🔌 API", result)
-        self.assertIn("[`clean_text`](https://github.com/user/repo/blob/main/src/utils/string_utils.py#L10-L25)", result)
+        self.assertIn(
+            "[`clean_text`](https://github.com/user/repo/blob/main/src/utils/string_utils.py#L10-L25)", result
+        )
         self.assertIn("## 💻 示例", result)
         self.assertIn("```python", result)
         self.assertIn("**相关模块:**", result)

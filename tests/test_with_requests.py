@@ -1,5 +1,5 @@
-"""
-使用 requests 库测试 AnalyzeHistoryNode 节点。
+"""使用 requests 库测试 AnalyzeHistoryNode 节点。
+
 这个脚本模拟了一个简单的 Git 仓库，并使用 AnalyzeHistoryNode 节点分析它。
 """
 

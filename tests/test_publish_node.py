@@ -1,10 +1,9 @@
-"""
-测试 PublishNode
-"""
-import unittest
-from unittest.mock import patch, MagicMock
+"""测试 PublishNode"""
+
 import os
 import shutil
+import unittest
+from unittest.mock import patch
 
 from src.nodes.publish_node import PublishNode
 
@@ -20,9 +19,9 @@ class TestPublishNode(unittest.TestCase):
             "output_files": ["README.md", "docs/index.md"],
             "output_dir": "test_output",
             "repo_url": "https://github.com/test/repo",
-            "repo_branch": "main"
+            "repo_branch": "main",
         }
-        
+
         # 创建测试输出目录和文件
         os.makedirs("test_output/docs", exist_ok=True)
         with open("test_output/README.md", "w") as f:
@@ -83,7 +82,7 @@ class TestPublishNode(unittest.TestCase):
             "repo_url": "https://github.com/test/repo",
             "repo_branch": "main",
             "auth_info": {},
-            "publish_repo": ""
+            "publish_repo": "",
         }
 
         # 模拟 GitHub Pages 发布
@@ -95,8 +94,8 @@ class TestPublishNode(unittest.TestCase):
                     "platform": "github",
                     "repo_url": "https://github.com/test/repo",
                     "branch": "gh-pages",
-                    "files_count": 2
-                }
+                    "files_count": 2,
+                },
             }
 
             # 执行阶段
@@ -118,8 +117,8 @@ class TestPublishNode(unittest.TestCase):
                 "platform": "github",
                 "repo_url": "https://github.com/test/repo",
                 "branch": "gh-pages",
-                "files_count": 2
-            }
+                "files_count": 2,
+            },
         }
 
         # 执行后处理阶段
