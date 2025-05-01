@@ -18,6 +18,12 @@
     },
     // Python 语言服务器设置 - 基本设置
     "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/typings"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportUnusedExpression": "none"
+    },
     // 代码格式化设置 - 使用 Ruff 进行格式化和 linting
     "[python]": {
         "editor.formatOnSave": true,

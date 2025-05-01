@@ -1,4 +1,5 @@
 """分析仓库流程，用于分析代码库。"""
+
 from typing import Any, Dict, Optional
 
 from pocketflow import Flow
@@ -84,7 +85,7 @@ class AnalyzeRepoFlow:
             "core_modules": shared.get("core_modules", {}),
             "history_analysis": shared.get("history_analysis", {}),
             "rag_data": shared.get("rag_data", {}),
-            "success": True
+            "success": True,
         }
 
         log_and_notify("分析仓库流程完成", "info", notify=True)

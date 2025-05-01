@@ -1,4 +1,5 @@
 """生成内容流程，用于协调各个内容生成节点。"""
+
 from typing import Any, Dict, Optional
 
 from pocketflow import Flow
@@ -101,7 +102,7 @@ class GenerateContentFlow:
                 self.timeline_node,
                 self.dependency_node,
                 self.glossary_node,
-                self.quick_look_node
+                self.quick_look_node,
             ]
         )
 
@@ -143,7 +144,7 @@ class GenerateContentFlow:
             "glossary_doc": shared.get("glossary_doc", {}),
             "quick_look_doc": shared.get("quick_look_doc", {}),
             "module_details": shared.get("module_details", {}),
-            "success": True
+            "success": True,
         }
 
         log_and_notify("生成内容流程完成", "info", notify=True)

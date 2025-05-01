@@ -1,4 +1,5 @@
 """解析代码批处理节点，用于解析代码库中的代码。"""
+
 import os
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,7 @@ from ..utils.logger import log_and_notify
 
 class ParseCodeBatchNodeConfig(BaseModel):
     """ParseCodeBatchNode 配置"""
+
     max_files: int = Field(1000, description="最大解析文件数量")
     batch_size: int = Field(100, description="批处理大小")
     ignore_patterns: List[str] = Field(
@@ -31,21 +33,45 @@ class ParseCodeBatchNodeConfig(BaseModel):
             r"build",
             r"\.cache",
         ],
-        description="忽略的文件和目录模式"
+        description="忽略的文件和目录模式",
     )
     binary_extensions: List[str] = Field(
         [
-            "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg",
-            "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
-            "zip", "tar", "gz", "rar", "7z",
-            "exe", "dll", "so", "dylib",
-            "pyc", "pyo", "pyd",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "bmp",
+            "ico",
+            "svg",
+            "pdf",
+            "doc",
+            "docx",
+            "ppt",
+            "pptx",
+            "xls",
+            "xlsx",
+            "zip",
+            "tar",
+            "gz",
+            "rar",
+            "7z",
+            "exe",
+            "dll",
+            "so",
+            "dylib",
+            "pyc",
+            "pyo",
+            "pyd",
             "class",
-            "o", "obj",
-            "bin", "dat",
+            "o",
+            "obj",
+            "bin",
+            "dat",
         ],
-        description="二进制文件扩展名"
+        description="二进制文件扩展名",
     )
+
 
 class ParseCodeBatchNode(Node):
     """解析代码批处理节点，用于解析代码库中的代码"""
@@ -60,6 +86,7 @@ class ParseCodeBatchNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("parse_code_batch")
 
         # 合并配置
@@ -143,14 +170,14 @@ class ParseCodeBatchNode(Node):
                 "file_types": parse_result.get("file_types", {}),
                 "files": parse_result.get("files", {}),
                 "directories": parse_result.get("directories", {}),
-                "success": True
+                "success": True,
             }
 
             log_and_notify(
                 f"代码解析完成: {result['file_count']} 个文件, "
                 f"{result['directory_count']} 个目录, "
                 f"{result['skipped_count']} 个跳过的文件",
-                "info"
+                "info",
             )
 
             return result
@@ -159,7 +186,7 @@ class ParseCodeBatchNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:  # pylint: disable=unused-argument
         """后处理阶段，将解析结果存储到共享存储中
 
         Args:
@@ -170,6 +197,8 @@ class ParseCodeBatchNode(Node):
         Returns:
             下一个节点的动作
         """
+        # 显式使用prep_res参数以避免pylance警告
+        _ = prep_res
         log_and_notify("ParseCodeBatchNode: 后处理阶段开始", "info")
 
         # 检查执行阶段是否出错
@@ -187,14 +216,14 @@ class ParseCodeBatchNode(Node):
             "file_types": exec_res.get("file_types", {}),
             "files": exec_res.get("files", {}),
             "directories": exec_res.get("directories", {}),
-            "success": True
+            "success": True,
         }
 
         log_and_notify(
             f"代码解析完成，解析了 {exec_res.get('file_count', 0)} 个文件和 "
             f"{exec_res.get('directory_count', 0)} 个目录",
             "info",
-            notify=True
+            notify=True,
         )
 
         return "default"
