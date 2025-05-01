@@ -57,7 +57,7 @@ def create_test_repo():
         return None
 
 
-def test_with_real_repo(repo_url):
+def run_with_real_repo(repo_url):
     """使用真实的 Git 仓库测试
 
     Args:
@@ -73,14 +73,14 @@ def test_with_real_repo(repo_url):
         subprocess.run(["git", "clone", repo_url, temp_dir], check=True)
 
         # 测试节点
-        test_node(temp_dir)
+        run_node(temp_dir)
     finally:
         # 清理临时目录
         print(f"清理临时目录: {temp_dir}")
         shutil.rmtree(temp_dir)
 
 
-def test_node(repo_path):
+def run_node(repo_path):
     """测试 AnalyzeHistoryNode 节点
 
     Args:
@@ -189,7 +189,7 @@ def main():
 
     try:
         # 测试节点
-        test_node(repo_path)
+        run_node(repo_path)
     finally:
         # 清理测试仓库
         print(f"清理测试仓库: {repo_path}")

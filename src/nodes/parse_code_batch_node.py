@@ -197,8 +197,6 @@ class ParseCodeBatchNode(Node):
         Returns:
             下一个节点的动作
         """
-        # 显式使用prep_res参数以避免pylance警告
-        _ = prep_res
         log_and_notify("ParseCodeBatchNode: 后处理阶段开始", "info")
 
         # 检查执行阶段是否出错
