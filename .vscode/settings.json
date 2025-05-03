@@ -22,7 +22,8 @@
         "${workspaceFolder}/typings"
     ],
     "python.analysis.diagnosticSeverityOverrides": {
-        "reportUnusedExpression": "none"
+        "reportUnusedExpression": "none",
+        "reportMissingImports": "none"
     },
     // 代码格式化设置 - 使用 Ruff 进行格式化和 linting
     "[python]": {

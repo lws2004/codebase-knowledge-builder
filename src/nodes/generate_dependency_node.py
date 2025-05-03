@@ -14,7 +14,7 @@ class GenerateDependencyNodeConfig(BaseModel):
     """GenerateDependencyNode 配置"""
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
+    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
     output_format: str = Field("markdown", description="输出格式")
     dependency_prompt_template: str = Field(
         """

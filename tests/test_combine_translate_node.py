@@ -1,4 +1,5 @@
 """测试 CombineAndTranslateNode"""
+
 import unittest
 from unittest.mock import patch
 
@@ -12,20 +13,14 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         """设置测试环境"""
         self.node = CombineAndTranslateNode()
         self.shared = {
-            "architecture_doc": {
-                "success": True,
-                "content": "# 架构文档\n\n这是架构文档的内容。"
-            },
-            "api_docs": {
-                "success": True,
-                "content": "# API 文档\n\n这是 API 文档的内容。"
-            },
+            "architecture_doc": {"success": True, "content": "# 架构文档\n\n这是架构文档的内容。"},
+            "api_docs": {"success": True, "content": "# API 文档\n\n这是 API 文档的内容。"},
             "language": "zh",
             "output_dir": "test_output",
             "repo_url": "https://github.com/test/repo",
             "branch": "main",
             "code_structure": {},
-            "core_modules": {}
+            "core_modules": {},
         }
 
     @patch("src.nodes.combine_and_translate_node.detect_natural_language")
@@ -52,7 +47,7 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         prep_res = {
             "content_dict": {
                 "architecture_doc": "# 架构文档\n\n这是架构文档的内容。",
-                "api_docs": "# API 文档\n\n这是 API 文档的内容。"
+                "api_docs": "# API 文档\n\n这是 API 文档的内容。",
             },
             "llm_config": {},
             "target_language": "zh",
@@ -64,7 +59,7 @@ class TestCombineAndTranslateNode(unittest.TestCase):
             "retry_count": 3,
             "quality_threshold": 0.7,
             "model": "gpt-4",
-            "preserve_technical_terms": True
+            "preserve_technical_terms": True,
         }
 
         # 执行阶段
@@ -81,16 +76,17 @@ class TestCombineAndTranslateNode(unittest.TestCase):
     def test_post(self):
         """测试后处理阶段"""
         # 准备测试数据
+        prep_res = {}
         exec_res = {
             "success": True,
             "combined_content": "# 组合文档\n\n这是组合文档的内容。",
             "translated_content": "# 翻译后的文档\n\n这是翻译后的文档的内容。",
             "file_structure": {},
-            "repo_structure": {}
+            "repo_structure": {},
         }
 
         # 执行后处理阶段
-        self.node.post(self.shared, exec_res)
+        self.node.post(self.shared, prep_res, exec_res)
 
         # 验证结果
         self.assertEqual(self.shared["combined_content"], exec_res["combined_content"])
@@ -103,7 +99,7 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         # 准备测试数据
         content_dict = {
             "architecture_doc": "# 架构文档\n\n这是架构文档的内容。",
-            "api_docs": "# API 文档\n\n这是 API 文档的内容。"
+            "api_docs": "# API 文档\n\n这是 API 文档的内容。",
         }
 
         # 执行组合内容

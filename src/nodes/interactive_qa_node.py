@@ -1,4 +1,5 @@
 """交互式问答节点，用于处理用户的交互式问题。"""
+
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -12,9 +13,10 @@ from ..utils.logger import log_and_notify
 
 class InteractiveQANodeConfig(BaseModel):
     """InteractiveQANode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
+    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
     qa_prompt_template: str = Field(
         """
         你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。
@@ -30,7 +32,7 @@ class InteractiveQANodeConfig(BaseModel):
 
         请提供准确、全面的回答，包括相关代码引用和解释。如果无法回答，请说明原因。
         """,
-        description="问答提示模板"
+        description="问答提示模板",
     )
     max_context_chunks: int = Field(5, ge=1, le=20, description="最大上下文块数")
 
@@ -100,7 +102,7 @@ class InteractiveQANode(Node):
             "retry_count": self.config.retry_count,
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
-            "max_context_chunks": self.config.max_context_chunks
+            "max_context_chunks": self.config.max_context_chunks,
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -153,13 +155,7 @@ class InteractiveQANode(Node):
 
                     # 调用 LLM 生成回答
                     answer, quality_score, success = self._generate_answer(
-                        user_query,
-                        context_chunks,
-                        code_info,
-                        conversation_history,
-                        target_language,
-                        llm_config,
-                        model
+                        user_query, context_chunks, code_info, conversation_history, target_language, llm_config, model
                     )
 
                     if success and quality_score >= quality_threshold:
@@ -174,7 +170,7 @@ class InteractiveQANode(Node):
                             "answer": answer,
                             "quality_score": quality_score,
                             "conversation_history": updated_history,
-                            "success": True
+                            "success": True,
                         }
                     elif success:
                         log_and_notify(f"回答质量不佳 (分数: {quality_score}), 重试中...", "warning")
@@ -190,11 +186,12 @@ class InteractiveQANode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
+            prep_res: 准备阶段的结果
             exec_res: 执行结果
         """
         if exec_res.get("skipped", False):
@@ -210,11 +207,13 @@ class InteractiveQANode(Node):
             if "custom_answers" not in shared:
                 shared["custom_answers"] = []
 
-            shared["custom_answers"].append({
-                "question": shared["user_query"],
-                "answer": exec_res["answer"],
-                "quality_score": exec_res["quality_score"]
-            })
+            shared["custom_answers"].append(
+                {
+                    "question": shared["user_query"],
+                    "answer": exec_res["answer"],
+                    "quality_score": exec_res["quality_score"],
+                }
+            )
 
             log_and_notify("交互式问答处理完成", "info", notify=True)
         elif "error" in exec_res:
@@ -246,16 +245,10 @@ class InteractiveQANode(Node):
             user_prompt = f"请分析以下问题的类型和意图：\n\n{question}"
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="分析问题类型和意图"
+                messages=messages, temperature=0.3, model=model, trace_name="分析问题类型和意图"
             )
 
             # 获取响应内容
@@ -264,7 +257,7 @@ class InteractiveQANode(Node):
             # 解析 JSON 响应
             try:
                 # 提取 JSON 部分
-                json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
+                json_match = re.search(r"```json\n(.*?)\n```", response_content, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
@@ -333,7 +326,7 @@ class InteractiveQANode(Node):
                 simplified_structure[file_path] = {
                     "type": file_info.get("type", "unknown"),
                     "classes": list(file_info.get("classes", {}).keys()),
-                    "functions": list(file_info.get("functions", {}).keys())
+                    "functions": list(file_info.get("functions", {}).keys()),
                 }
 
         # 简化核心模块
@@ -343,14 +336,11 @@ class InteractiveQANode(Node):
                 simplified_modules[module_name] = {
                     "path": module_info.get("path", ""),
                     "description": module_info.get("description", ""),
-                    "type": module_info.get("type", "module")
+                    "type": module_info.get("type", "module"),
                 }
 
         # 组合信息
-        code_info = {
-            "structure": simplified_structure,
-            "core_modules": simplified_modules
-        }
+        code_info = {"structure": simplified_structure, "core_modules": simplified_modules}
 
         return json.dumps(code_info, indent=2, ensure_ascii=False)
 
@@ -362,7 +352,7 @@ class InteractiveQANode(Node):
         conversation_history: List[Dict[str, str]],
         target_language: str,
         llm_config: Dict[str, Any],
-        model: str
+        model: str,
     ) -> tuple:
         """生成回答
 
@@ -399,22 +389,13 @@ class InteractiveQANode(Node):
                     messages.append(conversation_history[i])
 
             # 准备用户提示
-            user_prompt = self.config.qa_prompt_template.format(
-                code_info=code_info,
-                context=context,
-                question=question
-            )
+            user_prompt = self.config.qa_prompt_template.format(code_info=code_info, context=context, question=question)
 
             # 添加用户问题
             messages.append({"role": "user", "content": user_prompt})
 
             # 调用 LLM
-            response = llm_client.completion(
-                messages=messages,
-                temperature=0.5,
-                model=model,
-                trace_name="生成问答回答"
-            )
+            response = llm_client.completion(messages=messages, temperature=0.5, model=model, trace_name="生成问答回答")
 
             # 获取响应内容
             answer = llm_client.get_completion_content(response)

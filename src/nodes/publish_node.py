@@ -1,4 +1,5 @@
 """发布节点，用于将生成的文档发布到指定平台。"""
+
 import os
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,7 @@ from ..utils.logger import log_and_notify
 
 class PublishNodeConfig(BaseModel):
     """PublishNode 配置"""
+
     platforms: List[str] = Field(["github"], description="支持的发布平台")
     github_pages_branch: str = Field("gh-pages", description="GitHub Pages 分支")
     github_pages_dir: str = Field("docs", description="GitHub Pages 目录")
@@ -82,7 +84,7 @@ class PublishNode(Node):
             "repo_url": repo_url,
             "repo_branch": repo_branch,
             "auth_info": auth_info,
-            "publish_repo": publish_repo
+            "publish_repo": publish_repo,
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -115,11 +117,7 @@ class PublishNode(Node):
             # 根据发布目标选择发布方法
             if publish_target == "github":
                 log_and_notify("开始发布到 GitHub Pages", "info")
-                publish_result = self._publish_to_github_pages(
-                    output_dir,
-                    publish_repo or repo_url,
-                    auth_info
-                )
+                publish_result = self._publish_to_github_pages(output_dir, publish_repo or repo_url, auth_info)
             else:
                 error_msg = f"不支持的发布平台: {publish_target}"
                 log_and_notify(error_msg, "error", notify=True)
@@ -131,11 +129,12 @@ class PublishNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
+            prep_res: 准备阶段的结果
             exec_res: 执行结果
         """
         if exec_res.get("skipped", False):
@@ -196,8 +195,8 @@ class PublishNode(Node):
                 "platform": "github",
                 "repo_url": repo_url,
                 "branch": self.config.github_pages_branch,
-                "files_count": len(os.listdir(output_dir))
-            }
+                "files_count": len(os.listdir(output_dir)),
+            },
         }
 
     def _create_github_pages_config(self, output_dir: str) -> str:

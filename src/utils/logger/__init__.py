@@ -1,11 +1,10 @@
 """日志记录模块，提供统一的日志记录和用户通知机制。"""
 
-import logging
+# 导入日志配置
+from ..logging_config import configure_logging
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-logger = logging.getLogger("codebase-knowledge-builder")
+# 配置日志并获取应用程序日志记录器
+logger = configure_logging()
 
 
 def log_and_notify(message: str, level: str = "info", notify: bool = False) -> None:

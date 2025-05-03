@@ -1,4 +1,5 @@
 """生成模块详细文档节点，用于生成代码库中各模块的详细文档。"""
+
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -6,15 +7,16 @@ from typing import Any, Dict, List, Optional
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.llm_wrapper import LLMClient
+from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
 
 
 class GenerateModuleDetailsNodeConfig(BaseModel):
     """GenerateModuleDetailsNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
+    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
     output_format: str = Field("markdown", description="输出格式")
     max_modules_per_batch: int = Field(5, description="每批最大模块数")
     module_details_prompt_template: str = Field(
@@ -50,8 +52,9 @@ class GenerateModuleDetailsNodeConfig(BaseModel):
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
         确保文档中的代码引用能够链接到源代码。
         """,
-        description="模块详细文档提示模板"
+        description="模块详细文档提示模板",
     )
+
 
 class GenerateModuleDetailsNode(Node):
     """生成模块详细文档节点，用于生成代码库中各模块的详细文档"""
@@ -66,6 +69,7 @@ class GenerateModuleDetailsNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("generate_module_details")
 
         # 合并配置
@@ -194,7 +198,9 @@ class GenerateModuleDetailsNode(Node):
 
         for i, module in enumerate(modules):
             try:
-                log_and_notify(f"正在生成模块详细文档 ({i+1}/{len(modules)}): {module.get('name', 'unknown')}", "info")
+                log_and_notify(
+                    f"正在生成模块详细文档 ({i + 1}/{len(modules)}): {module.get('name', 'unknown')}", "info"
+                )
 
                 # 获取模块代码内容
                 module_path = module.get("path", "")
@@ -209,9 +215,7 @@ class GenerateModuleDetailsNode(Node):
                         log_and_notify(f"尝试生成模块详细文档 (尝试 {attempt + 1}/{retry_count})", "info")
 
                         # 调用 LLM
-                        content, quality_score, success = self._call_model(
-                            llm_config, prompt, target_language, model
-                        )
+                        content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
 
                         if success and quality_score["overall"] >= quality_threshold:
                             log_and_notify(f"成功生成模块详细文档 (质量分数: {quality_score['overall']})", "info")
@@ -225,20 +229,19 @@ class GenerateModuleDetailsNode(Node):
 
                             log_and_notify(f"模块文档已保存到: {file_path}", "info")
 
-                            module_docs.append({
-                                "name": module.get("name", ""),
-                                "path": module.get("path", ""),
-                                "file_path": file_path,
-                                "content": content,
-                                "quality_score": quality_score
-                            })
+                            module_docs.append(
+                                {
+                                    "name": module.get("name", ""),
+                                    "path": module.get("path", ""),
+                                    "file_path": file_path,
+                                    "content": content,
+                                    "quality_score": quality_score,
+                                }
+                            )
 
                             break
                         elif success:
-                            log_and_notify(
-                                f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...",
-                                "warning"
-                            )
+                            log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
                     except Exception as e:
                         log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
             except Exception as e:
@@ -255,11 +258,7 @@ class GenerateModuleDetailsNode(Node):
 
         log_and_notify(f"成功生成 {len(module_docs)} 个模块的详细文档", "info")
 
-        return {
-            "modules": module_docs,
-            "index_path": index_path,
-            "success": True
-        }
+        return {"modules": module_docs, "index_path": index_path, "success": True}
 
     def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将生成结果存储到共享存储中
@@ -285,23 +284,15 @@ class GenerateModuleDetailsNode(Node):
         shared["module_details"] = {
             "modules": exec_res.get("modules", []),
             "index_path": exec_res.get("index_path", ""),
-            "success": True
+            "success": True,
         }
 
-        log_and_notify(
-            f"成功生成 {len(exec_res.get('modules', []))} 个模块的详细文档",
-            "info",
-            notify=True
-        )
+        log_and_notify(f"成功生成 {len(exec_res.get('modules', []))} 个模块的详细文档", "info", notify=True)
 
         return "default"
 
     def _get_module_code(
-        self,
-        module_path: str,
-        rag_data: Dict[str, Any],
-        code_structure: Dict[str, Any],
-        repo_path: str
+        self, module_path: str, rag_data: Dict[str, Any], code_structure: Dict[str, Any], repo_path: str
     ) -> str:
         """获取模块代码内容
 
@@ -358,18 +349,9 @@ class GenerateModuleDetailsNode(Node):
         module_info = json.dumps(module, indent=2, ensure_ascii=False)
 
         # 格式化提示
-        return self.config.module_details_prompt_template.format(
-            module_info=module_info,
-            code_content=code_content
-        )
+        return self.config.module_details_prompt_template.format(module_info=module_info, code_content=code_content)
 
-    def _call_model(
-        self,
-        llm_config: Dict[str, Any],
-        prompt: str,
-        target_language: str,
-        model: str
-    ) -> tuple:
+    def _call_model(self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str) -> tuple:
         """调用 LLM
 
         Args:
@@ -393,16 +375,10 @@ class GenerateModuleDetailsNode(Node):
 确保文档中的代码引用能够链接到源代码。"""
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="生成模块详细文档"
+                messages=messages, temperature=0.3, model=model, trace_name="生成模块详细文档"
             )
 
             # 获取响应内容
@@ -425,17 +401,10 @@ class GenerateModuleDetailsNode(Node):
         Returns:
             质量分数
         """
-        scores = {
-            "completeness": 0.0,
-            "structure": 0.0,
-            "relevance": 0.0,
-            "overall": 0.0
-        }
+        scores = {"completeness": 0.0, "structure": 0.0, "relevance": 0.0, "overall": 0.0}
 
         # 检查完整性
-        required_sections = [
-            "模块概述", "类和函数", "使用示例", "依赖关系", "注意事项"
-        ]
+        required_sections = ["模块概述", "类和函数", "使用示例", "依赖关系", "注意事项"]
 
         found_sections = 0
         for section in required_sections:

@@ -1,142 +1,128 @@
-"""测试分析仓库流程的脚本。"""
+"""测试分析仓库流程模块"""
 
-import argparse
-import json
 import os
 import sys
-
-from pocketflow import Flow
+from unittest.mock import MagicMock, patch
 
 # 确保当前目录在 Python 路径中
-sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.nodes import AnalyzeRepoFlow, InputNode, PrepareRepoNode
-from src.utils.env_manager import get_llm_config, load_env_vars
-
-
-def create_flow():
-    """创建流程
-
-    Returns:
-        流程
-    """
-    # 创建节点
-    input_node = InputNode()
-    prepare_repo_node = PrepareRepoNode()
-
-    # 创建分析仓库流程
-    analyze_repo_flow = AnalyzeRepoFlow()
-
-    # 连接节点
-    input_node >> prepare_repo_node
-
-    # 创建流程
-    flow = Flow(start=input_node)
-
-    return flow, prepare_repo_node, analyze_repo_flow
+from src.nodes.analyze_repo_flow import AnalyzeRepoFlow
 
 
-def main():
-    """主函数"""
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description="测试分析仓库流程")
-    parser.add_argument(
-        "--repo-url", type=str, default="https://github.com/octocat/Hello-World.git", help="Git 仓库 URL"
-    )
-    parser.add_argument("--branch", type=str, default="master", help="分支名称")
-    parser.add_argument("--output-dir", type=str, default="docs", help="输出目录")
-    parser.add_argument("--language", type=str, default="zh", help="输出语言")
-    parser.add_argument("--local-path", type=str, default=None, help="本地仓库路径")
-    parser.add_argument("--output", type=str, default="analyze_repo_result.json", help="输出文件路径")
-    args = parser.parse_args()
+class TestAnalyzeRepoFlow:
+    """测试分析仓库流程类"""
 
-    # 加载环境变量
-    load_env_vars()
+    def setup_method(self):
+        """每个测试方法前的准备工作"""
+        # 模拟配置
+        self.config = {
+            "parse_code": {"max_files": 100},
+            "ai_understand": {"retry_count": 1},
+            "analyze_history": {"max_commits": 50},
+            "prepare_rag": {"chunk_size": 1000},
+        }
 
-    # 获取 LLM 配置
-    llm_config = get_llm_config()
+    @patch("src.nodes.analyze_repo_flow.ParseCodeBatchNode")
+    @patch("src.nodes.analyze_repo_flow.AIUnderstandCoreModulesNode")
+    @patch("src.nodes.analyze_repo_flow.AnalyzeHistoryNode")
+    @patch("src.nodes.analyze_repo_flow.PrepareRAGDataNode")
+    def test_init(self, mock_prepare_rag, mock_analyze_history, mock_ai_understand, mock_parse_code):
+        """测试初始化"""
+        # 创建模拟节点实例
+        mock_parse_code.return_value = MagicMock()
+        mock_ai_understand.return_value = MagicMock()
+        mock_analyze_history.return_value = MagicMock()
+        mock_prepare_rag.return_value = MagicMock()
 
-    # 创建共享存储
-    shared = {
-        "llm_config": llm_config,
-        "args": [
-            f"--repo-url={args.repo_url}",
-            f"--branch={args.branch}",
-            f"--output-dir={args.output_dir}",
-            f"--language={args.language}",
-        ],
-    }
+        # 初始化流程
+        analyze_repo_flow = AnalyzeRepoFlow(self.config)
 
-    if args.local_path:
-        shared["args"].append(f"--local-path={args.local_path}")
+        # 验证节点是否被正确创建
+        mock_parse_code.assert_called_once_with(self.config["parse_code"])
+        mock_ai_understand.assert_called_once_with(self.config["ai_understand"])
+        mock_analyze_history.assert_called_once_with(self.config["analyze_history"])
+        mock_prepare_rag.assert_called_once_with(self.config["prepare_rag"])
 
-    # 创建流程
-    flow, prepare_repo_node, analyze_repo_flow = create_flow()
+        # 验证流程是否被创建
+        assert analyze_repo_flow.flow is not None
 
-    # 运行流程
-    print(f"开始测试分析仓库流程，仓库: {args.repo_url}, 分支: {args.branch}")
-    flow.run(shared)
+    @patch("src.nodes.analyze_repo_flow.Flow")
+    @patch("src.nodes.analyze_repo_flow.ParseCodeBatchNode")
+    @patch("src.nodes.analyze_repo_flow.AIUnderstandCoreModulesNode")
+    @patch("src.nodes.analyze_repo_flow.AnalyzeHistoryNode")
+    @patch("src.nodes.analyze_repo_flow.PrepareRAGDataNode")
+    def test_create_flow(self, mock_prepare_rag, mock_analyze_history, mock_ai_understand, mock_parse_code, mock_flow):
+        """测试创建流程"""
+        # 创建模拟节点实例
+        mock_parse_code_instance = MagicMock()
+        mock_ai_understand_instance = MagicMock()
+        mock_analyze_history_instance = MagicMock()
+        mock_prepare_rag_instance = MagicMock()
 
-    # 检查流程是否成功
-    if "error" in shared:
-        print(f"\n流程失败: {shared['error']}")
-        return
+        mock_parse_code.return_value = mock_parse_code_instance
+        mock_ai_understand.return_value = mock_ai_understand_instance
+        mock_analyze_history.return_value = mock_analyze_history_instance
+        mock_prepare_rag.return_value = mock_prepare_rag_instance
 
-    # 检查仓库是否准备好
-    if "repo_path" not in shared:
-        print("\n流程完成，但没有生成仓库路径")
-        return
+        # 初始化流程
+        analyze_repo_flow = AnalyzeRepoFlow(self.config)
 
-    # 运行分析仓库流程
-    print("\n开始运行分析仓库流程")
-    result = analyze_repo_flow.run(shared)
+        # 验证节点连接
+        mock_parse_code_instance.__rshift__.assert_any_call(mock_ai_understand_instance)
+        mock_parse_code_instance.__rshift__.assert_any_call(mock_prepare_rag_instance)
+        mock_parse_code_instance.__rshift__.assert_any_call(mock_analyze_history_instance)
 
-    # 输出结果
-    if result.get("success", False):
-        print("\n分析仓库流程完成:")
-        print(
-            f"- 代码结构: {result['code_structure'].get('file_count', 0)} 个文件, "
-            f"{result['code_structure'].get('directory_count', 0)} 个目录"
-        )
-        print(f"- 核心模块: {len(result['core_modules'].get('modules', []))} 个")
-        print(
-            f"- 历史分析: {result['history_analysis'].get('commit_count', 0)} 个提交, "
-            f"{result['history_analysis'].get('contributor_count', 0)} 个贡献者"
-        )
-        print(f"- RAG 数据: {len(result['rag_data'].get('chunks', []))} 个块")
+        # 验证流程创建
+        mock_flow.assert_called_once_with(start=mock_parse_code_instance)
 
-        # 保存结果到文件
-        with open(args.output, "w", encoding="utf-8") as f:
-            # 简化结果，避免文件过大
-            simplified_result = {
-                "code_structure": {
-                    "file_count": result["code_structure"].get("file_count", 0),
-                    "directory_count": result["code_structure"].get("directory_count", 0),
-                    "language_stats": result["code_structure"].get("language_stats", {}),
-                    "file_types": result["code_structure"].get("file_types", {}),
-                },
-                "core_modules": {
-                    "modules": result["core_modules"].get("modules", []),
-                    "architecture": result["core_modules"].get("architecture", ""),
-                    "relationships": result["core_modules"].get("relationships", []),
-                },
-                "history_analysis": {
-                    "commit_count": result["history_analysis"].get("commit_count", 0),
-                    "contributor_count": result["history_analysis"].get("contributor_count", 0),
-                    "history_summary": result["history_analysis"].get("history_summary", ""),
-                },
-                "rag_data": {
-                    "file_count": len(result["rag_data"].get("files", [])),
-                    "chunk_count": len(result["rag_data"].get("chunks", [])),
-                },
-            }
+    @patch("src.nodes.analyze_repo_flow.log_and_notify")
+    def test_run_missing_repo_path(self, mock_log_notify):
+        """测试运行时缺少仓库路径"""
+        # 初始化流程
+        analyze_repo_flow = AnalyzeRepoFlow(self.config)
 
-            json.dump(simplified_result, f, indent=2, ensure_ascii=False)
+        # 模拟流程的run方法
+        analyze_repo_flow.flow = MagicMock()
 
-        print(f"\n结果已保存到: {args.output}")
-    else:
-        print(f"\n分析仓库流程失败: {result.get('error', '未知错误')}")
+        # 运行流程，但不提供仓库路径
+        shared = {}
+        result = analyze_repo_flow.run(shared)
 
+        # 验证结果
+        assert result["success"] is False
+        assert "error" in result
+        assert "缺少仓库路径" in result["error"]
 
-if __name__ == "__main__":
-    main()
+        # 验证日志调用
+        mock_log_notify.assert_any_call("开始运行分析仓库流程", "info")
+
+    @patch("src.nodes.analyze_repo_flow.log_and_notify")
+    def test_run_success(self, mock_log_notify):
+        """测试成功运行"""
+        # 初始化流程
+        analyze_repo_flow = AnalyzeRepoFlow(self.config)
+
+        # 模拟流程的run方法
+        analyze_repo_flow.flow = MagicMock()
+
+        # 运行流程
+        shared = {
+            "repo_path": "/path/to/repo",
+            "code_structure": {"files": 10},
+            "core_modules": {"module1": "description1"},
+            "history_analysis": {"commits": 50},
+            "rag_data": {"chunks": 100},
+        }
+        result = analyze_repo_flow.run(shared)
+
+        # 验证结果
+        assert result["success"] is True
+        assert "code_structure" in result
+        assert "core_modules" in result
+        assert "history_analysis" in result
+        assert "rag_data" in result
+
+        # 验证日志调用
+        mock_log_notify.assert_any_call("开始运行分析仓库流程", "info")
+        mock_log_notify.assert_any_call("分析仓库流程完成", "info", notify=True)

@@ -8,7 +8,7 @@ from pocketflow import Node
 from pydantic import BaseModel, Field
 
 from ..utils.language_utils import detect_natural_language, extract_technical_terms
-from ..utils.llm_client import LLMClient
+from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
 
 
@@ -17,7 +17,7 @@ class CombineAndTranslateNodeConfig(BaseModel):
 
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
+    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
     preserve_technical_terms: bool = Field(True, description="是否保留技术术语")
     translation_prompt_template: str = Field(
         """
@@ -233,11 +233,12 @@ class CombineAndTranslateNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
+            prep_res: 准备阶段的结果
             exec_res: 执行结果
         """
         if exec_res.get("success", False):

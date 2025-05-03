@@ -110,6 +110,7 @@ class TestPublishNode(unittest.TestCase):
     def test_post(self):
         """测试后处理阶段"""
         # 准备测试数据
+        prep_res = {}
         exec_res = {
             "success": True,
             "publish_url": "https://test.github.io/repo",
@@ -122,7 +123,7 @@ class TestPublishNode(unittest.TestCase):
         }
 
         # 执行后处理阶段
-        self.node.post(self.shared, exec_res)
+        self.node.post(self.shared, prep_res, exec_res)
 
         # 验证结果
         self.assertEqual(self.shared["publish_url"], "https://test.github.io/repo")

@@ -8,9 +8,12 @@ app:
 
 # LLM 配置
 llm:
-  provider: "openai"  # 可选: openai, openrouter, alibaba, volcengine, moonshot
+  provider: "openai" # 可选: openai, openrouter, alibaba, volcengine, moonshot
   model: "gpt-4"
-  max_tokens: 4000
+  # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
+  max_tokens: 4000 # 控制LLM输出的最大token数
+  max_input_tokens: 25000 # 控制输入到LLM的最大token数
+  # 注意: max_input_tokens + max_tokens 的总和不应超过模型的最大上下文长度
   temperature: 0.7
 
   # OpenAI 配置
@@ -30,7 +33,7 @@ llm:
   # 火山引擎配置
   volcengine:
     base_url: "https://api.volcengine.com/ml/api/v1/services"
-    service_id: ""  # 需要在环境变量中设置
+    service_id: "" # 需要在环境变量中设置
 
   # 硅基流动配置
   moonshot:
@@ -45,7 +48,7 @@ langfuse:
 # Git 仓库配置
 git:
   default_branch: "main"
-  cache_ttl: 86400  # 24小时，单位：秒
+  cache_ttl: 86400 # 24小时，单位：秒
   max_commits: 100
 
 # 节点配置
@@ -57,7 +60,7 @@ nodes:
     default_language: "zh"
 
   prepare_repo:
-    cache_ttl: 86400  # 24小时，单位：秒
+    cache_ttl: 86400 # 24小时，单位：秒
     force_clone: false
 
   analyze_history:
@@ -137,7 +140,7 @@ nodes:
   ai_understand_core_modules:
     retry_count: 3
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "gpt-3.5-turbo"
     language_detection: true
     terminology_extraction: true
     core_modules_prompt_template: |
@@ -216,7 +219,7 @@ nodes:
   generate_overall_architecture:
     retry_count: 3
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "gpt-3.5-turbo"
     output_format: "markdown"
     architecture_prompt_template: |
       你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
@@ -258,7 +261,7 @@ nodes:
   content_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "gpt-3.5-turbo"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -284,7 +287,7 @@ nodes:
   generate_module_details:
     retry_count: 3
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "gpt-3.5-turbo"
     output_format: "markdown"
     max_modules_per_batch: 5
     module_details_prompt_template: |
@@ -322,7 +325,7 @@ nodes:
   module_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "qwen/qwen3-30b-a3b:free"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -348,7 +351,7 @@ nodes:
   combine_translate:
     retry_count: 3
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "qwen/qwen3-30b-a3b:free"
     preserve_technical_terms: true
     translation_prompt_template: |
       你是一个专业的技术文档翻译专家。请将以下技术文档内容翻译成{target_language}语言。
@@ -417,7 +420,7 @@ nodes:
   interactive_qa:
     retry_count: 3
     quality_threshold: 0.7
-    model: "${LLM_MODEL:-gpt-4}"
+    model: "qwen/qwen3-30b-a3b:free"
     max_context_chunks: 5
     qa_prompt_template: |
       你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。

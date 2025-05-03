@@ -15,7 +15,7 @@ class ContentQualityCheckNodeConfig(BaseModel):
 
     retry_count: int = Field(2, ge=1, le=5, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("${LLM_MODEL:-gpt-4}", description="LLM 模型")
+    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
     auto_fix: bool = Field(True, description="是否自动修复")
     check_aspects: List[str] = Field(["completeness", "accuracy", "readability", "formatting"], description="检查方面")
     quality_check_prompt_template: str = Field(

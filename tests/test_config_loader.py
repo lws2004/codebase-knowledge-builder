@@ -1,53 +1,75 @@
-"""测试配置加载器的脚本。"""
-import json
+"""测试配置加载器模块"""
+
 import os
 import sys
+from unittest.mock import mock_open, patch
 
 # 确保当前目录在 Python 路径中
-sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.utils.config_loader import ConfigLoader
 
 
-def main():
-    """主函数"""
-    print("测试配置加载器")
+class TestConfigLoader:
+    """测试配置加载器类"""
 
-    # 创建配置加载器
-    config_loader = ConfigLoader()
+    def setup_method(self):
+        """每个测试方法前的准备工作"""
+        # 创建配置加载器实例
+        self.config_loader = ConfigLoader()
 
-    # 获取完整配置
-    config = config_loader.get_config()
+    def test_get_config(self):
+        """测试获取完整配置"""
+        # 获取完整配置
+        config = self.config_loader.get_config()
 
-    # 打印默认配置
-    print("\n默认配置:")
-    print(json.dumps(config, indent=2, ensure_ascii=False))
+        # 验证配置是否包含基本项
+        assert "app" in config
+        assert "llm" in config
+        assert "nodes" in config
 
-    # 加载开发环境配置
-    config_loader.load_env_config("development")
+    def test_get_specific_config(self):
+        """测试获取特定配置项"""
+        # 获取特定配置项
+        app_name = self.config_loader.get("app.name")
+        llm_provider = self.config_loader.get("llm.provider")
+        llm_model = self.config_loader.get("llm.model")
 
-    # 获取更新后的配置
-    config = config_loader.get_config()
+        # 验证配置项是否存在
+        assert app_name is not None
+        assert llm_provider is not None
+        assert llm_model is not None
 
-    # 打印开发环境配置
-    print("\n开发环境配置:")
-    print(json.dumps(config, indent=2, ensure_ascii=False))
+    def test_get_default_value(self):
+        """测试获取不存在的配置项时返回默认值"""
+        # 获取不存在的配置项
+        default_value = "默认值"
+        result = self.config_loader.get("not.exist", default_value)
 
-    # 获取特定配置项
-    print("\n特定配置项:")
-    print(f"应用名称: {config_loader.get('app.name')}")
-    print(f"LLM 提供商: {config_loader.get('llm.provider')}")
-    print(f"LLM 模型: {config_loader.get('llm.model')}")
-    print(f"Git 默认分支: {config_loader.get('git.default_branch')}")
+        # 验证返回默认值
+        assert result == default_value
 
-    # 获取节点配置
-    print("\n节点配置:")
-    analyze_history_config = config_loader.get_node_config("analyze_history")
-    print(json.dumps(analyze_history_config, indent=2, ensure_ascii=False))
+    def test_get_node_config(self):
+        """测试获取节点配置"""
+        # 获取节点配置
+        node_config = self.config_loader.get_node_config("analyze_history")
 
-    # 测试不存在的配置项
-    print("\n不存在的配置项:")
-    print(f"不存在的配置项: {config_loader.get('not.exist', '默认值')}")
+        # 验证节点配置是否存在
+        assert node_config is not None
+        assert isinstance(node_config, dict)
 
-if __name__ == "__main__":
-    main()
+    @patch("os.path.exists")
+    @patch("builtins.open", new_callable=mock_open, read_data='{"test": {"key": "value"}}')
+    def test_load_env_config(self, mock_file, mock_exists):
+        """测试加载环境配置"""
+        # 模拟文件存在
+        mock_exists.return_value = True
+
+        # 加载环境配置
+        self.config_loader.load_env_config("test")
+
+        # 验证文件是否被打开
+        mock_file.assert_called_once()
+
+        # 验证配置是否被加载
+        assert self.config_loader.get("test.key") == "value"

@@ -1,4 +1,5 @@
 """运行所有测试的脚本。"""
+
 import argparse
 import importlib
 import os
@@ -19,21 +20,33 @@ def run_test(test_name):
     try:
         # 导入测试模块
         module_name = f"tests.{test_name}"
-        module = importlib.import_module(module_name)
 
-        # 运行测试
-        if hasattr(module, "main"):
-            module.main()
-            return True
-        else:
-            print(f"错误: 测试模块 {module_name} 没有 main 函数")
-            return False
+        # 使用 unittest 运行测试
+        import unittest
+
+        # 尝试加载测试模块
+        try:
+            # 先尝试作为 unittest 测试运行
+            test_suite = unittest.defaultTestLoader.loadTestsFromName(module_name)
+            test_runner = unittest.TextTestRunner(verbosity=2)
+            result = test_runner.run(test_suite)
+            return result.wasSuccessful()
+        except (ImportError, AttributeError):
+            # 如果不是 unittest 测试，尝试作为普通模块运行
+            module = importlib.import_module(module_name)
+            if hasattr(module, "main"):
+                module.main()
+                return True
+            else:
+                print(f"错误: 测试模块 {module_name} 没有 main 函数，也不是 unittest 测试")
+                return False
     except ImportError as e:
         print(f"错误: 无法导入测试模块 {module_name}: {str(e)}")
         return False
     except Exception as e:
         print(f"错误: 运行测试 {test_name} 失败: {str(e)}")
         return False
+
 
 def main():
     """主函数"""
@@ -72,6 +85,7 @@ def main():
     else:
         parser.print_help()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

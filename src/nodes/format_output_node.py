@@ -1,4 +1,5 @@
 """格式化输出节点，用于格式化输出文档。"""
+
 import re
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,7 @@ from ..utils.logger import log_and_notify
 
 class FormatOutputNodeConfig(BaseModel):
     """FormatOutputNode 配置"""
+
     output_format: str = Field("markdown", description="输出格式")
     add_toc: bool = Field(True, description="是否添加目录")
     add_nav_links: bool = Field(True, description="是否添加导航链接")
@@ -46,7 +48,7 @@ class FormatOutputNodeConfig(BaseModel):
 
 {references}
 """,
-        description="默认模板"
+        description="默认模板",
     )
 
 
@@ -113,7 +115,7 @@ class FormatOutputNode(Node):
             "add_nav_links": self.config.add_nav_links,
             "add_emojis": self.config.add_emojis,
             "justdoc_compatible": self.config.justdoc_compatible,
-            "template": self.config.template or self.config.default_template
+            "template": self.config.template or self.config.default_template,
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,11 +154,7 @@ class FormatOutputNode(Node):
             # 格式化 Markdown
             log_and_notify("开始格式化 Markdown", "info")
             formatted_content = format_markdown(
-                content_dict,
-                template=template,
-                toc=add_toc,
-                nav_links=add_nav_links,
-                add_emojis=add_emojis
+                content_dict, template=template, toc=add_toc, nav_links=add_nav_links, add_emojis=add_emojis
             )
 
             # 拆分内容为多个文件
@@ -166,7 +164,7 @@ class FormatOutputNode(Node):
                 output_dir,
                 file_structure=file_structure,
                 repo_structure=repo_structure,
-                justdoc_compatible=justdoc_compatible
+                justdoc_compatible=justdoc_compatible,
             )
 
             # 如果输出格式不是 Markdown，转换为其他格式
@@ -179,18 +177,19 @@ class FormatOutputNode(Node):
                 "output_files": output_files,
                 "output_dir": output_dir,
                 "output_format": output_format,
-                "success": True
+                "success": True,
             }
         except Exception as e:
             error_msg = f"格式化输出失败: {str(e)}"
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
+            prep_res: 准备阶段的结果
             exec_res: 执行结果
         """
         if exec_res.get("success", False):
@@ -222,41 +221,41 @@ class FormatOutputNode(Node):
             "core_modules": "",
             "examples": "",
             "faq": "",
-            "references": ""
+            "references": "",
         }
 
         # 查找标题
-        title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+        title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
         if title_match:
             content_dict["title"] = title_match.group(1)
 
         # 查找简介
-        intro_match = re.search(r'##\s+(?:简介|介绍|概述)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        intro_match = re.search(r"##\s+(?:简介|介绍|概述)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if intro_match:
             content_dict["introduction"] = intro_match.group(1).strip()
 
         # 查找架构
-        arch_match = re.search(r'##\s+(?:架构|系统架构|设计)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        arch_match = re.search(r"##\s+(?:架构|系统架构|设计)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if arch_match:
             content_dict["architecture"] = arch_match.group(1).strip()
 
         # 查找核心模块
-        modules_match = re.search(r'##\s+(?:核心模块|模块|组件)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        modules_match = re.search(r"##\s+(?:核心模块|模块|组件)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if modules_match:
             content_dict["core_modules"] = modules_match.group(1).strip()
 
         # 查找示例
-        examples_match = re.search(r'##\s+(?:示例|使用示例|用法)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        examples_match = re.search(r"##\s+(?:示例|使用示例|用法)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if examples_match:
             content_dict["examples"] = examples_match.group(1).strip()
 
         # 查找常见问题
-        faq_match = re.search(r'##\s+(?:常见问题|FAQ|问题)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        faq_match = re.search(r"##\s+(?:常见问题|FAQ|问题)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if faq_match:
             content_dict["faq"] = faq_match.group(1).strip()
 
         # 查找参考资料
-        ref_match = re.search(r'##\s+(?:参考资料|参考|引用)(.+?)(?=##\s+|$)', content, re.MULTILINE | re.DOTALL)
+        ref_match = re.search(r"##\s+(?:参考资料|参考|引用)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
         if ref_match:
             content_dict["references"] = ref_match.group(1).strip()
 

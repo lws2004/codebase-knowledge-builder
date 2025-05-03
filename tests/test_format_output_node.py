@@ -1,4 +1,5 @@
 """测试 FormatOutputNode"""
+
 import os
 import shutil
 import unittest
@@ -17,13 +18,13 @@ class TestFormatOutputNode(unittest.TestCase):
             "translated_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
             "file_structure": {
                 "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
-                "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]}
+                "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
             },
             "repo_structure": {},
             "output_dir": "test_output",
             "repo_url": "https://github.com/test/repo",
             "repo_branch": "main",
-            "language": "zh"
+            "language": "zh",
         }
 
         # 创建测试输出目录
@@ -63,7 +64,7 @@ class TestFormatOutputNode(unittest.TestCase):
             "translated_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
             "file_structure": {
                 "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
-                "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]}
+                "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
             },
             "repo_structure": {},
             "output_dir": "test_output",
@@ -75,7 +76,7 @@ class TestFormatOutputNode(unittest.TestCase):
             "add_nav_links": True,
             "add_emojis": True,
             "justdoc_compatible": True,
-            "template": "# {title}\n\n{toc}\n\n## 简介\n\n{introduction}"
+            "template": "# {title}\n\n{toc}\n\n## 简介\n\n{introduction}",
         }
 
         # 执行阶段
@@ -95,16 +96,17 @@ class TestFormatOutputNode(unittest.TestCase):
     def test_post(self):
         """测试后处理阶段"""
         # 准备测试数据
+        prep_res = {}
         exec_res = {
             "success": True,
             "formatted_content": "# 格式化后的文档\n\n这是格式化后的文档内容。",
             "output_files": ["README.md", "docs/index.md"],
             "output_dir": "test_output",
-            "output_format": "markdown"
+            "output_format": "markdown",
         }
 
         # 执行后处理阶段
-        self.node.post(self.shared, exec_res)
+        self.node.post(self.shared, prep_res, exec_res)
 
         # 验证结果
         self.assertEqual(self.shared["formatted_content"], exec_res["formatted_content"])
@@ -154,7 +156,7 @@ class TestFormatOutputNode(unittest.TestCase):
                 "core_modules": "这是核心模块部分。",
                 "examples": "这是示例部分。",
                 "faq": "这是常见问题部分。",
-                "references": "这是参考资料部分。"
+                "references": "这是参考资料部分。",
             }
 
         # 替换原始方法

@@ -1,4 +1,5 @@
 """代码库知识构建器的主入口点。"""
+
 import argparse
 
 from pocketflow import Flow
@@ -13,6 +14,7 @@ from src.nodes import (
     PrepareRepoNode,
     PublishNode,
 )
+from src.nodes.flow_connector_nodes import AnalyzeRepoConnector, GenerateContentConnector
 from src.utils.config_loader import ConfigLoader
 from src.utils.env_manager import get_llm_config, load_env_vars
 
@@ -27,35 +29,26 @@ def create_flow():
     config_loader = ConfigLoader()
 
     # 创建节点
-    input_node = InputNode(
-        config_loader.get_node_config("input")
-    )
-    prepare_repo_node = PrepareRepoNode(
-        config_loader.get_node_config("prepare_repo")
-    )
-    analyze_repo_flow = AnalyzeRepoFlow(
-        config_loader.get("nodes.analyze_repo")
-    )
-    generate_content_flow = GenerateContentFlow(
-        config_loader.get("nodes.generate_content")
-    )
-    combine_translate_node = CombineAndTranslateNode(
-        config_loader.get_node_config("combine_translate")
-    )
-    format_output_node = FormatOutputNode(
-        config_loader.get_node_config("format_output")
-    )
-    interactive_qa_node = InteractiveQANode(
-        config_loader.get_node_config("interactive_qa")
-    )
-    publish_node = PublishNode(
-        config_loader.get_node_config("publish")
-    )
+    input_node = InputNode(config_loader.get_node_config("input"))
+    prepare_repo_node = PrepareRepoNode(config_loader.get_node_config("prepare_repo"))
+    analyze_repo_flow = AnalyzeRepoFlow(config_loader.get("nodes.analyze_repo"))
+    generate_content_flow = GenerateContentFlow(config_loader.get("nodes.generate_content"))
+    combine_translate_node = CombineAndTranslateNode(config_loader.get_node_config("combine_translate"))
+    format_output_node = FormatOutputNode(config_loader.get_node_config("format_output"))
+    interactive_qa_node = InteractiveQANode(config_loader.get_node_config("interactive_qa"))
+    publish_node = PublishNode(config_loader.get_node_config("publish"))
 
     # 连接节点
-    input_node >> prepare_repo_node >> analyze_repo_flow
-    analyze_repo_flow >> generate_content_flow
-    generate_content_flow >> combine_translate_node
+    input_node >> prepare_repo_node
+
+    # 创建连接器节点
+    analyze_repo_connector = AnalyzeRepoConnector(analyze_repo_flow)
+    generate_content_connector = GenerateContentConnector(generate_content_flow)
+
+    # 连接节点
+    prepare_repo_node >> analyze_repo_connector
+    analyze_repo_connector >> generate_content_connector
+    generate_content_connector >> combine_translate_node
     combine_translate_node >> format_output_node
     format_output_node >> interactive_qa_node
     interactive_qa_node >> publish_node
@@ -76,18 +69,8 @@ def main():
     parser.add_argument("--user-query", type=str, help="用户问题")
     parser.add_argument("--publish-target", type=str, help="发布目标平台")
     parser.add_argument("--publish-repo", type=str, help="发布目标仓库")
-    parser.add_argument(
-        "--output-format",
-        type=str,
-        default="markdown",
-        help="输出格式"
-    )
-    parser.add_argument(
-        "--env",
-        type=str,
-        default="default",
-        help="环境名称，用于加载对应的配置文件"
-    )
+    parser.add_argument("--output-format", type=str, default="markdown", help="输出格式")
+    parser.add_argument("--env", type=str, default="default", help="环境名称，用于加载对应的配置文件")
     args = parser.parse_args()
 
     # 加载环境变量和配置
@@ -98,6 +81,14 @@ def main():
     if args.env != "default":
         config_loader.load_env_config(args.env)
 
+    # 打印当前环境变量中的模型配置，用于调试
+    import os
+
+    print("当前环境变量中的模型配置:")
+    for key in os.environ:
+        if key.startswith("LLM_MODEL"):
+            print(f"- {key}={os.environ[key]}")
+
     # 获取 LLM 配置
     llm_config = get_llm_config()
 
@@ -106,17 +97,13 @@ def main():
         "llm_config": llm_config,
         "repo_url": args.repo_url,
         "branch": args.branch,
-        "output_dir": args.output_dir or config_loader.get(
-            "nodes.input.default_output_dir", "docs_output"
-        ),
-        "language": args.language or config_loader.get(
-            "nodes.input.default_language", "zh"
-        ),
+        "output_dir": args.output_dir or config_loader.get("nodes.input.default_output_dir", "docs_output"),
+        "language": args.language or config_loader.get("nodes.input.default_language", "zh"),
         "local_path": args.local_path,
         "user_query": args.user_query,
         "publish_target": args.publish_target,
         "publish_repo": args.publish_repo,
-        "output_format": args.output_format
+        "output_format": args.output_format,
     }
 
     # 创建流程

@@ -82,29 +82,21 @@ class GenerateContentFlow:
         Returns:
             流程
         """
-        # 连接节点 - 整体内容生成
-        self.overall_architecture_node >> self.content_quality_node
-        self.api_docs_node >> self.content_quality_node
-        self.timeline_node >> self.content_quality_node
-        self.dependency_node >> self.content_quality_node
-        self.glossary_node >> self.content_quality_node
+        # 使用顺序执行而不是并行执行
+        # 创建一个简单的顺序流程
+        self.overall_architecture_node >> self.api_docs_node
+        self.api_docs_node >> self.timeline_node
+        self.timeline_node >> self.dependency_node
+        self.dependency_node >> self.glossary_node
+        self.glossary_node >> self.quick_look_node
         self.quick_look_node >> self.content_quality_node
 
         # 连接节点 - 模块详细内容生成
         self.content_quality_node >> self.module_details_node
         self.module_details_node >> self.module_quality_node
 
-        # 创建流程，使用并行启动多个节点
-        return Flow(
-            start=[
-                self.overall_architecture_node,
-                self.api_docs_node,
-                self.timeline_node,
-                self.dependency_node,
-                self.glossary_node,
-                self.quick_look_node,
-            ]
-        )
+        # 创建流程，使用第一个节点作为启动节点
+        return Flow(start=self.overall_architecture_node)
 
     def run(self, shared: Dict[str, Any]) -> Dict[str, Any]:
         """运行流程
