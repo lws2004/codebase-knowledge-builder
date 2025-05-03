@@ -23,8 +23,14 @@ class LLMClient:
             config: LLM 配置
         """
         self.config = config
-        self.provider = config.get("provider", "openai")
-        self.model = config.get("model", "gpt-4")
+        self.model = config.get("model", "openai/gpt-4")
+
+        # 从模型字符串中提取提供商信息
+        if "/" in self.model:
+            self.provider = self.model.split("/")[0]
+        else:
+            self.provider = config.get("provider", "openai")
+
         self.api_key = config.get("api_key", "")
         self.base_url = config.get("base_url", "")
         self.max_tokens = config.get("max_tokens", 4000)
@@ -37,7 +43,7 @@ class LLMClient:
         # 配置 LiteLLM
         self._configure_litellm()
 
-        log_and_notify(f"初始化 LLM 客户端: {self.provider}/{self.model}", "info")
+        log_and_notify(f"初始化 LLM 客户端: {self.model}", "info")
 
     def _init_langfuse(self) -> None:
         """初始化 Langfuse"""
@@ -89,6 +95,27 @@ class LLMClient:
         if headers:
             litellm.headers = headers
 
+        # 配置缓存
+        cache_config = self.config.get("cache", {})
+        if cache_config.get("enabled", False):
+            try:
+                # 获取缓存目录
+                cache_dir = cache_config.get("dir", ".cache/llm")
+
+                # 确保缓存目录存在
+                os.makedirs(cache_dir, exist_ok=True)
+
+                # 设置缓存环境变量
+                os.environ["LITELLM_CACHE"] = "true"
+                os.environ["LITELLM_CACHE_TYPE"] = "redis"
+                os.environ["LITELLM_CACHE_HOST"] = "memory"
+                os.environ["LITELLM_CACHE_PORT"] = "6379"
+                os.environ["LITELLM_CACHE_TTL"] = str(cache_config.get("ttl", 86400))
+
+                log_and_notify(f"LiteLLM 缓存已启用，TTL: {cache_config.get('ttl', 86400)}秒", "info")
+            except Exception as e:
+                log_and_notify(f"配置 LiteLLM 缓存失败: {str(e)}", "error")
+
     def _get_model_string(self) -> str:
         """获取模型字符串，使用 LiteLLM 的模型解析格式
 
@@ -115,11 +142,11 @@ class LLMClient:
             # 获取环境变量值，如果不存在则使用默认值
             self.model = os.getenv(env_name, default_value)
 
-        # 记录当前的提供商和模型
-        log_and_notify(f"处理模型字符串: provider={self.provider}, model={self.model}", "debug")
+        # 记录当前的模型
+        log_and_notify(f"处理模型字符串: model={self.model}", "debug")
 
-        # 直接返回模型字符串，不做任何处理
-        # 模型字符串应该已经在env_manager.py中被格式化为provider/model格式
+        # 直接返回模型字符串，假设它已经是完整的格式
+        # 例如: "openai/gpt-4" 或 "openrouter/qwen/qwen3-30b-a3b:free"
         log_and_notify(f"最终模型字符串: {self.model}", "debug")
         return self.model
 

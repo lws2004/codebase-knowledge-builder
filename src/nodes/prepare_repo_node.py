@@ -1,4 +1,5 @@
 """准备仓库节点，用于克隆和准备 Git 仓库。"""
+
 from typing import Any, Dict, Optional
 
 from pocketflow import Node
@@ -10,8 +11,10 @@ from ..utils.logger import log_and_notify
 
 class PrepareRepoNodeConfig(BaseModel):
     """PrepareRepoNode 配置"""
+
     cache_ttl: int = Field(86400, description="缓存有效期，单位：秒")
     force_clone: bool = Field(False, description="是否强制克隆")
+
 
 class PrepareRepoNode(Node):
     """准备仓库节点，用于克隆和准备 Git 仓库"""
@@ -26,6 +29,7 @@ class PrepareRepoNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("prepare_repo")
 
         # 合并配置
@@ -66,13 +70,20 @@ class PrepareRepoNode(Node):
         local_path = prep_res.get("local_path")
         branch = prep_res.get("branch", "main")
 
+        # 获取缓存配置
+        use_cache = not self.config.force_clone
+        cache_ttl = self.config.cache_ttl
+
         if not repo_url:
             return {"error": "缺少仓库 URL", "success": False}
 
-        # 创建 Git 仓库管理器
-        repo_manager = GitRepoManager(repo_url, local_path, branch)
+        # 创建 Git 仓库管理器，启用缓存
+        repo_manager = GitRepoManager(repo_url, local_path, branch, use_cache=use_cache)
 
-        # 克隆仓库
+        # 设置缓存有效期
+        repo_manager.cache_ttl = cache_ttl
+
+        # 克隆仓库（会自动使用缓存）
         if not repo_manager.clone():
             return {"error": "克隆仓库失败", "success": False}
 
@@ -85,7 +96,8 @@ class PrepareRepoNode(Node):
             "repo_path": repo_manager.local_path,
             "branch": branch,
             "repo_url": repo_url,
-            "success": True
+            "success": True,
+            "used_cache": use_cache and repo_manager._is_cache_valid(),
         }
 
         # 获取文件列表
@@ -117,5 +129,13 @@ class PrepareRepoNode(Node):
 
         if "file_count" in exec_res:
             shared["file_count"] = exec_res["file_count"]
+
+        # 记录是否使用了缓存
+        if "used_cache" in exec_res:
+            shared["used_cache"] = exec_res["used_cache"]
+            if exec_res["used_cache"]:
+                log_and_notify(f"使用了缓存的仓库: {exec_res['repo_url']}", "info")
+            else:
+                log_and_notify(f"使用了新克隆的仓库: {exec_res['repo_url']}", "info")
 
         return "default"

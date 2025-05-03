@@ -3,6 +3,8 @@
 from .ai_understand_core_modules_node import AIUnderstandCoreModulesNode
 from .analyze_history_node import AnalyzeHistoryNode
 from .analyze_repo_flow import AnalyzeRepoFlow
+from .async_parallel_batch_node import AsyncParallelBatchNode
+from .async_parallel_flow import AsyncParallelBatchFlow, AsyncParallelFlow
 from .combine_and_translate_node import CombineAndTranslateNode
 from .content_quality_check_node import ContentQualityCheckNode
 from .flow_connector_nodes import AnalyzeRepoConnector, GenerateContentConnector
@@ -18,6 +20,7 @@ from .generate_timeline_node import GenerateTimelineNode
 from .input_node import InputNode
 from .interactive_qa_node import InteractiveQANode
 from .module_quality_check_node import ModuleQualityCheckNode
+from .parallel_generate_content_flow import ParallelGenerateContentFlow
 from .parallel_start_node import ParallelStartNode
 from .parse_code_batch_node import ParseCodeBatchNode
 from .prepare_rag_data_node import PrepareRAGDataNode
@@ -49,4 +52,9 @@ __all__ = [
     "AnalyzeRepoConnector",
     "GenerateContentConnector",
     "ParallelStartNode",
+    # 并行优化相关
+    "AsyncParallelBatchNode",
+    "AsyncParallelFlow",
+    "AsyncParallelBatchFlow",
+    "ParallelGenerateContentFlow",
 ]

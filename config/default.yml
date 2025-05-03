@@ -8,13 +8,16 @@ app:
 
 # LLM 配置
 llm:
-  provider: "openai" # 可选: openai, openrouter, alibaba, volcengine, moonshot
-  model: "gpt-4"
+  model: "openai/gpt-4" # 格式: "provider/model"，例如: "openai/gpt-4", "openrouter/qwen/qwen3-30b-a3b:free"
   # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
   max_tokens: 4000 # 控制LLM输出的最大token数
   max_input_tokens: 25000 # 控制输入到LLM的最大token数
   # 注意: max_input_tokens + max_tokens 的总和不应超过模型的最大上下文长度
   temperature: 0.7
+  # 缓存配置
+  cache_enabled: true # 是否启用缓存
+  cache_ttl: 86400 # 缓存有效期，单位：秒（86400秒 = 24小时）
+  cache_dir: ".cache/llm" # 缓存目录
 
   # OpenAI 配置
   openai:
@@ -140,7 +143,7 @@ nodes:
   ai_understand_core_modules:
     retry_count: 3
     quality_threshold: 0.7
-    model: "gpt-3.5-turbo"
+    model: "openai/gpt-3.5-turbo"
     language_detection: true
     terminology_extraction: true
     core_modules_prompt_template: |
@@ -219,7 +222,7 @@ nodes:
   generate_overall_architecture:
     retry_count: 3
     quality_threshold: 0.7
-    model: "gpt-3.5-turbo"
+    model: "openai/gpt-3.5-turbo"
     output_format: "markdown"
     architecture_prompt_template: |
       你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
@@ -261,7 +264,7 @@ nodes:
   content_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "gpt-3.5-turbo"
+    model: "openai/gpt-3.5-turbo"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -287,7 +290,7 @@ nodes:
   generate_module_details:
     retry_count: 3
     quality_threshold: 0.7
-    model: "gpt-3.5-turbo"
+    model: "openai/gpt-3.5-turbo"
     output_format: "markdown"
     max_modules_per_batch: 5
     module_details_prompt_template: |
@@ -325,7 +328,7 @@ nodes:
   module_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "qwen/qwen3-30b-a3b:free"
+    model: "openrouter/qwen/qwen3-30b-a3b:free"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -351,7 +354,7 @@ nodes:
   combine_translate:
     retry_count: 3
     quality_threshold: 0.7
-    model: "qwen/qwen3-30b-a3b:free"
+    model: "openrouter/qwen/qwen3-30b-a3b:free"
     preserve_technical_terms: true
     translation_prompt_template: |
       你是一个专业的技术文档翻译专家。请将以下技术文档内容翻译成{target_language}语言。
@@ -420,7 +423,7 @@ nodes:
   interactive_qa:
     retry_count: 3
     quality_threshold: 0.7
-    model: "qwen/qwen3-30b-a3b:free"
+    model: "openrouter/qwen/qwen3-30b-a3b:free"
     max_context_chunks: 5
     qa_prompt_template: |
       你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。

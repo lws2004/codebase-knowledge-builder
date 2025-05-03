@@ -46,11 +46,15 @@ def get_llm_config() -> Dict[str, Any]:
         LLM 配置字典
     """
     # 优先从环境变量获取配置，如果环境变量中没有设置，则使用配置文件中的默认值
-    provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
-    model = os.getenv("LLM_MODEL", config_loader.get("llm.model", "gpt-4"))
+    model = os.getenv("LLM_MODEL", config_loader.get("llm.model", "openai/gpt-4"))
 
-    # 组合provider和model
-    model = f"{provider}/{model}"
+    # 从模型字符串中提取提供商信息
+    # 如果模型字符串包含 "/"，则第一部分为提供商
+    if "/" in model:
+        provider = model.split("/")[0]
+    else:
+        # 如果没有提供商信息，则使用默认值
+        provider = config_loader.get("llm.provider", "openai")
 
     max_tokens_str = os.getenv("LLM_MAX_TOKENS")
     max_tokens = int(max_tokens_str) if max_tokens_str else config_loader.get("llm.max_tokens", 4000)
@@ -61,6 +65,17 @@ def get_llm_config() -> Dict[str, Any]:
     temperature_str = os.getenv("LLM_TEMPERATURE")
     temperature = float(temperature_str) if temperature_str else config_loader.get("llm.temperature", 0.7)
 
+    # 获取缓存配置
+    cache_enabled_str = os.getenv("LLM_CACHE_ENABLED")
+    cache_enabled = (
+        cache_enabled_str.lower() == "true" if cache_enabled_str else config_loader.get("llm.cache_enabled", True)
+    )
+
+    cache_ttl_str = os.getenv("LLM_CACHE_TTL")
+    cache_ttl = int(cache_ttl_str) if cache_ttl_str else config_loader.get("llm.cache_ttl", 86400)
+
+    cache_dir = os.getenv("LLM_CACHE_DIR", config_loader.get("llm.cache_dir", ".cache/llm"))
+
     # 创建配置字典
     config = {
         "provider": provider,
@@ -69,10 +84,13 @@ def get_llm_config() -> Dict[str, Any]:
         "max_input_tokens": max_input_tokens,
         "temperature": temperature,
         "api_key": os.getenv("LLM_API_KEY", ""),
+        "cache": {"enabled": cache_enabled, "ttl": cache_ttl, "dir": cache_dir},
     }
 
     # 打印当前使用的LLM配置（不包含敏感信息）
-    print(f"当前LLM配置: 提供商={config['provider']}, 模型={config['model']}")
+    print(
+        f"当前LLM配置: 提供商={config['provider']}, 模型={config['model']}, 缓存={'启用' if cache_enabled else '禁用'}"
+    )
 
     # 根据提供商加载特定配置
     # 只有当环境变量中明确设置了base_url时，才添加到配置中
@@ -178,7 +196,7 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
         default_model: 配置文件中的默认模型
 
     Returns:
-        模型名称
+        模型名称，格式为 "provider/model"
     """
     # 将节点名称转换为环境变量格式（小写转大写，下划线分隔）
     env_var_name = f"LLM_MODEL_{node_name.upper()}"
@@ -186,12 +204,27 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
     # 首先检查节点特定的环境变量
     node_specific_model = os.getenv(env_var_name)
     if node_specific_model:
+        # 确保模型名称包含提供商前缀
+        if "/" not in node_specific_model:
+            # 如果没有提供商前缀，使用默认提供商
+            provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
+            return f"{provider}/{node_specific_model}"
         return node_specific_model
 
     # 其次检查全局 LLM 模型环境变量
     global_model = os.getenv("LLM_MODEL")
     if global_model:
+        # 确保模型名称包含提供商前缀
+        if "/" not in global_model:
+            # 如果没有提供商前缀，使用默认提供商
+            provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
+            return f"{provider}/{global_model}"
         return global_model
 
     # 最后使用配置文件中的默认值
+    # 确保默认模型名称包含提供商前缀
+    if "/" not in default_model:
+        # 如果没有提供商前缀，使用默认提供商
+        provider = config_loader.get("llm.provider", "openai")
+        return f"{provider}/{default_model}"
     return default_model
