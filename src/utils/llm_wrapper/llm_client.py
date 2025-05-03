@@ -118,15 +118,10 @@ class LLMClient:
         # 记录当前的提供商和模型
         log_and_notify(f"处理模型字符串: provider={self.provider}, model={self.model}", "debug")
 
-        # 如果模型已经包含提供商前缀，直接使用
-        if "/" in self.model:
-            model_string = self.model
-        else:
-            # 组合提供商和模型
-            model_string = f"{self.provider.lower()}/{self.model}"
-
-        log_and_notify(f"最终模型字符串: {model_string}", "debug")
-        return model_string
+        # 直接返回模型字符串，不做任何处理
+        # 模型字符串应该已经在env_manager.py中被格式化为provider/model格式
+        log_and_notify(f"最终模型字符串: {self.model}", "debug")
+        return self.model
 
     def count_tokens(self, text: str) -> int:
         """计算文本的token数量

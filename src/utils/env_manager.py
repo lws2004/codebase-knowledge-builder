@@ -48,6 +48,10 @@ def get_llm_config() -> Dict[str, Any]:
     # 优先从环境变量获取配置，如果环境变量中没有设置，则使用配置文件中的默认值
     provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
     model = os.getenv("LLM_MODEL", config_loader.get("llm.model", "gpt-4"))
+
+    # 组合provider和model
+    model = f"{provider}/{model}"
+
     max_tokens_str = os.getenv("LLM_MAX_TOKENS")
     max_tokens = int(max_tokens_str) if max_tokens_str else config_loader.get("llm.max_tokens", 4000)
     max_input_tokens_str = os.getenv("LLM_MAX_INPUT_TOKENS")
