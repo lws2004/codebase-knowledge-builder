@@ -1,4 +1,5 @@
 """生成时间线文档节点，用于生成代码库的演变时间线文档。"""
+
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -12,9 +13,10 @@ from ..utils.logger import log_and_notify
 
 class GenerateTimelineNodeConfig(BaseModel):
     """GenerateTimelineNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取")
     output_format: str = Field("markdown", description="输出格式")
     timeline_prompt_template: str = Field(
         """
@@ -44,8 +46,9 @@ class GenerateTimelineNodeConfig(BaseModel):
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
         如果可能，请使用 Mermaid 语法创建时间线图表。
         """,
-        description="时间线提示模板"
+        description="时间线提示模板",
     )
+
 
 class GenerateTimelineNode(Node):
     """生成时间线文档节点，用于生成代码库的演变时间线文档"""
@@ -60,6 +63,7 @@ class GenerateTimelineNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("generate_timeline")
 
         # 合并配置
@@ -138,9 +142,7 @@ class GenerateTimelineNode(Node):
                 log_and_notify(f"尝试生成时间线文档 (尝试 {attempt + 1}/{retry_count})", "info")
 
                 # 调用 LLM
-                content, quality_score, success = self._call_model(
-                    llm_config, prompt, target_language, model
-                )
+                content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
 
                 if success and quality_score["overall"] >= quality_threshold:
                     log_and_notify(f"成功生成时间线文档 (质量分数: {quality_score['overall']})", "info")
@@ -148,17 +150,9 @@ class GenerateTimelineNode(Node):
                     # 保存文档
                     file_path = self._save_document(content, output_dir, output_format)
 
-                    return {
-                        "content": content,
-                        "file_path": file_path,
-                        "quality_score": quality_score,
-                        "success": True
-                    }
+                    return {"content": content, "file_path": file_path, "quality_score": quality_score, "success": True}
                 elif success:
-                    log_and_notify(
-                        f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...",
-                        "warning"
-                    )
+                    log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
             except Exception as e:
                 log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
 
@@ -187,7 +181,7 @@ class GenerateTimelineNode(Node):
             "content": exec_res["content"],
             "file_path": exec_res["file_path"],
             "quality_score": exec_res["quality_score"],
-            "success": True
+            "success": True,
         }
 
         log_and_notify("时间线文档已存储到共享存储中", "info")
@@ -208,11 +202,7 @@ class GenerateTimelineNode(Node):
         )
 
     def _call_model(
-        self,
-        llm_config: Dict[str, Any],
-        prompt: str,
-        target_language: str,
-        model: str
+        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
     ) -> Tuple[str, Dict[str, float], bool]:
         """调用 LLM
 
@@ -237,16 +227,10 @@ class GenerateTimelineNode(Node):
 如果可能，请使用 Mermaid 语法创建时间线图表。"""
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="生成时间线文档"
+                messages=messages, temperature=0.3, model=model, trace_name="生成时间线文档"
             )
 
             # 获取响应内容
@@ -269,17 +253,10 @@ class GenerateTimelineNode(Node):
         Returns:
             质量分数
         """
-        scores = {
-            "completeness": 0.0,
-            "structure": 0.0,
-            "relevance": 0.0,
-            "overall": 0.0
-        }
+        scores = {"completeness": 0.0, "structure": 0.0, "relevance": 0.0, "overall": 0.0}
 
         # 检查完整性
-        required_sections = [
-            "项目演变", "时间线", "功能演进", "贡献者"
-        ]
+        required_sections = ["项目演变", "时间线", "功能演进", "贡献者"]
 
         found_sections = 0
         for section in required_sections:
@@ -309,11 +286,7 @@ class GenerateTimelineNode(Node):
         scores["relevance"] = relevance_score
 
         # 计算总体分数
-        scores["overall"] = (
-            scores["completeness"] * 0.4 +
-            scores["structure"] * 0.3 +
-            scores["relevance"] * 0.3
-        )
+        scores["overall"] = scores["completeness"] * 0.4 + scores["structure"] * 0.3 + scores["relevance"] * 0.3
 
         return scores
 

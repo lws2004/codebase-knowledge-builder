@@ -1,4 +1,5 @@
 """模块质量检查节点，用于检查模块文档的质量。"""
+
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,14 +12,12 @@ from ..utils.logger import log_and_notify
 
 class ModuleQualityCheckNodeConfig(BaseModel):
     """ModuleQualityCheckNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     auto_fix: bool = Field(True, description="是否自动修复")
-    check_aspects: List[str] = Field(
-        ["completeness", "accuracy", "readability", "formatting"],
-        description="检查方面"
-    )
+    check_aspects: List[str] = Field(["completeness", "accuracy", "readability", "formatting"], description="检查方面")
     quality_check_prompt_template: str = Field(
         """
         你是一个文档质量评估专家。请评估以下模块文档的质量，并提供改进建议。
@@ -70,8 +69,9 @@ class ModuleQualityCheckNodeConfig(BaseModel):
         修复后的文档内容
         ```
         """,
-        description="质量检查提示模板"
+        description="质量检查提示模板",
     )
+
 
 class ModuleQualityCheckNode(Node):
     """模块质量检查节点，用于检查模块文档的质量"""
@@ -86,6 +86,7 @@ class ModuleQualityCheckNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("module_quality_check")
 
         # 合并配置
@@ -223,11 +224,7 @@ class ModuleQualityCheckNode(Node):
                 if "quality_score" in module
             ) / len(checked_modules)
 
-        return {
-            "modules": checked_modules,
-            "overall_score": overall_score,
-            "success": True
-        }
+        return {"modules": checked_modules, "overall_score": overall_score, "success": True}
 
     def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将检查结果存储到共享存储中
@@ -261,16 +258,10 @@ class ModuleQualityCheckNode(Node):
             提示
         """
         # 格式化提示
-        return self.config.quality_check_prompt_template.format(
-            content=content
-        )
+        return self.config.quality_check_prompt_template.format(content=content)
 
     def _call_model(
-        self,
-        llm_config: Dict[str, Any],
-        prompt: str,
-        target_language: str,
-        model: str
+        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
     ) -> Tuple[Dict[str, Any], Optional[str], Dict[str, float], bool]:
         """调用 LLM
 
@@ -294,17 +285,9 @@ class ModuleQualityCheckNode(Node):
 如果文档需要修复，请提供修复后的完整内容。"""
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="检查模块质量"
-            )
+            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="检查模块质量")
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
@@ -321,7 +304,7 @@ class ModuleQualityCheckNode(Node):
                 "accuracy": evaluation.get("accuracy", {}).get("score", 0) / 10,
                 "readability": evaluation.get("readability", {}).get("score", 0) / 10,
                 "formatting": evaluation.get("formatting", {}).get("score", 0) / 10,
-                "overall": evaluation.get("overall", 0) / 10
+                "overall": evaluation.get("overall", 0) / 10,
             }
 
             return evaluation, fixed_content, quality_score, True
@@ -343,6 +326,7 @@ class ModuleQualityCheckNode(Node):
         if json_match:
             try:
                 import json
+
                 return json.loads(json_match.group(1))
             except Exception as e:
                 log_and_notify(f"解析 JSON 失败: {str(e)}", "error")
@@ -355,7 +339,7 @@ class ModuleQualityCheckNode(Node):
             "formatting": {"score": 0, "comments": ""},
             "overall": 0,
             "needs_fix": False,
-            "fix_suggestions": ""
+            "fix_suggestions": "",
         }
 
         # 提取完整性评分

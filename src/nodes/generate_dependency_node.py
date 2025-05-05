@@ -1,4 +1,5 @@
 """生成依赖关系文档节点，用于生成代码库的依赖关系文档。"""
+
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -12,9 +13,10 @@ from ..utils.logger import log_and_notify
 
 class GenerateDependencyNodeConfig(BaseModel):
     """GenerateDependencyNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     output_format: str = Field("markdown", description="输出格式")
     dependency_prompt_template: str = Field(
         """
@@ -47,8 +49,9 @@ class GenerateDependencyNodeConfig(BaseModel):
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
         如果可能，请使用 Mermaid 语法创建依赖关系图。
         """,
-        description="依赖关系提示模板"
+        description="依赖关系提示模板",
     )
+
 
 class GenerateDependencyNode(Node):
     """生成依赖关系文档节点，用于生成代码库的依赖关系文档"""
@@ -63,6 +66,7 @@ class GenerateDependencyNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("generate_dependency")
 
         # 合并配置
@@ -149,9 +153,7 @@ class GenerateDependencyNode(Node):
                 log_and_notify(f"尝试生成依赖关系文档 (尝试 {attempt + 1}/{retry_count})", "info")
 
                 # 调用 LLM
-                content, quality_score, success = self._call_model(
-                    llm_config, prompt, target_language, model
-                )
+                content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
 
                 if success and quality_score["overall"] >= quality_threshold:
                     log_and_notify(f"成功生成依赖关系文档 (质量分数: {quality_score['overall']})", "info")
@@ -159,17 +161,9 @@ class GenerateDependencyNode(Node):
                     # 保存文档
                     file_path = self._save_document(content, output_dir, output_format)
 
-                    return {
-                        "content": content,
-                        "file_path": file_path,
-                        "quality_score": quality_score,
-                        "success": True
-                    }
+                    return {"content": content, "file_path": file_path, "quality_score": quality_score, "success": True}
                 elif success:
-                    log_and_notify(
-                        f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...",
-                        "warning"
-                    )
+                    log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
             except Exception as e:
                 log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
 
@@ -198,17 +192,13 @@ class GenerateDependencyNode(Node):
             "content": exec_res["content"],
             "file_path": exec_res["file_path"],
             "quality_score": exec_res["quality_score"],
-            "success": True
+            "success": True,
         }
 
         log_and_notify("依赖关系文档已存储到共享存储中", "info")
         return "default"
 
-    def _create_prompt(
-        self,
-        code_structure: Dict[str, Any],
-        core_modules: Dict[str, Any]
-    ) -> str:
+    def _create_prompt(self, code_structure: Dict[str, Any], core_modules: Dict[str, Any]) -> str:
         """创建提示
 
         Args:
@@ -223,28 +213,24 @@ class GenerateDependencyNode(Node):
             "file_count": code_structure.get("file_count", 0),
             "directory_count": code_structure.get("directory_count", 0),
             "language_stats": code_structure.get("language_stats", {}),
-            "file_types": code_structure.get("file_types", {})
+            "file_types": code_structure.get("file_types", {}),
         }
 
         # 简化核心模块
         simplified_modules = {
             "modules": core_modules.get("modules", []),
             "architecture": core_modules.get("architecture", ""),
-            "relationships": core_modules.get("relationships", [])
+            "relationships": core_modules.get("relationships", []),
         }
 
         # 格式化提示
         return self.config.dependency_prompt_template.format(
             code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
-            core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False)
+            core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
         )
 
     def _call_model(
-        self,
-        llm_config: Dict[str, Any],
-        prompt: str,
-        target_language: str,
-        model: str
+        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
     ) -> Tuple[str, Dict[str, float], bool]:
         """调用 LLM
 
@@ -269,16 +255,10 @@ class GenerateDependencyNode(Node):
 如果可能，请使用 Mermaid 语法创建依赖关系图。"""
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="生成依赖关系文档"
+                messages=messages, temperature=0.3, model=model, trace_name="生成依赖关系文档"
             )
 
             # 获取响应内容
@@ -301,17 +281,10 @@ class GenerateDependencyNode(Node):
         Returns:
             质量分数
         """
-        scores = {
-            "completeness": 0.0,
-            "structure": 0.0,
-            "relevance": 0.0,
-            "overall": 0.0
-        }
+        scores = {"completeness": 0.0, "structure": 0.0, "relevance": 0.0, "overall": 0.0}
 
         # 检查完整性
-        required_sections = [
-            "依赖概述", "内部依赖", "外部依赖", "依赖优化"
-        ]
+        required_sections = ["依赖概述", "内部依赖", "外部依赖", "依赖优化"]
 
         found_sections = 0
         for section in required_sections:
@@ -341,11 +314,7 @@ class GenerateDependencyNode(Node):
         scores["relevance"] = relevance_score
 
         # 计算总体分数
-        scores["overall"] = (
-            scores["completeness"] * 0.4 +
-            scores["structure"] * 0.3 +
-            scores["relevance"] * 0.3
-        )
+        scores["overall"] = scores["completeness"] * 0.4 + scores["structure"] * 0.3 + scores["relevance"] * 0.3
 
         return scores
 

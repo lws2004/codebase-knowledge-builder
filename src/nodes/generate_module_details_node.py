@@ -16,7 +16,7 @@ class GenerateModuleDetailsNodeConfig(BaseModel):
 
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     output_format: str = Field("markdown", description="输出格式")
     max_modules_per_batch: int = Field(5, description="每批最大模块数")
     module_details_prompt_template: str = Field(

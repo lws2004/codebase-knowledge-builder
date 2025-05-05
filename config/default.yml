@@ -8,7 +8,10 @@ app:
 
 # LLM 配置
 llm:
-  model: "openai/gpt-4" # 格式: "provider/model"，例如: "openai/gpt-4", "openrouter/qwen/qwen3-30b-a3b:free"
+  # 模型配置 - 应从环境变量中获取，这里不设置默认值
+  # 格式: "provider/model"，例如: "openai/gpt-4", "anthropic/claude-3-opus-20240229"
+  # 对于 OpenRouter，格式应为: "openrouter/provider/model"，例如: "openrouter/anthropic/claude-3-opus-20240229"
+  model: ""
   # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
   max_tokens: 4000 # 控制LLM输出的最大token数
   max_input_tokens: 25000 # 控制输入到LLM的最大token数
@@ -143,7 +146,6 @@ nodes:
   ai_understand_core_modules:
     retry_count: 3
     quality_threshold: 0.7
-    model: "openai/gpt-3.5-turbo"
     language_detection: true
     terminology_extraction: true
     core_modules_prompt_template: |
@@ -219,10 +221,44 @@ nodes:
       - "yaml"
       - "toml"
 
+  generate_api_docs:
+    retry_count: 3
+    quality_threshold: 0.7
+    output_format: "markdown"
+    api_docs_prompt_template: |
+      你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
+
+      代码库结构:
+      {code_structure}
+
+      核心模块:
+      {core_modules}
+
+      请提供以下内容:
+      1. API概述
+         - 主要API接口和功能
+         - API设计原则和约定
+      2. 核心API详解
+         - 每个核心API的功能和用法
+         - 参数说明和返回值
+         - 使用示例
+      3. API分类
+         - 按功能分类的API列表
+         - 每类API的主要用途
+      4. 错误处理
+         - 常见错误码和含义
+         - 错误处理最佳实践
+      5. 版本兼容性（如果适用）
+         - 版本间的API变化
+         - 向后兼容性考虑
+
+      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      确保文档中的代码引用能够链接到源代码。
+
   generate_overall_architecture:
     retry_count: 3
     quality_threshold: 0.7
-    model: "openai/gpt-3.5-turbo"
     output_format: "markdown"
     architecture_prompt_template: |
       你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
@@ -261,10 +297,148 @@ nodes:
       请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
       使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
 
+  generate_timeline:
+    retry_count: 3
+    quality_threshold: 0.7
+    output_format: "markdown"
+    timeline_prompt_template: |
+      你是一个代码库历史分析专家。请根据以下信息生成一个全面的代码库演变时间线文档。
+
+      历史分析:
+      {history_analysis}
+
+      请提供以下内容:
+      1. 项目演变概述
+         - 项目的起源和发展历程
+         - 主要里程碑和转折点
+      2. 关键版本时间线
+         - 按时间顺序列出关键版本
+         - 每个版本的主要变化和贡献
+      3. 功能演进
+         - 主要功能的引入和发展
+         - 技术栈的变化和升级
+      4. 贡献者分析
+         - 主要贡献者及其贡献领域
+         - 贡献模式和团队协作方式
+      5. 未来发展趋势
+         - 基于历史数据的发展趋势预测
+         - 潜在的改进方向
+
+      请以 Markdown 格式输出，使用适当的标题、列表、表格和时间线图表。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      如果可能，请使用 Mermaid 语法创建时间线图表。
+
+  generate_dependency:
+    retry_count: 3
+    quality_threshold: 0.7
+    output_format: "markdown"
+    dependency_prompt_template: |
+      你是一个代码库依赖分析专家。请根据以下信息生成一个全面的代码库依赖关系文档。
+
+      代码库结构:
+      {code_structure}
+
+      核心模块:
+      {core_modules}
+
+      请提供以下内容:
+      1. 依赖概述
+         - 主要依赖类型和分类
+         - 依赖管理策略
+      2. 内部依赖关系
+         - 模块间的依赖关系
+         - 关键组件的依赖图
+      3. 外部依赖分析
+         - 主要第三方依赖
+         - 版本要求和兼容性
+      4. 依赖优化建议
+         - 潜在的循环依赖问题
+         - 依赖简化和优化方向
+      5. 依赖管理最佳实践
+         - 推荐的依赖管理方法
+         - 版本控制和更新策略
+
+      请以 Markdown 格式输出，使用适当的标题、列表、表格和依赖图。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      如果可能，请使用 Mermaid 语法创建依赖关系图。
+
+  generate_glossary:
+    retry_count: 3
+    quality_threshold: 0.7
+    output_format: "markdown"
+    glossary_prompt_template: |
+      你是一个代码库术语专家。请根据以下信息生成一个全面的代码库术语表。
+
+      代码库结构:
+      {code_structure}
+
+      核心模块:
+      {core_modules}
+
+      历史分析:
+      {history_analysis}
+
+      请提供以下内容:
+      1. 术语表概述
+         - 术语表的目的和使用方法
+         - 术语分类方式
+      2. 核心术语
+         - 项目特有的术语和概念
+         - 每个术语的详细解释和用法
+      3. 技术术语
+         - 项目使用的技术栈相关术语
+         - 每个术语的详细解释和在项目中的应用
+      4. 缩写和首字母缩略词
+         - 项目中使用的缩写和首字母缩略词
+         - 每个缩写的全称和含义
+      5. 命名约定
+         - 项目中使用的命名约定
+         - 不同类型实体的命名规则
+
+      请以 Markdown 格式输出，使用适当的标题、列表和表格。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      按字母顺序排列术语，并提供交叉引用。
+
+  generate_quick_look:
+    retry_count: 3
+    quality_threshold: 0.7
+    output_format: "markdown"
+    quick_look_prompt_template: |
+      你是一个代码库分析专家。请根据以下信息生成一个简洁的代码库速览文档，让读者能在5分钟内了解这个代码库的核心内容。
+
+      代码库结构:
+      {code_structure}
+
+      核心模块:
+      {core_modules}
+
+      历史分析:
+      {history_analysis}
+
+      请提供以下内容:
+      1. 项目概述 (1-2段)
+         - 项目的主要目的和功能
+         - 核心价值和应用场景
+      2. 关键特性 (5-7个要点)
+         - 最重要的功能和特性
+         - 每个特性的简短描述
+      3. 技术栈概览 (简短列表)
+         - 主要编程语言和框架
+         - 关键依赖和工具
+      4. 架构速览 (简短描述)
+         - 核心架构模式
+         - 主要组件及其关系
+      5. 快速上手指南 (3-5个步骤)
+         - 如何快速开始使用
+         - 基本使用示例
+
+      请以 Markdown 格式输出，使用适当的标题、列表和强调。
+      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+      整个文档应该简洁明了，不超过500字。
+
   content_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "openai/gpt-3.5-turbo"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -290,7 +464,6 @@ nodes:
   generate_module_details:
     retry_count: 3
     quality_threshold: 0.7
-    model: "openai/gpt-3.5-turbo"
     output_format: "markdown"
     max_modules_per_batch: 5
     module_details_prompt_template: |
@@ -328,7 +501,6 @@ nodes:
   module_quality_check:
     retry_count: 2
     quality_threshold: 0.7
-    model: "openrouter/qwen/qwen3-30b-a3b:free"
     auto_fix: true
     check_aspects:
       - "completeness"
@@ -354,7 +526,6 @@ nodes:
   combine_translate:
     retry_count: 3
     quality_threshold: 0.7
-    model: "openrouter/qwen/qwen3-30b-a3b:free"
     preserve_technical_terms: true
     translation_prompt_template: |
       你是一个专业的技术文档翻译专家。请将以下技术文档内容翻译成{target_language}语言。
@@ -423,7 +594,6 @@ nodes:
   interactive_qa:
     retry_count: 3
     quality_threshold: 0.7
-    model: "openrouter/qwen/qwen3-30b-a3b:free"
     max_context_chunks: 5
     qa_prompt_template: |
       你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。

@@ -34,8 +34,7 @@ class TestEnvManagerDirect(unittest.TestCase):
                 del os.environ[key]
 
         # 设置测试环境变量
-        os.environ["LLM_PROVIDER"] = "openai"
-        os.environ["LLM_MODEL"] = "gpt-4"
+        os.environ["LLM_MODEL"] = "openai/gpt-4"
         os.environ["LLM_API_KEY"] = "test-key"
 
         # 获取LLM配置
@@ -52,8 +51,7 @@ class TestEnvManagerDirect(unittest.TestCase):
                 del os.environ[key]
 
         # 设置测试环境变量
-        os.environ["LLM_PROVIDER"] = "openai"
-        os.environ["LLM_MODEL"] = "gpt-4"
+        os.environ["LLM_MODEL"] = "openai/gpt-4"
         os.environ["LLM_API_KEY"] = "test-key"
         os.environ["OPENAI_BASE_URL"] = "https://custom-openai-api.com/v1"
 
@@ -78,8 +76,7 @@ class TestEnvManagerDirect(unittest.TestCase):
                 del os.environ[key]
 
         # 设置测试环境变量
-        os.environ["LLM_PROVIDER"] = "openrouter"
-        os.environ["LLM_MODEL"] = "qwen/qwen3-30b-a3b:free"
+        os.environ["LLM_MODEL"] = "openrouter/anthropic/claude-3-opus-20240229"
         os.environ["LLM_API_KEY"] = "test-key"
         os.environ["OR_SITE_URL"] = "https://myapp.com"
         os.environ["OR_APP_NAME"] = "My Test App"
@@ -110,8 +107,7 @@ class TestEnvManagerDirect(unittest.TestCase):
                 del os.environ[key]
 
         # 设置测试环境变量
-        os.environ["LLM_PROVIDER"] = "openrouter"
-        os.environ["LLM_MODEL"] = "qwen/qwen3-30b-a3b:free"
+        os.environ["LLM_MODEL"] = "openrouter/anthropic/claude-3-opus-20240229"
         os.environ["LLM_API_KEY"] = "test-key"
         os.environ["OPENROUTER_BASE_URL"] = "https://custom-openrouter-api.com/v1"
 

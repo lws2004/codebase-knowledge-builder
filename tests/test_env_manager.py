@@ -27,7 +27,7 @@ class TestEnvManager(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    @patch.dict(os.environ, {"LLM_PROVIDER": "openai", "LLM_MODEL": "gpt-4", "LLM_API_KEY": "test-key"}, clear=True)
+    @patch.dict(os.environ, {"LLM_MODEL": "openai/gpt-4", "LLM_API_KEY": "test-key"}, clear=True)
     def test_base_url_not_set_by_default(self):
         """测试默认情况下不设置base_url"""
         # 加载环境变量
@@ -61,8 +61,7 @@ class TestEnvManager(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "LLM_PROVIDER": "openrouter",
-            "LLM_MODEL": "qwen/qwen3-30b-a3b:free",
+            "LLM_MODEL": "openrouter/anthropic/claude-3-opus-20240229",
             "LLM_API_KEY": "test-key",
             "OR_SITE_URL": "https://myapp.com",
             "OR_APP_NAME": "My Test App",
@@ -89,8 +88,7 @@ class TestEnvManager(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "LLM_PROVIDER": "openrouter",
-            "LLM_MODEL": "qwen/qwen3-30b-a3b:free",
+            "LLM_MODEL": "openrouter/anthropic/claude-3-opus-20240229",
             "LLM_API_KEY": "test-key",
             "OPENROUTER_BASE_URL": "https://custom-openrouter-api.com/v1",
         },

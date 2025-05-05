@@ -29,9 +29,8 @@ def load_env_vars(env_file: Optional[str] = None, env: str = "default") -> None:
         log_and_notify("已加载默认环境变量", "info")
 
     # 打印当前环境变量值，用于调试
-    llm_provider = os.getenv("LLM_PROVIDER")
     llm_model = os.getenv("LLM_MODEL")
-    log_and_notify(f"当前环境变量: LLM_PROVIDER={llm_provider}, LLM_MODEL={llm_model}", "info")
+    log_and_notify(f"当前环境变量: LLM_MODEL={llm_model}", "info")
 
     # 加载环境特定配置
     if env != "default":
@@ -207,7 +206,7 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
         # 确保模型名称包含提供商前缀
         if "/" not in node_specific_model:
             # 如果没有提供商前缀，使用默认提供商
-            provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
+            provider = config_loader.get("llm.provider", "openai")
             return f"{provider}/{node_specific_model}"
         return node_specific_model
 
@@ -217,7 +216,7 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
         # 确保模型名称包含提供商前缀
         if "/" not in global_model:
             # 如果没有提供商前缀，使用默认提供商
-            provider = os.getenv("LLM_PROVIDER", config_loader.get("llm.provider", "openai"))
+            provider = config_loader.get("llm.provider", "openai")
             return f"{provider}/{global_model}"
         return global_model
 

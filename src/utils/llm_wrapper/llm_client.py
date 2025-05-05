@@ -23,13 +23,19 @@ class LLMClient:
             config: LLM 配置
         """
         self.config = config
-        self.model = config.get("model", "openai/gpt-4")
+        self.model = config.get("model", "")
+
+        if not self.model:
+            # 如果没有提供模型，记录警告
+            log_and_notify("未提供模型配置，请确保在环境变量或配置文件中设置LLM_MODEL", "warning")
+            # 尝试从环境变量获取
+            self.model = os.getenv("LLM_MODEL", "")
 
         # 从模型字符串中提取提供商信息
-        if "/" in self.model:
+        if self.model and "/" in self.model:
             self.provider = self.model.split("/")[0]
         else:
-            self.provider = config.get("provider", "openai")
+            self.provider = config.get("provider", "")
 
         self.api_key = config.get("api_key", "")
         self.base_url = config.get("base_url", "")
@@ -75,8 +81,19 @@ class LLMClient:
     def _configure_litellm(self) -> None:
         """配置 LiteLLM"""
         # 设置 API 密钥
+        if not self.provider:
+            log_and_notify("未提供有效的提供商信息，无法设置API密钥", "warning")
+            return
+
         provider_env = f"{self.provider.upper()}_API_KEY"
-        litellm.api_key = self.api_key or os.getenv(provider_env, "")
+        api_key = self.api_key or os.getenv(provider_env) or os.getenv("LLM_API_KEY")
+
+        if not api_key:
+            log_and_notify(
+                f"未找到{self.provider}的API密钥，请确保设置了{provider_env}或LLM_API_KEY环境变量", "warning"
+            )
+
+        litellm.api_key = api_key
 
         # 设置基础 URL
         if self.base_url:
@@ -129,6 +146,13 @@ class LLMClient:
         Returns:
             模型字符串
         """
+        # 如果没有设置模型，尝试从环境变量获取
+        if not self.model:
+            self.model = os.getenv("LLM_MODEL", "")
+            if not self.model:
+                log_and_notify("未设置模型，请确保在环境变量或配置中设置LLM_MODEL", "error")
+                return ""
+
         # 处理环境变量替换格式 ${VAR:-default}
         if (
             isinstance(self.model, str)
@@ -144,6 +168,11 @@ class LLMClient:
 
         # 记录当前的模型
         log_and_notify(f"处理模型字符串: model={self.model}", "debug")
+
+        # 确保模型字符串包含提供商前缀
+        if self.model and "/" not in self.model and self.provider:
+            self.model = f"{self.provider}/{self.model}"
+            log_and_notify(f"添加提供商前缀: model={self.model}", "debug")
 
         # 直接返回模型字符串，假设它已经是完整的格式
         # 例如: "openai/gpt-4" 或 "openrouter/qwen/qwen3-30b-a3b:free"
@@ -400,6 +429,11 @@ class LLMClient:
             LLM 响应
         """
         model_name = model or self._get_model_string()
+        if not model_name:
+            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
+            log_and_notify(error_msg, "error")
+            return {"error": error_msg, "choices": [{"message": {"content": f"Error: {error_msg}"}}]}
+
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
         input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
@@ -471,6 +505,11 @@ class LLMClient:
             LLM 响应
         """
         model_name = model or self._get_model_string()
+        if not model_name:
+            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
+            log_and_notify(error_msg, "error")
+            return {"error": error_msg, "choices": [{"message": {"content": f"Error: {error_msg}"}}]}
+
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
         input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
@@ -614,6 +653,11 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         model_name = model or self._get_model_string()
+        if not model_name:
+            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
+            log_and_notify(error_msg, "error")
+            return {"error": error_msg}
+
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
 

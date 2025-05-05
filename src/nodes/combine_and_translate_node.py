@@ -17,7 +17,7 @@ class CombineAndTranslateNodeConfig(BaseModel):
 
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     preserve_technical_terms: bool = Field(True, description="是否保留技术术语")
     translation_prompt_template: str = Field(
         """

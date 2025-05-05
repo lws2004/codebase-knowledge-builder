@@ -1,4 +1,5 @@
 """AI 理解核心模块节点，用于使用 AI 理解代码库的核心模块。"""
+
 import json
 import os
 import re
@@ -13,9 +14,10 @@ from ..utils.logger import log_and_notify
 
 class AIUnderstandCoreModulesNodeConfig(BaseModel):
     """AIUnderstandCoreModulesNode 配置"""
+
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     language_detection: bool = Field(True, description="是否检测语言")
     terminology_extraction: bool = Field(True, description="是否提取术语")
     core_modules_prompt_template: str = Field(
@@ -58,8 +60,9 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
         }}
         ```
         """,
-        description="核心模块提示模板"
+        description="核心模块提示模板",
     )
+
 
 class AIUnderstandCoreModulesNode(Node):
     """AI 理解核心模块节点，用于使用 AI 理解代码库的核心模块"""
@@ -74,6 +77,7 @@ class AIUnderstandCoreModulesNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("ai_understand_core_modules")
 
         # 合并配置
@@ -157,9 +161,7 @@ class AIUnderstandCoreModulesNode(Node):
                 log_and_notify(f"尝试理解核心模块 (尝试 {attempt + 1}/{retry_count})", "info")
 
                 # 调用 LLM
-                parsed_result, quality_score, success = self._call_model(
-                    llm_config, prompt, target_language, model
-                )
+                parsed_result, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
 
                 if success and quality_score["overall"] >= quality_threshold:
                     log_and_notify(f"成功理解核心模块 (质量分数: {quality_score['overall']})", "info")
@@ -168,13 +170,10 @@ class AIUnderstandCoreModulesNode(Node):
                         "architecture": parsed_result.get("architecture", ""),
                         "module_relationships": parsed_result.get("module_relationships", []),
                         "quality_score": quality_score,
-                        "success": True
+                        "success": True,
                     }
                 elif success:
-                    log_and_notify(
-                        f"理解质量不佳 (分数: {quality_score['overall']}), 重试中...",
-                        "warning"
-                    )
+                    log_and_notify(f"理解质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
             except Exception as e:
                 log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
 
@@ -209,13 +208,11 @@ class AIUnderstandCoreModulesNode(Node):
             "architecture": exec_res.get("architecture", ""),
             "relationships": exec_res.get("module_relationships", []),
             "quality_score": exec_res.get("quality_score", {}),
-            "success": True
+            "success": True,
         }
 
         log_and_notify(
-            f"成功理解核心模块，识别了 {len(exec_res.get('core_modules', []))} 个核心模块",
-            "info",
-            notify=True
+            f"成功理解核心模块，识别了 {len(exec_res.get('core_modules', []))} 个核心模块", "info", notify=True
         )
 
         return "default"
@@ -241,8 +238,7 @@ class AIUnderstandCoreModulesNode(Node):
 
         # 格式化提示
         return self.config.core_modules_prompt_template.format(
-            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
-            dependencies=dependencies
+            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False), dependencies=dependencies
         )
 
     def _simplify_directories(self, directories: Dict[str, Any]) -> Dict[str, Any]:
@@ -266,13 +262,7 @@ class AIUnderstandCoreModulesNode(Node):
 
         return result
 
-    def _call_model(
-        self,
-        llm_config: Dict[str, Any],
-        prompt: str,
-        target_language: str,
-        model: str
-    ) -> tuple:
+    def _call_model(self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str) -> tuple:
         """调用 LLM
 
         Args:
@@ -294,17 +284,9 @@ class AIUnderstandCoreModulesNode(Node):
 你的回答必须是有效的 JSON 格式。"""
 
             # 调用 LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                model=model,
-                trace_name="理解核心模块"
-            )
+            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="理解核心模块")
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
@@ -330,7 +312,7 @@ class AIUnderstandCoreModulesNode(Node):
             解析后的 JSON
         """
         # 尝试提取 JSON 块
-        json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
         else:
@@ -344,8 +326,8 @@ class AIUnderstandCoreModulesNode(Node):
             # 1. 单引号替换为双引号
             json_str = json_str.replace("'", '"')
             # 2. 移除尾部逗号
-            json_str = re.sub(r',\s*}', '}', json_str)
-            json_str = re.sub(r',\s*]', ']', json_str)
+            json_str = re.sub(r",\s*}", "}", json_str)
+            json_str = re.sub(r",\s*]", "]", json_str)
 
             try:
                 return json.loads(json_str)
@@ -362,12 +344,7 @@ class AIUnderstandCoreModulesNode(Node):
         Returns:
             质量分数
         """
-        scores = {
-            "completeness": 0.0,
-            "structure": 0.0,
-            "relevance": 0.0,
-            "overall": 0.0
-        }
+        scores = {"completeness": 0.0, "structure": 0.0, "relevance": 0.0, "overall": 0.0}
 
         # 检查完整性
         core_modules = result.get("core_modules", [])

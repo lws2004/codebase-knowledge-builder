@@ -16,7 +16,7 @@ class InteractiveQANodeConfig(BaseModel):
 
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("qwen/qwen3-30b-a3b:free", description="LLM 模型")
+    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     qa_prompt_template: str = Field(
         """
         你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。
