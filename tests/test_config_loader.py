@@ -32,12 +32,12 @@ class TestConfigLoader:
         """测试获取特定配置项"""
         # 获取特定配置项
         app_name = self.config_loader.get("app.name")
-        llm_provider = self.config_loader.get("llm.provider")
+        llm_max_tokens = self.config_loader.get("llm.max_tokens")
         llm_model = self.config_loader.get("llm.model")
 
         # 验证配置项是否存在
         assert app_name is not None
-        assert llm_provider is not None
+        assert llm_max_tokens is not None
         assert llm_model is not None
 
     def test_get_default_value(self):

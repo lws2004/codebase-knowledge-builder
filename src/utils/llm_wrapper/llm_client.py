@@ -171,8 +171,12 @@ class LLMClient:
 
         # 确保模型字符串包含提供商前缀
         if self.model and "/" not in self.model and self.provider:
-            self.model = f"{self.provider}/{self.model}"
-            log_and_notify(f"添加提供商前缀: model={self.model}", "debug")
+            # 对于 OpenAI 的 gpt 模型，不添加前缀
+            if self.provider == "openai" and self.model.startswith("gpt-"):
+                log_and_notify(f"OpenAI gpt 模型不添加前缀: model={self.model}", "debug")
+            else:
+                self.model = f"{self.provider}/{self.model}"
+                log_and_notify(f"添加提供商前缀: model={self.model}", "debug")
 
         # 直接返回模型字符串，假设它已经是完整的格式
         # 例如: "openai/gpt-4" 或 "openrouter/qwen/qwen3-30b-a3b:free"

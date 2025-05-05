@@ -221,9 +221,16 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
         return global_model
 
     # 最后使用配置文件中的默认值
+    # 如果默认模型是 "default-model"，则不添加提供商前缀
+    if default_model == "default-model":
+        return default_model
+
     # 确保默认模型名称包含提供商前缀
     if "/" not in default_model:
         # 如果没有提供商前缀，使用默认提供商
         provider = config_loader.get("llm.provider", "openai")
+        # 对于 OpenAI 的 gpt 模型，不添加前缀
+        if provider == "openai" and default_model.startswith("gpt-"):
+            return default_model
         return f"{provider}/{default_model}"
     return default_model

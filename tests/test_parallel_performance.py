@@ -1,10 +1,8 @@
 """测试并行和串行生成内容流程的性能。"""
 
-import asyncio
 import os
 import sys
 import time
-from typing import Dict
 
 import pytest
 
@@ -13,7 +11,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.nodes import GenerateContentFlow, ParallelGenerateContentFlow
 from src.utils.env_manager import load_env_vars
-from src.utils.logger import log_and_notify
 
 
 @pytest.fixture
@@ -93,7 +90,8 @@ def test_serial_flow(test_shared):
     assert "glossary_doc" in result
     assert "quick_look_doc" in result
 
-    return serial_time
+    # 存储时间供其他测试使用，但不返回
+    test_serial_flow.time = serial_time
 
 
 @pytest.mark.asyncio
@@ -127,21 +125,24 @@ async def test_parallel_flow(test_shared):
     assert "glossary_doc" in result
     assert "quick_look_doc" in result
 
-    return parallel_time
+    # 存储时间供其他测试使用，但不返回
+    test_parallel_flow.time = parallel_time
 
 
 @pytest.mark.asyncio
 async def test_performance_comparison(test_shared):
     """比较并行和串行生成内容流程的性能"""
     # 串行测试
-    serial_time = test_serial_flow(test_shared)
+    test_serial_flow(test_shared)
+    serial_time = getattr(test_serial_flow, "time", 0)
 
     # 并行测试
-    parallel_time = await test_parallel_flow(test_shared)
+    await test_parallel_flow(test_shared)
+    parallel_time = getattr(test_parallel_flow, "time", 0)
 
     # 计算性能提升
     speedup = serial_time / parallel_time if parallel_time > 0 else 0
     print(f"性能提升: {speedup:.2f}x")
 
     # 验证并行流程比串行流程快
-    assert speedup > 1.0, f"并行流程应该比串行流程快，但实际上慢了 {1/speedup:.2f}x"
+    assert speedup > 1.0, f"并行流程应该比串行流程快，但实际上慢了 {1 / speedup:.2f}x"

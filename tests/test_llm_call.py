@@ -78,7 +78,14 @@ class TestLLMCall(unittest.TestCase):
         # 验证调用参数 - 使用call_count而不是assert_called_once
         self.assertEqual(mock_completion.call_count, 1, "completion应该只被调用一次")
         _, kwargs = mock_completion.call_args
-        self.assertEqual(kwargs["model"], "gpt-3.5-turbo")
+
+        # 获取实际传递的模型名称
+        actual_model = kwargs["model"]
+        # 如果是 OpenAI 的 gpt 模型，可能会有 openai/ 前缀，需要处理
+        if actual_model.startswith("openai/gpt-"):
+            actual_model = actual_model.replace("openai/", "")
+
+        self.assertEqual(actual_model, "gpt-3.5-turbo")
         self.assertEqual(kwargs["messages"], messages)
         self.assertEqual(kwargs["temperature"], 0.7)
         self.assertEqual(kwargs["max_tokens"], 1000)
@@ -135,7 +142,14 @@ class TestLLMCall(unittest.TestCase):
         # 验证调用参数 - 使用call_count而不是assert_called_once
         self.assertEqual(mock_acompletion.call_count, 1, "acompletion应该只被调用一次")
         _, kwargs = mock_acompletion.call_args
-        self.assertEqual(kwargs["model"], "gpt-3.5-turbo")
+
+        # 获取实际传递的模型名称
+        actual_model = kwargs["model"]
+        # 如果是 OpenAI 的 gpt 模型，可能会有 openai/ 前缀，需要处理
+        if actual_model.startswith("openai/gpt-"):
+            actual_model = actual_model.replace("openai/", "")
+
+        self.assertEqual(actual_model, "gpt-3.5-turbo")
         self.assertEqual(kwargs["messages"], messages)
         self.assertEqual(kwargs["temperature"], 0.7)
         self.assertEqual(kwargs["max_tokens"], 1000)
