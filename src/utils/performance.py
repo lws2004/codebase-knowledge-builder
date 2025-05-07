@@ -1,9 +1,8 @@
 """性能工具模块，提供并行处理和性能优化相关功能。"""
 
 import concurrent.futures
-import math
 import time
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Callable, List, Optional, TypeVar
 
 from tqdm import tqdm
 
@@ -41,7 +40,9 @@ def parallel_process(
     if max_workers is None:
         # 默认使用CPU核心数的2倍，因为大多数任务是I/O密集型的
         import os
-        max_workers = os.cpu_count() * 2 or 4
+
+        cpu_count = os.cpu_count()
+        max_workers = (cpu_count * 2) if cpu_count is not None else 4
 
     # 限制最大工作线程数，避免创建过多线程
     max_workers = min(max_workers, len(items))
@@ -52,12 +53,10 @@ def parallel_process(
     # 使用线程池并行执行处理函数
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 提交所有任务
-        future_to_item = {
-            executor.submit(process_func, item): i
-            for i, item in enumerate(items)
-        }
+        future_to_item = {executor.submit(process_func, item): i for i, item in enumerate(items)}
 
         # 创建进度条
+        pbar = None
         if show_progress:
             pbar = tqdm(total=len(items), desc=desc)
 
@@ -75,11 +74,11 @@ def parallel_process(
                 # 添加错误结果，保持结果列表长度与输入列表一致
                 results.append((idx, None))
             finally:
-                if show_progress:
+                if pbar:
                     pbar.update(1)
 
         # 关闭进度条
-        if show_progress:
+        if pbar:
             pbar.close()
 
     # 如果有错误，记录错误数量
@@ -103,7 +102,7 @@ def chunk_list(items: List[T], chunk_size: int) -> List[List[T]]:
     """
     if chunk_size <= 0:
         chunk_size = 1
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def process_with_rate_limit(
@@ -147,6 +146,7 @@ def process_with_rate_limit(
     # 使用信号量控制并发数
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 创建进度条
+        pbar = None
         if show_progress:
             pbar = tqdm(total=len(items), desc=desc)
 
@@ -173,11 +173,11 @@ def process_with_rate_limit(
                 # 添加错误结果，保持结果列表长度与输入列表一致
                 results.append((idx, None))
             finally:
-                if show_progress:
+                if pbar:
                     pbar.update(1)
 
         # 关闭进度条
-        if show_progress:
+        if pbar:
             pbar.close()
 
     # 如果有错误，记录错误数量

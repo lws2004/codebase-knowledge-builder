@@ -70,18 +70,18 @@ class ParallelDocGenerationNode(AsyncNode):
 
         return tasks
 
-    async def exec_async(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
         """执行阶段，运行单个节点
 
         Args:
-            task: 任务参数
+            prep_res: 准备阶段返回的任务参数
 
         Returns:
             节点执行结果
         """
-        node_name = task["node_name"]
-        node = task["node"]
-        task_shared = task["shared"]
+        node_name = prep_res["node_name"]
+        node = prep_res["node"]
+        task_shared = prep_res["shared"]
 
         log_and_notify(f"ParallelDocGenerationNode: 执行节点 {node_name}", "info")
 
@@ -95,21 +95,21 @@ class ParallelDocGenerationNode(AsyncNode):
             return {"node_name": node_name, "error": error_msg, "success": False}
 
     async def post_async(
-        self, shared: Dict[str, Any], tasks: List[Dict[str, Any]], results: List[Dict[str, Any]]
+        self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res: List[Dict[str, Any]]
     ) -> str:
         """后处理阶段，合并所有节点结果
 
         Args:
             shared: 共享存储
-            tasks: 准备阶段返回的任务列表
-            results: 所有任务的执行结果列表
+            prep_res: 准备阶段返回的任务列表
+            exec_res: 所有任务的执行结果列表
 
         Returns:
             后续动作
         """
         # 检查是否有节点执行出错
         errors = []
-        for result in results:
+        for result in exec_res:
             if not result.get("success", False):
                 errors.append(result.get("error", f"节点 {result.get('node_name', '未知')} 执行失败"))
 
@@ -120,7 +120,7 @@ class ParallelDocGenerationNode(AsyncNode):
             return "error"
 
         # 合并所有节点结果到共享存储
-        for result in results:
+        for result in exec_res:
             node_name = result["node_name"]
             node_result = result["result"]
 

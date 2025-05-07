@@ -139,7 +139,7 @@ class InteractiveQANode(Node):
         try:
             # 分析问题类型和意图
             log_and_notify("开始分析问题类型和意图", "info")
-            question_type, question_intent = self._analyze_question(user_query, llm_config, model)
+            _question_type, _question_intent = self._analyze_question(user_query, llm_config, model)
 
             # 检索相关上下文
             log_and_notify("开始检索相关上下文", "info")
@@ -186,17 +186,17 @@ class InteractiveQANode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            prep_res: 准备阶段的结果（未使用）
             exec_res: 执行结果
         """
         if exec_res.get("skipped", False):
             log_and_notify("跳过交互式问答", "info")
-            return
+            return "default"
 
         if exec_res.get("success", False):
             # 更新共享存储
@@ -216,9 +216,14 @@ class InteractiveQANode(Node):
             )
 
             log_and_notify("交互式问答处理完成", "info", notify=True)
+            return "default"
         elif "error" in exec_res:
             shared["error"] = exec_res["error"]
             log_and_notify(f"交互式问答处理失败: {exec_res['error']}", "error", notify=True)
+            return "error"
+
+        # 默认返回
+        return "default"
 
     def _analyze_question(self, question: str, llm_config: Dict[str, Any], model: str) -> tuple:
         """分析问题类型和意图
@@ -248,7 +253,7 @@ class InteractiveQANode(Node):
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
             response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="分析问题类型和意图"
+                messages=messages, temperature=0.3, model=model, trace_name="分析问题类型和意图", max_input_tokens=None
             )
 
             # 获取响应内容
@@ -274,12 +279,12 @@ class InteractiveQANode(Node):
             log_and_notify(f"分析问题类型和意图失败: {str(e)}", "warning")
             return "unknown", "unknown"
 
-    def _retrieve_context(self, question: str, vector_index: Any, text_chunks: List[str], max_chunks: int) -> str:
+    def _retrieve_context(self, question: str, _vector_index: Any, text_chunks: List[str], max_chunks: int) -> str:
         """检索相关上下文
 
         Args:
             question: 问题
-            vector_index: 向量索引
+            _vector_index: 向量索引（未使用）
             text_chunks: 文本块
             max_chunks: 最大块数
 
@@ -395,7 +400,9 @@ class InteractiveQANode(Node):
             messages.append({"role": "user", "content": user_prompt})
 
             # 调用 LLM
-            response = llm_client.completion(messages=messages, temperature=0.5, model=model, trace_name="生成问答回答")
+            response = llm_client.completion(
+                messages=messages, temperature=0.5, model=model, trace_name="生成问答回答", max_input_tokens=None
+            )
 
             # 获取响应内容
             answer = llm_client.get_completion_content(response)

@@ -92,6 +92,13 @@ class FormatOutputNode(Node):
         # 获取仓库结构
         repo_structure = shared.get("repo_structure", {})
 
+        # 获取仓库名称
+        repo_name = shared.get("repo_name", "docs")
+
+        # 确保仓库结构中包含仓库名称
+        if isinstance(repo_structure, dict):
+            repo_structure["repo_name"] = repo_name
+
         # 获取输出目录
         output_dir = shared.get("output_dir", "docs_output")
 
@@ -184,7 +191,7 @@ class FormatOutputNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，更新共享存储
 
         Args:
@@ -200,9 +207,14 @@ class FormatOutputNode(Node):
             shared["output_format"] = exec_res["output_format"]
 
             log_and_notify(f"格式化输出完成，生成了 {len(exec_res['output_files'])} 个文件", "info", notify=True)
+            return "default"
         elif "error" in exec_res:
             shared["error"] = exec_res["error"]
             log_and_notify(f"格式化输出失败: {exec_res['error']}", "error", notify=True)
+            return "error"
+
+        # 默认返回
+        return "default"
 
     def _parse_content(self, content: str) -> Dict[str, Any]:
         """解析内容为结构化数据
@@ -222,6 +234,7 @@ class FormatOutputNode(Node):
             "examples": "",
             "faq": "",
             "references": "",
+            "repo_name": "docs",  # 默认仓库名称
         }
 
         # 查找标题

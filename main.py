@@ -92,12 +92,33 @@ def main():
     # 获取 LLM 配置
     llm_config = get_llm_config()
 
+    # 从仓库 URL 中提取仓库名称
+    repo_name = "docs"
+    if args.repo_url:
+        # 解析仓库 URL 获取仓库名称
+        import re
+
+        # 匹配 GitHub/GitLab 等常见 Git 仓库 URL 格式
+        match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", args.repo_url)
+        if match:
+            # 提取组织/用户名和仓库名
+            full_name = match.group(1)
+            # 只使用仓库名部分
+            repo_name = full_name.split("/")[-1]
+
+    # 打印提取的仓库名称
+    print(f"提取的仓库名称: {repo_name}")
+
+    # 设置输出目录，如果用户未指定则使用仓库名
+    output_dir = args.output_dir or config_loader.get("nodes.input.default_output_dir", "docs_output")
+
     # 创建共享存储
     shared = {
         "llm_config": llm_config,
         "repo_url": args.repo_url,
         "branch": args.branch,
-        "output_dir": args.output_dir or config_loader.get("nodes.input.default_output_dir", "docs_output"),
+        "output_dir": output_dir,
+        "repo_name": repo_name,  # 添加仓库名称
         "language": args.language or config_loader.get("nodes.input.default_language", "zh"),
         "local_path": args.local_path,
         "user_query": args.user_query,

@@ -1,6 +1,6 @@
 """Token 工具模块，提供 token 计数和处理相关功能。"""
 
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional
 
 import litellm
 
@@ -14,7 +14,7 @@ def count_tokens(text: str, model: str) -> int:
 
     Args:
         text: 要计算的文本
-        model: 模型名称
+        model: 模型名称，格式为 "provider/model"，例如 "openai/gpt-4"
 
     Returns:
         token数量
@@ -29,11 +29,15 @@ def count_tokens(text: str, model: str) -> int:
 
         # 使用litellm的completion函数的_hidden_params来获取token数量
         # 设置max_tokens=1以最小化实际生成的token数量
+        # 使用litellm的completion函数，但不设置max_input_tokens
+        # 这样可以避免在日志中显示max_input_tokens
+        # 由于使用了mock_response，这里不会实际调用API
         response = litellm.completion(
             model=model,
             messages=messages,
             max_tokens=1,
             mock_response="",  # 使用mock_response避免实际调用API
+            max_input_tokens=None,  # 明确设置为None，避免使用默认值
         )
 
         # 从响应中获取token数量
@@ -73,11 +77,15 @@ def count_message_tokens(messages: List[Dict[str, str]], model: str) -> int:
     try:
         # 使用litellm的completion函数的_hidden_params来获取token数量
         # 设置max_tokens=1以最小化实际生成的token数量
+        # 使用litellm的completion函数，但不设置max_input_tokens
+        # 这样可以避免在日志中显示max_input_tokens
+        # 由于使用了mock_response，这里不会实际调用API
         response = litellm.completion(
             model=model,
             messages=messages,
             max_tokens=1,
             mock_response="",  # 使用mock_response避免实际调用API
+            max_input_tokens=None,  # 明确设置为None，避免使用默认值
         )
 
         # 从响应中获取token数量
@@ -105,23 +113,31 @@ def count_message_tokens(messages: List[Dict[str, str]], model: str) -> int:
 
 
 def truncate_messages_if_needed(
-    messages: List[Dict[str, str]], max_input_tokens: int, model: str, split_text_func=None
+    messages: List[Dict[str, str]],
+    max_input_tokens: Optional[int],
+    model: str,
+    split_text_func: Optional[Callable[[str, int], List[str]]] = None,
 ) -> List[Dict[str, str]]:
     """如果需要，截断消息以适应最大输入token限制
 
     使用简化的逻辑，保留系统消息和最新的非系统消息。
+    如果max_input_tokens为None，则不进行截断。
 
     Args:
         messages: 消息列表
-        max_input_tokens: 最大输入token数
-        model: 模型名称
-        split_text_func: 文本分块函数，用于截断单条消息
+        max_input_tokens: 最大输入token数，如果为None则不进行截断
+        model: 模型名称，格式为 "provider/model"，例如 "openai/gpt-4"
+        split_text_func: 文本分块函数，用于截断单条消息，接受文本和最大token数作为参数，返回分块后的文本列表
 
     Returns:
         可能被截断的消息列表
     """
     if not messages:
         return []
+
+    # 如果没有设置最大输入token数，直接返回原始消息
+    if max_input_tokens is None:
+        return messages
 
     try:
         # 计算当前消息的token数
@@ -163,7 +179,10 @@ def truncate_messages_if_needed(
 
 
 def truncate_non_system_messages(
-    messages: List[Dict[str, str]], max_tokens: int, model: str, split_text_func=None
+    messages: List[Dict[str, str]],
+    max_tokens: int,
+    model: str,
+    split_text_func: Optional[Callable[[str, int], List[str]]] = None,
 ) -> List[Dict[str, str]]:
     """截断非系统消息
 
@@ -172,8 +191,8 @@ def truncate_non_system_messages(
     Args:
         messages: 非系统消息列表
         max_tokens: 最大token数
-        model: 模型名称
-        split_text_func: 文本分块函数，用于截断单条消息
+        model: 模型名称，格式为 "provider/model"，例如 "openai/gpt-4"
+        split_text_func: 文本分块函数，用于截断单条消息，接受文本和最大token数作为参数，返回分块后的文本列表
 
     Returns:
         截断后的消息列表

@@ -72,10 +72,18 @@ def format_markdown(
 
     # 添加导航链接
     if nav_links:
+        files_info = content_dict.get("files_info", [])
+        if isinstance(files_info, str):
+            files_info = []
+
+        related_content = content_dict.get("related_content", [])
+        if isinstance(related_content, str):
+            related_content = []
+
         nav_content = generate_navigation_links(
-            content_dict.get("files_info", []),
+            files_info,
             content_dict.get("current_file", ""),
-            content_dict.get("related_content", []),
+            related_content,
         )
         content = nav_content + content
 
@@ -382,17 +390,22 @@ def split_content_into_files(
     Returns:
         生成的文件路径列表
     """
+    # 从 content_dict 中获取仓库名称
+    repo_name = content_dict.get("repo_name", "docs")
+
     # 使用默认文件结构或自定义结构
     if file_structure is None:
         file_structure = {
-            # 概览文件固定位置
-            "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
-            "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
-            "docs/overview.md": {"title": "系统架构", "sections": ["overall_architecture", "core_modules_summary"]},
-            "docs/glossary.md": {"title": "术语表", "sections": ["glossary"]},
-            "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
+            # 文档文件固定位置
+            f"{repo_name}/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
+            f"{repo_name}/overview.md": {
+                "title": "系统架构",
+                "sections": ["overall_architecture", "core_modules_summary"],
+            },
+            f"{repo_name}/glossary.md": {"title": "术语表", "sections": ["glossary"]},
+            f"{repo_name}/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
             # 模块文档放置在与代码仓库结构对应的目录中
-            "docs/{module_dir}/{module_file}.md": {
+            f"{repo_name}/{{module_dir}}/{{module_file}}.md": {
                 "title": "{module_title}",
                 "sections": ["description", "api", "examples"],
             },
@@ -400,15 +413,15 @@ def split_content_into_files(
 
     # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(os.path.join(output_dir, "docs"), exist_ok=True)
+    os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
 
     # 生成的文件路径列表
     generated_files = []
 
     # 处理固定位置的文件
     for file_path, file_info in file_structure.items():
-        # 跳过模块文件模板
-        if "{module_dir}" in file_path or "{module_file}" in file_path:
+        # 跳过模块文件模板和README.md文件
+        if "{module_dir}" in file_path or "{module_file}" in file_path or file_path == "README.md":
             continue
 
         # 获取文件标题和章节
@@ -582,6 +595,9 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
     Returns:
         文档路径
     """
+    # 获取仓库名称
+    repo_name = repo_structure.get("repo_name", "docs")
+
     # 查找模块在代码仓库中的位置
     module_path = repo_structure.get(module_name, {}).get("path")
 
@@ -589,11 +605,11 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
         # 如果找不到对应路径，放在根目录
         # 将下划线转换为连字符，符合 JustDoc 命名约定
         justdoc_name = module_name.replace("_", "-").lower()
-        return f"docs/{justdoc_name}.md"
+        return f"{repo_name}/{justdoc_name}.md"
 
     # 将源代码路径转换为文档路径
-    # 例如: src/auth/service.py -> docs/auth/service.md
-    # 例如: src/data_processor/main.py -> docs/data-processor/main.md
+    # 例如: src/auth/service.py -> {repo_name}/auth/service.md
+    # 例如: src/data_processor/main.py -> {repo_name}/data-processor/main.md
     parts = os.path.normpath(module_path).split(os.sep)
 
     # 移除 src/ 前缀（如果存在）
@@ -616,7 +632,7 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
         justdoc_parts.append(justdoc_part)
 
     # 组合文档路径
-    return f"docs/{'/'.join(justdoc_parts)}.md"
+    return f"{repo_name}/{'/'.join(justdoc_parts)}.md"
 
 
 def generate_module_detail_page(

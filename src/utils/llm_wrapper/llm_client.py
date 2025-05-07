@@ -40,7 +40,9 @@ class LLMClient:
         self.api_key = config.get("api_key", "")
         self.base_url = config.get("base_url", "")
         self.max_tokens = config.get("max_tokens", 4000)
-        self.max_input_tokens = config.get("max_input_tokens", 8000)
+        # 只有当配置中明确设置了max_input_tokens时才使用，否则不设置限制
+        # 使用None作为默认值，表示不限制输入token数
+        self.max_input_tokens = config.get("max_input_tokens") if "max_input_tokens" in config else None
         self.temperature = config.get("temperature", 0.7)
 
         # 初始化 Langfuse
@@ -392,19 +394,24 @@ class LLMClient:
         generation.end(error=error)
 
     def _truncate_messages_if_needed(
-        self, messages: List[Dict[str, str]], max_input_tokens: int
+        self, messages: List[Dict[str, str]], max_input_tokens: Optional[int] = None
     ) -> List[Dict[str, str]]:
         """如果需要，截断消息以适应最大输入token限制
 
         使用token_utils.truncate_messages_if_needed函数截断消息。
+        如果max_input_tokens为None，则不进行截断。
 
         Args:
             messages: 消息列表
-            max_input_tokens: 最大输入token数
+            max_input_tokens: 最大输入token数，如果为None则不进行截断
 
         Returns:
             可能被截断的消息列表
         """
+        # 如果没有设置最大输入token数，直接返回原始消息
+        if max_input_tokens is None:
+            return messages
+
         model = self._get_model_string()
         return truncate_messages_if_needed(messages, max_input_tokens, model, self.split_text_to_chunks)
 
@@ -442,7 +449,11 @@ class LLMClient:
         tokens = max_tokens if max_tokens is not None else self.max_tokens
         input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
 
-        log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
+        # 构建日志消息，如果input_tokens为None则不显示最大输入token信息
+        if input_tokens is not None:
+            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
+        else:
+            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}"
         log_and_notify(log_msg, "info")
 
         # 检查并可能截断输入消息
@@ -518,7 +529,11 @@ class LLMClient:
         tokens = max_tokens if max_tokens is not None else self.max_tokens
         input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
 
-        log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
+        # 构建日志消息，如果input_tokens为None则不显示最大输入token信息
+        if input_tokens is not None:
+            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
+        else:
+            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}"
         log_and_notify(log_msg, "info")
 
         # 检查并可能截断输入消息
@@ -610,9 +625,14 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # 调用LLM
+        # 调用LLM，明确设置max_input_tokens=None
         response = self.completion(
-            messages=messages, temperature=temperature, max_tokens=max_tokens, trace_name=trace_name, model=model
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            trace_name=trace_name,
+            model=model,
+            max_input_tokens=None,
         )
 
         # 获取响应内容
@@ -668,7 +688,7 @@ class LLMClient:
         try:
             # 如果提供了schema，使用litellm的response_format参数
             if schema:
-                # 使用litellm的JSON模式功能
+                # 使用litellm的JSON模式功能，不限制输入token数
                 response = litellm.completion(
                     model=model_name,
                     messages=messages,
@@ -706,11 +726,17 @@ class LLMClient:
                     json_str = re.sub(r"(\}|\])[\s\S]*$", r"\1", json_str)
 
                     # 解析JSON
-                    return json.loads(json_str)
+                    try:
+                        return json.loads(json_str)
+                    except json.JSONDecodeError:
+                        # 如果仍然无法解析，返回错误信息
+                        response_text = json_str  # 确保response_text被定义
+                        raise
         except Exception as e:
             log_and_notify(f"解析JSON失败: {str(e)}", "error")
             # 返回原始文本作为错误信息
+            error_text = str(e)
             return {
-                "error": f"解析JSON失败: {str(e)}",
-                "raw_text": response_text if "response_text" in locals() else str(e),
+                "error": f"解析JSON失败: {error_text}",
+                "raw_text": error_text,
             }

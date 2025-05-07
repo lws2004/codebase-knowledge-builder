@@ -4,6 +4,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 # 确保当前目录在 Python 路径中
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -31,8 +32,16 @@ class TestLiteLLMLogging(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    def test_litellm_logging(self):
+    @patch("litellm.completion")
+    def test_litellm_logging(self, mock_completion):
         """测试LiteLLM日志配置"""
+        # 设置模拟响应
+        mock_response = {
+            "choices": [{"message": {"content": "这是一个测试响应"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_completion.return_value = mock_response
+
         # 获取LLM配置
         llm_config = get_llm_config()
 
@@ -49,6 +58,10 @@ class TestLiteLLMLogging(unittest.TestCase):
         # 验证响应不为空
         self.assertIsNotNone(content)
         self.assertNotEqual(content, "")
+        self.assertEqual(content, "这是一个测试响应")
+
+        # 验证litellm.completion被调用
+        mock_completion.assert_called_once()
 
 
 if __name__ == "__main__":

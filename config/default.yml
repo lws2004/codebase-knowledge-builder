@@ -14,7 +14,7 @@ llm:
   model: ""
   # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
   max_tokens: 4000 # 控制LLM输出的最大token数
-  max_input_tokens: 25000 # 控制输入到LLM的最大token数
+  # max_input_tokens: 25000 # 控制输入到LLM的最大token数
   # 注意: max_input_tokens + max_tokens 的总和不应超过模型的最大上下文长度
   temperature: 0.7
   # 缓存配置

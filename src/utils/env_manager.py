@@ -57,10 +57,9 @@ def get_llm_config() -> Dict[str, Any]:
 
     max_tokens_str = os.getenv("LLM_MAX_TOKENS")
     max_tokens = int(max_tokens_str) if max_tokens_str else config_loader.get("llm.max_tokens", 4000)
+    # 只有在环境变量中明确设置了LLM_MAX_INPUT_TOKENS时才使用该值
     max_input_tokens_str = os.getenv("LLM_MAX_INPUT_TOKENS")
-    max_input_tokens = (
-        int(max_input_tokens_str) if max_input_tokens_str else config_loader.get("llm.max_input_tokens", 8000)
-    )
+    max_input_tokens = int(max_input_tokens_str) if max_input_tokens_str else None
     temperature_str = os.getenv("LLM_TEMPERATURE")
     temperature = float(temperature_str) if temperature_str else config_loader.get("llm.temperature", 0.7)
 
@@ -80,11 +79,14 @@ def get_llm_config() -> Dict[str, Any]:
         "provider": provider,
         "model": model,
         "max_tokens": max_tokens,
-        "max_input_tokens": max_input_tokens,
         "temperature": temperature,
         "api_key": os.getenv("LLM_API_KEY", ""),
         "cache": {"enabled": cache_enabled, "ttl": cache_ttl, "dir": cache_dir},
     }
+
+    # 只有当max_input_tokens不为None时，才添加到配置中
+    if max_input_tokens is not None:
+        config["max_input_tokens"] = max_input_tokens
 
     # 打印当前使用的LLM配置（不包含敏感信息）
     print(

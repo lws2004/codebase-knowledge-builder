@@ -1,4 +1,5 @@
 """Git 历史分析节点，用于分析 Git 仓库的提交历史。"""
+
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,7 @@ from ..utils.logger import log_and_notify
 
 class AnalyzeHistoryNodeConfig(BaseModel):
     """AnalyzeHistoryNode 配置"""
+
     max_commits: int = Field(100, description="最大分析的提交数量")
     include_file_history: bool = Field(True, description="是否包含文件历史")
     analyze_contributors: bool = Field(True, description="是否分析贡献者")
@@ -35,8 +37,9 @@ class AnalyzeHistoryNodeConfig(BaseModel):
 
         请以 Markdown 格式输出，使用适当的标题、列表和强调。
         """,
-        description="历史总结提示模板"
+        description="历史总结提示模板",
     )
+
 
 class AnalyzeHistoryNode(Node):
     """Git 历史分析节点，用于分析 Git 仓库的提交历史"""
@@ -51,6 +54,7 @@ class AnalyzeHistoryNode(Node):
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
+
         default_config = get_node_config("analyze_history")
 
         # 合并配置
@@ -135,11 +139,7 @@ class AnalyzeHistoryNode(Node):
             log_and_notify(f"获取提交历史，最大数量: {max_commits}", "info")
             commit_history = analyzer.get_commit_history(max_count=max_commits, branch=branch)
 
-            result = {
-                "commit_history": commit_history,
-                "commit_count": len(commit_history),
-                "success": True
-            }
+            result = {"commit_history": commit_history, "commit_count": len(commit_history), "success": True}
 
             # 分析贡献者
             if analyze_contributors:
@@ -167,9 +167,7 @@ class AnalyzeHistoryNode(Node):
             if "llm_config" in prep_res and commit_history:
                 log_and_notify("使用 LLM 生成历史总结", "info")
                 summary = self._generate_history_summary(
-                    prep_res["llm_config"],
-                    commit_history,
-                    result.get("contributors", [])
+                    prep_res["llm_config"], commit_history, result.get("contributors", [])
                 )
                 result["history_summary"] = summary
 
@@ -207,14 +205,14 @@ class AnalyzeHistoryNode(Node):
             "contributor_count": exec_res.get("contributor_count", 0),
             "file_histories": exec_res.get("file_histories", {}),
             "history_summary": exec_res.get("history_summary", ""),
-            "success": True
+            "success": True,
         }
 
         log_and_notify(
             f"Git 历史分析完成，分析了 {exec_res.get('commit_count', 0)} 个提交和 "
             f"{exec_res.get('contributor_count', 0)} 个贡献者",
             "info",
-            notify=True
+            notify=True,
         )
 
         return "default"
@@ -236,10 +234,7 @@ class AnalyzeHistoryNode(Node):
         return []
 
     def _generate_history_summary(
-        self,
-        llm_config: Dict[str, Any],
-        commit_history: List[Dict[str, Any]],
-        contributors: List[Dict[str, Any]]
+        self, llm_config: Dict[str, Any], commit_history: List[Dict[str, Any]], contributors: List[Dict[str, Any]]
     ) -> str:
         """使用 LLM 生成历史总结
 
@@ -260,20 +255,17 @@ class AnalyzeHistoryNode(Node):
             contributors_str = json.dumps(contributors, indent=2, ensure_ascii=False)
 
             prompt = self.config.summary_prompt_template.format(
-                commit_history=commit_history_str,
-                contributors=contributors_str
+                commit_history=commit_history_str, contributors=contributors_str
             )
 
             # 调用 LLM
             messages = [
                 {"role": "system", "content": "你是一个代码库历史分析专家，擅长从 Git 提交历史中提取有价值的见解。"},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ]
 
             response = llm_client.completion(
-                messages=messages,
-                temperature=0.3,
-                trace_name="Git 历史总结"
+                messages=messages, temperature=0.3, trace_name="Git 历史总结", max_input_tokens=None
             )
 
             # 获取响应内容

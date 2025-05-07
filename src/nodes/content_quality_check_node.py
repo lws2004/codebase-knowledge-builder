@@ -339,7 +339,7 @@ class ContentQualityCheckNode(Node):
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="检查内容质量")
+            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="检查内容质量", max_input_tokens=None)
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)

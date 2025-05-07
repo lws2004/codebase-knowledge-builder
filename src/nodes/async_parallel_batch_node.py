@@ -1,13 +1,11 @@
 """异步并行批处理节点，用于并行处理多个项目。"""
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, Dict, List, Optional
 
 from pocketflow import AsyncNode
 
 from ..utils.logger import log_and_notify
-
-T = TypeVar("T")
 
 
 class AsyncParallelBatchNode(AsyncNode):
@@ -22,7 +20,7 @@ class AsyncParallelBatchNode(AsyncNode):
         super().__init__()
         self.max_concurrency = max_concurrency
 
-    async def prep_async(self, shared: Dict[str, Any]) -> List[T]:
+    async def prep_async(self, shared: Dict[str, Any]) -> List[Any]:
         """准备阶段，获取要处理的项目列表
 
         子类应该重写此方法，返回一个项目列表
@@ -36,13 +34,13 @@ class AsyncParallelBatchNode(AsyncNode):
         # 默认实现，子类应该重写此方法
         return []
 
-    async def exec_async(self, item: T) -> Any:
+    async def exec_async(self, prep_res: Any) -> Any:
         """执行阶段，处理单个项目
 
         子类必须重写此方法，实现对单个项目的处理逻辑
 
         Args:
-            item: 要处理的项目
+            prep_res: 准备阶段返回的项目
 
         Returns:
             处理结果
@@ -50,7 +48,7 @@ class AsyncParallelBatchNode(AsyncNode):
         # 默认实现，子类必须重写此方法
         raise NotImplementedError("子类必须实现exec_async方法")
 
-    async def exec_fallback_async(self, item: T, error: Exception) -> Any:
+    async def exec_fallback_async(self, item: Any, error: Exception) -> Any:
         """执行失败时的回退处理
 
         当exec_async抛出异常时调用此方法
@@ -66,21 +64,19 @@ class AsyncParallelBatchNode(AsyncNode):
         log_and_notify(f"AsyncParallelBatchNode: 项目处理失败，错误: {str(error)}", "error")
         return None
 
-    async def post_async(
-        self, shared: Dict[str, Any], item_list: List[T], result_list: List[Any]
-    ) -> str:
+    async def post_async(self, shared: Dict[str, Any], prep_res: List[Any], exec_res: List[Any]) -> str:
         """后处理阶段，处理所有项目的结果
 
         Args:
             shared: 共享存储
-            item_list: 准备阶段返回的项目列表
-            result_list: 所有项目的处理结果列表
+            prep_res: 准备阶段返回的项目列表
+            exec_res: 执行阶段返回的结果列表
 
         Returns:
             后续动作
         """
         # 默认实现，将结果保存到共享存储
-        shared["batch_results"] = result_list
+        shared["batch_results"] = exec_res
         return "default"
 
     async def run_async(self, shared: Dict[str, Any]) -> str:
@@ -94,7 +90,7 @@ class AsyncParallelBatchNode(AsyncNode):
         """
         # 准备阶段
         item_list = await self.prep_async(shared)
-        
+
         if not item_list:
             log_and_notify("AsyncParallelBatchNode: 没有要处理的项目", "warning")
             return await self.post_async(shared, [], [])
@@ -118,8 +114,7 @@ class AsyncParallelBatchNode(AsyncNode):
                         return await self.exec_fallback_async(item, e)
                     except Exception as fallback_error:
                         log_and_notify(
-                            f"AsyncParallelBatchNode: 回退处理项目 {index} 时出错: {str(fallback_error)}", 
-                            "error"
+                            f"AsyncParallelBatchNode: 回退处理项目 {index} 时出错: {str(fallback_error)}", "error"
                         )
                         return None
 

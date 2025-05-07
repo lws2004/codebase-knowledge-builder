@@ -37,6 +37,7 @@ class AsyncParallelFlow(AsyncNode):
         Returns:
             包装后的异步节点
         """
+
         class SyncNodeWrapper(AsyncNode):
             def __init__(self, sync_node):
                 super().__init__()
@@ -94,7 +95,7 @@ class AsyncParallelFlow(AsyncNode):
         # 创建异步任务
         tasks = []
         for i, node in enumerate(self.async_nodes):
-            if hasattr(node, 'run_async'):
+            if hasattr(node, "run_async"):
                 # 如果是AsyncFlow，使用run_async方法
                 tasks.append(node.run_async(node_shared_list[i]))
             else:
@@ -117,19 +118,17 @@ class AsyncParallelFlow(AsyncNode):
         try:
             # 执行prep_async
             prep_res = await node.prep_async(shared)
-            
+
             # 执行exec_async
             exec_res = await node.exec_async(prep_res)
-            
+
             # 执行post_async
             await node.post_async(shared, prep_res, exec_res)
         except Exception as e:
             log_and_notify(f"AsyncParallelFlow: 节点执行出错: {str(e)}", "error")
             shared["error"] = str(e)
 
-    async def post_async(
-        self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res_list: List[Dict[str, Any]]
-    ) -> str:
+    async def post_async(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: List[Dict[str, Any]]) -> str:
         """后处理阶段，合并所有节点的结果
 
         Args:
@@ -144,7 +143,7 @@ class AsyncParallelFlow(AsyncNode):
 
         # 检查是否有节点执行出错
         errors = []
-        for i, node_shared in enumerate(exec_res_list):
+        for i, node_shared in enumerate(exec_res):
             if "error" in node_shared:
                 errors.append(f"节点 {i} 执行出错: {node_shared['error']}")
 
@@ -156,7 +155,7 @@ class AsyncParallelFlow(AsyncNode):
 
         # 合并所有节点的结果到共享存储
         # 注意：如果多个节点修改了相同的键，后面的节点会覆盖前面的节点的结果
-        for node_shared in exec_res_list:
+        for node_shared in exec_res:
             # 只合并非共享存储原有的键，避免覆盖原始数据
             for key, value in node_shared.items():
                 if key not in prep_res or prep_res[key] != value:
@@ -194,6 +193,7 @@ class AsyncParallelBatchFlow(AsyncNode):
         Returns:
             包装后的异步流程
         """
+
         # 创建一个包装节点
         class SyncFlowWrapper(AsyncNode):
             def __init__(self, sync_flow):
@@ -232,23 +232,23 @@ class AsyncParallelBatchFlow(AsyncNode):
         # 默认实现，子类应该重写此方法
         return [shared.copy()]
 
-    async def exec_async(self, param_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def exec_async(self, prep_res: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """执行阶段，并行执行流程
 
         Args:
-            param_list: 参数字典列表
+            prep_res: 准备阶段返回的参数字典列表
 
         Returns:
             执行结果列表
         """
-        log_and_notify(f"AsyncParallelBatchFlow: 开始并行执行 {len(param_list)} 个批处理任务", "info")
+        log_and_notify(f"AsyncParallelBatchFlow: 开始并行执行 {len(prep_res)} 个批处理任务", "info")
 
         # 创建信号量控制并发数
         if self.max_concurrency:
             semaphore = asyncio.Semaphore(self.max_concurrency)
         else:
             # 创建一个永远可用的信号量
-            semaphore = asyncio.Semaphore(len(param_list))
+            semaphore = asyncio.Semaphore(len(prep_res))
 
         async def run_flow_with_params(params):
             async with semaphore:
@@ -259,7 +259,7 @@ class AsyncParallelBatchFlow(AsyncNode):
                 return flow_shared
 
         # 创建所有任务
-        tasks = [run_flow_with_params(params) for params in param_list]
+        tasks = [run_flow_with_params(params) for params in prep_res]
 
         # 并行执行所有任务
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -270,7 +270,7 @@ class AsyncParallelBatchFlow(AsyncNode):
             if isinstance(result, Exception):
                 log_and_notify(f"AsyncParallelBatchFlow: 任务 {i} 执行出错: {str(result)}", "error")
                 # 创建一个包含错误信息的结果
-                error_result = param_list[i].copy()
+                error_result = prep_res[i].copy()
                 error_result["error"] = str(result)
                 processed_results.append(error_result)
             else:
@@ -279,14 +279,14 @@ class AsyncParallelBatchFlow(AsyncNode):
         return processed_results
 
     async def post_async(
-        self, shared: Dict[str, Any], param_list: List[Dict[str, Any]], result_list: List[Dict[str, Any]]
+        self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res: List[Dict[str, Any]]
     ) -> str:
         """后处理阶段，处理执行结果
 
         Args:
             shared: 共享存储
-            param_list: 准备阶段的参数列表
-            result_list: 执行结果列表
+            prep_res: 准备阶段的参数列表
+            exec_res: 执行结果列表
 
         Returns:
             后续动作
@@ -295,7 +295,7 @@ class AsyncParallelBatchFlow(AsyncNode):
 
         # 检查是否有任务执行出错
         errors = []
-        for i, result in enumerate(result_list):
+        for i, result in enumerate(exec_res):
             if "error" in result:
                 errors.append(f"任务 {i} 执行出错: {result['error']}")
 
@@ -303,11 +303,11 @@ class AsyncParallelBatchFlow(AsyncNode):
             error_msg = "; ".join(errors)
             log_and_notify(f"AsyncParallelBatchFlow: 部分任务执行出错: {error_msg}", "error")
             shared["error"] = error_msg
-            shared["batch_results"] = result_list  # 保存所有结果，包括失败的
+            shared["batch_results"] = exec_res  # 保存所有结果，包括失败的
             return "error"
 
         # 将结果保存到共享存储
-        shared["batch_results"] = result_list
+        shared["batch_results"] = exec_res
 
         log_and_notify("AsyncParallelBatchFlow: 并行批处理完成", "info")
         return "default"

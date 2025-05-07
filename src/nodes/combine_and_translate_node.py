@@ -115,6 +115,9 @@ class CombineAndTranslateNode(Node):
         repo_url = shared.get("repo_url", "")
         repo_branch = shared.get("branch", "main")
 
+        # 获取仓库名称
+        repo_name = shared.get("repo_name", "docs")
+
         # 获取代码结构和模块信息
         code_structure = shared.get("code_structure", {})
         core_modules = shared.get("core_modules", {})
@@ -126,6 +129,7 @@ class CombineAndTranslateNode(Node):
             "output_dir": output_dir,
             "repo_url": repo_url,
             "repo_branch": repo_branch,
+            "repo_name": repo_name,  # 添加仓库名称
             "code_structure": code_structure,
             "core_modules": core_modules,
             "retry_count": self.config.retry_count,
@@ -154,6 +158,7 @@ class CombineAndTranslateNode(Node):
         output_dir = prep_res["output_dir"]
         repo_url = prep_res["repo_url"]
         repo_branch = prep_res["repo_branch"]
+        repo_name = prep_res.get("repo_name", "docs")  # 获取仓库名称
         code_structure = prep_res["code_structure"]
         core_modules = prep_res["core_modules"]
         retry_count = prep_res["retry_count"]
@@ -212,10 +217,10 @@ class CombineAndTranslateNode(Node):
                             translated_content = combined_content
 
             # 创建文件结构
-            file_structure = self._create_file_structure(content_dict)
+            file_structure = self._create_file_structure(repo_name)
 
             # 创建仓库结构
-            repo_structure = self._create_repo_structure(code_structure, core_modules)
+            repo_structure = self._create_repo_structure(core_modules, repo_name)
 
             return {
                 "combined_content": combined_content,
@@ -225,6 +230,7 @@ class CombineAndTranslateNode(Node):
                 "output_dir": output_dir,
                 "repo_url": repo_url,
                 "repo_branch": repo_branch,
+                "repo_name": repo_name,  # 添加仓库名称
                 "target_language": target_language,
                 "success": True,
             }
@@ -233,7 +239,7 @@ class CombineAndTranslateNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，更新共享存储
 
         Args:
@@ -249,9 +255,14 @@ class CombineAndTranslateNode(Node):
             shared["repo_structure"] = exec_res["repo_structure"]
 
             log_and_notify("组合和翻译内容完成", "info", notify=True)
+            return "default"
         elif "error" in exec_res:
             shared["error"] = exec_res["error"]
             log_and_notify(f"组合和翻译内容失败: {exec_res['error']}", "error", notify=True)
+            return "error"
+
+        # 默认返回
+        return "default"
 
     def _combine_content(self, content_dict: Dict[str, Any]) -> str:
         """组合内容
@@ -322,7 +333,7 @@ class CombineAndTranslateNode(Node):
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
             response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="检查内容一致性"
+                messages=messages, temperature=0.3, model=model, trace_name="检查内容一致性", max_input_tokens=None
             )
 
             # 获取响应内容
@@ -408,7 +419,9 @@ class CombineAndTranslateNode(Node):
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="翻译内容")
+            response = llm_client.completion(
+                messages=messages, temperature=0.3, model=model, trace_name="翻译内容", max_input_tokens=None
+            )
 
             # 获取响应内容
             translated_content = llm_client.get_completion_content(response)
@@ -454,11 +467,11 @@ class CombineAndTranslateNode(Node):
         # 确保分数在 0-1 之间
         return max(0.0, min(1.0, score))
 
-    def _create_file_structure(self, content_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_file_structure(self, repo_name: str = "docs") -> Dict[str, Any]:
         """创建文件结构
 
         Args:
-            content_dict: 内容字典
+            repo_name: 仓库名称
 
         Returns:
             文件结构
@@ -466,11 +479,14 @@ class CombineAndTranslateNode(Node):
         # 创建默认文件结构
         file_structure = {
             "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
-            "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
-            "docs/overview.md": {"title": "系统架构", "sections": ["overall_architecture", "core_modules_summary"]},
-            "docs/glossary.md": {"title": "术语表", "sections": ["glossary"]},
-            "docs/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
-            "docs/{module_dir}/{module_file}.md": {
+            f"{repo_name}/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
+            f"{repo_name}/overview.md": {
+                "title": "系统架构",
+                "sections": ["overall_architecture", "core_modules_summary"],
+            },
+            f"{repo_name}/glossary.md": {"title": "术语表", "sections": ["glossary"]},
+            f"{repo_name}/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
+            f"{repo_name}/{{module_dir}}/{{module_file}}.md": {
                 "title": "{module_title}",
                 "sections": ["description", "api", "examples"],
             },
@@ -478,22 +494,24 @@ class CombineAndTranslateNode(Node):
 
         return file_structure
 
-    def _create_repo_structure(self, code_structure: Dict[str, Any], core_modules: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_repo_structure(self, core_modules: Dict[str, Any], repo_name: str = "docs") -> Dict[str, Any]:
         """创建仓库结构
 
         Args:
-            code_structure: 代码结构
             core_modules: 核心模块
+            repo_name: 仓库名称
 
         Returns:
             仓库结构
         """
         # 创建仓库结构
-        repo_structure = {}
+        repo_structure = {"repo_name": repo_name}  # 添加仓库名称
 
         # 添加核心模块
         for module_name, module_info in core_modules.items():
             if isinstance(module_info, dict) and "path" in module_info:
-                repo_structure[module_name] = {"path": module_info["path"], "type": module_info.get("type", "module")}
+                repo_structure[module_name] = str(
+                    {"path": module_info["path"], "type": module_info.get("type", "module")}
+                )
 
         return repo_structure

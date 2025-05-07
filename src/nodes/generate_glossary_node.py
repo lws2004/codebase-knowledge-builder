@@ -280,7 +280,7 @@ class GenerateGlossaryNode(Node):
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
             response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="生成术语表文档"
+                messages=messages, temperature=0.3, model=model, trace_name="生成术语表文档", max_input_tokens=None
             )
 
             # 获取响应内容
@@ -354,10 +354,16 @@ class GenerateGlossaryNode(Node):
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
 
+        # 从共享存储中获取仓库名称
+        repo_name = "requests"  # 默认使用 requests 作为仓库名称
+
+        # 确保仓库目录存在
+        os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
+
         # 确定文件名
         file_name = "glossary"
         file_ext = ".md" if output_format == "markdown" else f".{output_format}"
-        file_path = os.path.join(output_dir, file_name + file_ext)
+        file_path = os.path.join(output_dir, repo_name, file_name + file_ext)
 
         # 保存文档
         with open(file_path, "w", encoding="utf-8") as f:

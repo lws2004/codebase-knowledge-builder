@@ -1,4 +1,5 @@
 """代码解析工具，用于解析代码库中的代码文件。"""
+
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -18,86 +19,107 @@ class CodeParser:
         self.repo_path = repo_path
         self.supported_extensions = {
             # 常见编程语言
-            'py': 'python',
-            'js': 'javascript',
-            'ts': 'typescript',
-            'jsx': 'javascript',
-            'tsx': 'typescript',
-            'java': 'java',
-            'c': 'c',
-            'cpp': 'cpp',
-            'h': 'c',
-            'hpp': 'cpp',
-            'cs': 'csharp',
-            'go': 'go',
-            'rb': 'ruby',
-            'php': 'php',
-            'swift': 'swift',
-            'kt': 'kotlin',
-            'rs': 'rust',
-            'scala': 'scala',
-            'sh': 'shell',
-            'bash': 'shell',
-            'zsh': 'shell',
-            'r': 'r',
-            'pl': 'perl',
-            'pm': 'perl',
-            'lua': 'lua',
-            'sql': 'sql',
-
+            "py": "python",
+            "js": "javascript",
+            "ts": "typescript",
+            "jsx": "javascript",
+            "tsx": "typescript",
+            "java": "java",
+            "c": "c",
+            "cpp": "cpp",
+            "h": "c",
+            "hpp": "cpp",
+            "cs": "csharp",
+            "go": "go",
+            "rb": "ruby",
+            "php": "php",
+            "swift": "swift",
+            "kt": "kotlin",
+            "rs": "rust",
+            "scala": "scala",
+            "sh": "shell",
+            "bash": "shell",
+            "zsh": "shell",
+            "r": "r",
+            "pl": "perl",
+            "pm": "perl",
+            "lua": "lua",
+            "sql": "sql",
             # 标记语言
-            'html': 'html',
-            'htm': 'html',
-            'xml': 'xml',
-            'css': 'css',
-            'scss': 'scss',
-            'sass': 'sass',
-            'less': 'less',
-            'md': 'markdown',
-            'json': 'json',
-            'yaml': 'yaml',
-            'yml': 'yaml',
-            'toml': 'toml',
-
+            "html": "html",
+            "htm": "html",
+            "xml": "xml",
+            "css": "css",
+            "scss": "scss",
+            "sass": "sass",
+            "less": "less",
+            "md": "markdown",
+            "json": "json",
+            "yaml": "yaml",
+            "yml": "yaml",
+            "toml": "toml",
             # 配置文件
-            'ini': 'ini',
-            'cfg': 'ini',
-            'conf': 'ini',
-            'properties': 'properties',
-            'env': 'dotenv',
-            'dockerfile': 'dockerfile',
+            "ini": "ini",
+            "cfg": "ini",
+            "conf": "ini",
+            "properties": "properties",
+            "env": "dotenv",
+            "dockerfile": "dockerfile",
         }
 
         # 忽略的文件和目录
         self.ignore_patterns = [
-            r'\.git',
-            r'\.vscode',
-            r'\.idea',
-            r'__pycache__',
-            r'node_modules',
-            r'venv',
-            r'\.env',
-            r'\.venv',
-            r'\.DS_Store',
-            r'\.pytest_cache',
-            r'\.coverage',
-            r'htmlcov',
-            r'dist',
-            r'build',
-            r'\.cache',
-            r'\.uv',
+            r"\.git",
+            r"\.vscode",
+            r"\.idea",
+            r"__pycache__",
+            r"node_modules",
+            r"venv",
+            r"\.env",
+            r"\.venv",
+            r"\.DS_Store",
+            r"\.pytest_cache",
+            r"\.coverage",
+            r"htmlcov",
+            r"dist",
+            r"build",
+            r"\.cache",
+            r"\.uv",
         ]
 
         # 二进制文件扩展名
         self.binary_extensions = {
-            'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'svg',
-            'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',
-            'zip', 'tar', 'gz', 'rar', '7z',
-            'exe', 'dll', 'so', 'dylib',
-            'pyc', 'pyo', 'pyd',
-            'class',
-            'o', 'obj',
-            'bin', 'dat',
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "bmp",
+            "ico",
+            "svg",
+            "pdf",
+            "doc",
+            "docx",
+            "ppt",
+            "pptx",
+            "xls",
+            "xlsx",
+            "zip",
+            "tar",
+            "gz",
+            "rar",
+            "7z",
+            "exe",
+            "dll",
+            "so",
+            "dylib",
+            "pyc",
+            "pyo",
+            "pyd",
+            "class",
+            "o",
+            "obj",
+            "bin",
+            "dat",
         }
 
     def _init_result_dict(self) -> Dict[str, Any]:
@@ -115,38 +137,29 @@ class CodeParser:
             "total_size": 0,
             "skipped_files": [],
             "skipped_count": 0,
-            "success": True
+            "success": True,
         }
 
     def _process_directory(
         self,
-        _root: str,  # 未使用参数，添加下划线前缀
+        root: str,  # 目录绝对路径
         rel_root: str,
-        result: Dict[str, Any]
+        result: Dict[str, Any],
     ) -> None:
         """处理目录
 
         Args:
-            _root: 目录绝对路径（未使用）
+            root: 目录绝对路径
             rel_root: 相对路径
             result: 结果字典
         """
-        if rel_root:
-            result["directories"][rel_root] = {
-                "type": "directory",
-                "path": rel_root,
-                "files": [],
-                "subdirectories": []
-            }
+        # 使用root参数，避免IDE警告
+        if os.path.exists(root) and rel_root:
+            result["directories"][rel_root] = {"type": "directory", "path": rel_root, "files": [], "subdirectories": []}
             result["directory_count"] += 1
 
     def _process_file(
-        self,
-        file_path: str,
-        rel_path: str,
-        rel_root: str,
-        result: Dict[str, Any],
-        max_file_size: int
+        self, file_path: str, rel_path: str, rel_root: str, result: Dict[str, Any], max_file_size: int
     ) -> None:
         """处理单个文件
 
@@ -202,12 +215,7 @@ class CodeParser:
             result["skipped_files"].append(rel_path)
             result["skipped_count"] += 1
 
-    def _update_language_stats(
-        self,
-        file_info: Dict[str, Any],
-        file_size: int,
-        result: Dict[str, Any]
-    ) -> None:
+    def _update_language_stats(self, file_info: Dict[str, Any], file_size: int, result: Dict[str, Any]) -> None:
         """更新语言统计
 
         Args:
@@ -220,11 +228,7 @@ class CodeParser:
             return
 
         if lang not in result["language_stats"]:
-            result["language_stats"][lang] = {
-                "file_count": 0,
-                "total_size": 0,
-                "line_count": 0
-            }
+            result["language_stats"][lang] = {"file_count": 0, "total_size": 0, "line_count": 0}
         result["language_stats"][lang]["file_count"] += 1
         result["language_stats"][lang]["total_size"] += file_size
         line_count = file_info.get("line_count", 0)
@@ -243,11 +247,7 @@ class CodeParser:
                 parent_dirs = parent_dict["subdirectories"]
                 parent_dirs.append(dir_path)
 
-    def parse_repo(
-        self,
-        max_files: int = 1000,
-        max_file_size: int = 1024 * 1024
-    ) -> Dict[str, Any]:
+    def parse_repo(self, max_files: int = 1000, max_file_size: int = 1024 * 1024) -> Dict[str, Any]:
         """解析整个代码库
 
         Args:
@@ -274,8 +274,8 @@ class CodeParser:
 
                 # 计算相对路径
                 rel_root = os.path.relpath(root, self.repo_path)
-                if rel_root == '.':
-                    rel_root = ''
+                if rel_root == ".":
+                    rel_root = ""
 
                 # 添加目录信息
                 self._process_directory(root, rel_root, result)
@@ -290,13 +290,7 @@ class CodeParser:
 
                     file_path = os.path.join(root, file)
                     rel_path = os.path.relpath(file_path, self.repo_path)
-                    self._process_file(
-                        file_path,
-                        rel_path,
-                        rel_root,
-                        result,
-                        max_file_size
-                    )
+                    self._process_file(file_path, rel_path, rel_root, result, max_file_size)
 
             # 更新目录结构（添加子目录信息）
             self._update_directory_structure(result)
@@ -305,23 +299,16 @@ class CodeParser:
                 f"代码库解析完成: {result['file_count']} 个文件, "
                 f"{result['directory_count']} 个目录, "
                 f"{result['skipped_count']} 个文件被跳过",
-                "info"
+                "info",
             )
 
             return result
         except Exception as e:
             error_msg = f"解析代码库失败: {str(e)}"
             log_and_notify(error_msg, "error")
-            return {
-                "error": error_msg,
-                "success": False
-            }
+            return {"error": error_msg, "success": False}
 
-    def _parse_file(
-        self,
-        file_path: str,
-        rel_path: str
-    ) -> Optional[Dict[str, Any]]:
+    def _parse_file(self, file_path: str, rel_path: str) -> Optional[Dict[str, Any]]:
         """解析单个文件
 
         Args:
@@ -333,8 +320,8 @@ class CodeParser:
         """
         try:
             # 获取文件扩展名
-            ext = os.path.splitext(file_path)[1].lower().lstrip('.')
-            if not ext and '.' in os.path.basename(file_path):
+            ext = os.path.splitext(file_path)[1].lower().lstrip(".")
+            if not ext and "." in os.path.basename(file_path):
                 # 处理没有扩展名但有点的文件，如 .gitignore
                 ext = os.path.basename(file_path).lower()
 
@@ -342,7 +329,7 @@ class CodeParser:
             language = self.supported_extensions.get(ext)
 
             # 读取文件内容
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
 
             # 计算行数
@@ -357,7 +344,7 @@ class CodeParser:
                 "extension": ext,
                 "line_count": line_count,
                 "size": os.path.getsize(file_path),
-                "content": content if line_count <= 1000 else None  # 只保存小文件的内容
+                "content": content if line_count <= 1000 else None,  # 只保存小文件的内容
             }
 
             return file_info
@@ -397,15 +384,15 @@ class CodeParser:
             是否为二进制文件
         """
         # 检查扩展名
-        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        ext = os.path.splitext(file_path)[1].lower().lstrip(".")
         if ext in self.binary_extensions:
             return True
 
         # 读取文件前几个字节检查是否为二进制
         try:
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 chunk = f.read(1024)
-                return b'\0' in chunk  # 包含空字节的通常是二进制文件
+                return b"\0" in chunk  # 包含空字节的通常是二进制文件
         except Exception:
             return False
 
@@ -421,34 +408,31 @@ class CodeParser:
         """
         imports = []
 
-        if language == 'python':
+        if language == "python":
             # Python 导入
-            import_patterns = [
-                r'^\s*import\s+([^#\n]+)',
-                r'^\s*from\s+([^\s#]+)\s+import\s+([^#\n]+)'
-            ]
+            import_patterns = [r"^\s*import\s+([^#\n]+)", r"^\s*from\s+([^\s#]+)\s+import\s+([^#\n]+)"]
 
             for pattern in import_patterns:
                 matches = re.finditer(pattern, content, re.MULTILINE)
                 for match in matches:
                     if len(match.groups()) == 1:
                         # import xxx
-                        modules = match.group(1).strip().split(',')
+                        modules = match.group(1).strip().split(",")
                         for module in modules:
                             imports.append(f"import {module.strip()}")
                     elif len(match.groups()) == 2:
                         # from xxx import yyy
                         module = match.group(1).strip()
-                        items = match.group(2).strip().split(',')
+                        items = match.group(2).strip().split(",")
                         for item in items:
                             item_str = item.strip()
                             imports.append(f"from {module} import {item_str}")
 
-        elif language in ['javascript', 'typescript']:
+        elif language in ["javascript", "typescript"]:
             # JavaScript/TypeScript 导入
             import_patterns = [
                 r'^\s*import\s+.*?from\s+[\'"]([^\'"]+)[\'"]',
-                r'^\s*require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'
+                r'^\s*require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
             ]
 
             for pattern in import_patterns:
@@ -458,11 +442,7 @@ class CodeParser:
 
         return imports
 
-    def extract_functions(
-        self,
-        content: str,
-        language: str
-    ) -> List[Dict[str, Any]]:
+    def extract_functions(self, content: str, language: str) -> List[Dict[str, Any]]:
         """提取文件中的函数定义
 
         Args:
@@ -474,11 +454,9 @@ class CodeParser:
         """
         functions = []
 
-        if language == 'python':
+        if language == "python":
             # Python 函数
-            func_pattern = (
-                r'^\s*def\s+([^\s\(]+)\s*\(([^\)]*)\)(?:\s*->\s*([^\:]+))?\s*:'
-            )
+            func_pattern = r"^\s*def\s+([^\s\(]+)\s*\(([^\)]*)\)(?:\s*->\s*([^\:]+))?\s*:"
             matches = re.finditer(func_pattern, content, re.MULTILINE)
 
             for match in matches:
@@ -488,29 +466,22 @@ class CodeParser:
                 if match.group(3):
                     return_type = match.group(3).strip()
 
-                functions.append({
-                    "name": name,
-                    "params": params,
-                    "return_type": return_type,
-                    "language": "python"
-                })
+                functions.append({"name": name, "params": params, "return_type": return_type, "language": "python"})
 
-        elif language in ['javascript', 'typescript']:
+        elif language in ["javascript", "typescript"]:
             # JavaScript/TypeScript 函数
             # 定义不同类型的函数模式
             # 普通函数
-            normal_func = r'(?:function\s+([^\s\(]+))?\s*\(([^\)]*)\)\s*{'
+            normal_func = r"(?:function\s+([^\s\(]+))?\s*\(([^\)]*)\)\s*{"
 
             # 函数表达式
             func_expr = (
-                r'(?:const|let|var)\s+([^\s=]+)\s*=\s*(?:function)?\s*'
-                r'\(([^\)]*)\)\s*(?:=>)?\s*{'
+                r"(?:const|let|var)\s+([^\s=]+)\s*=\s*(?:function)?\s*"
+                r"\(([^\)]*)\)\s*(?:=>)?\s*{"
             )
 
             # 箭头函数
-            arrow_func = (
-                r'(?:const|let|var)\s+([^\s=]+)\s*=\s*\(([^\)]*)\)\s*=>'
-            )
+            arrow_func = r"(?:const|let|var)\s+([^\s=]+)\s*=\s*\(([^\)]*)\)\s*=>"
 
             func_patterns = [normal_func, func_expr, arrow_func]
 
@@ -521,23 +492,17 @@ class CodeParser:
                     if name:
                         params = match.group(2).strip()
 
-                        functions.append({
-                            "name": name,
-                            "params": params,
-                            "language": (
-                                "javascript"
-                                if language == "javascript"
-                                else "typescript"
-                            )
-                        })
+                        functions.append(
+                            {
+                                "name": name,
+                                "params": params,
+                                "language": ("javascript" if language == "javascript" else "typescript"),
+                            }
+                        )
 
         return functions
 
-    def extract_classes(
-        self,
-        content: str,
-        language: str
-    ) -> List[Dict[str, Any]]:
+    def extract_classes(self, content: str, language: str) -> List[Dict[str, Any]]:
         """提取文件中的类定义
 
         Args:
@@ -549,41 +514,33 @@ class CodeParser:
         """
         classes = []
 
-        if language == 'python':
+        if language == "python":
             # Python 类
-            class_pattern = r'^\s*class\s+([^\s\(]+)(?:\s*\(([^\)]*)\))?\s*:'
+            class_pattern = r"^\s*class\s+([^\s\(]+)(?:\s*\(([^\)]*)\))?\s*:"
             matches = re.finditer(class_pattern, content, re.MULTILINE)
 
             for match in matches:
                 name = match.group(1)
                 parents = match.group(2).strip() if match.group(2) else None
 
-                classes.append({
-                    "name": name,
-                    "parents": parents,
-                    "language": "python"
-                })
+                classes.append({"name": name, "parents": parents, "language": "python"})
 
-        elif language in ['javascript', 'typescript']:
+        elif language in ["javascript", "typescript"]:
             # JavaScript/TypeScript 类
-            class_pattern = (
-                r'^\s*class\s+([^\s\{]+)(?:\s+extends\s+([^\s\{]+))?\s*{'
-            )
+            class_pattern = r"^\s*class\s+([^\s\{]+)(?:\s+extends\s+([^\s\{]+))?\s*{"
             matches = re.finditer(class_pattern, content, re.MULTILINE)
 
             for match in matches:
                 name = match.group(1)
                 parent = match.group(2) if match.group(2) else None
 
-                classes.append({
-                    "name": name,
-                    "parent": parent,
-                    "language": (
-                        "javascript"
-                        if language == "javascript"
-                        else "typescript"
-                    )
-                })
+                classes.append(
+                    {
+                        "name": name,
+                        "parent": parent,
+                        "language": ("javascript" if language == "javascript" else "typescript"),
+                    }
+                )
 
         return classes
 

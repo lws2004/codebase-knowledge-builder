@@ -258,7 +258,9 @@ class GenerateApiDocsNode(Node):
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="生成API文档")
+            response = llm_client.completion(
+                messages=messages, temperature=0.3, model=model, trace_name="生成API文档", max_input_tokens=None
+            )
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
@@ -331,15 +333,35 @@ class GenerateApiDocsNode(Node):
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
 
-        # 确定文件名
-        file_name = "api"
+        # 从共享存储中获取仓库名称
+        repo_name = "requests"  # 默认使用 requests 作为仓库名称
+
+        # 确保仓库目录存在
+        os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
+
+        # 确定文件名和路径 - 将API文档内容整合到overview.md中
+        file_name = "overview"
         file_ext = ".md" if output_format == "markdown" else f".{output_format}"
-        file_path = os.path.join(output_dir, file_name + file_ext)
 
-        # 保存文档
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # 将文件保存到仓库子目录中
+        file_path = os.path.join(output_dir, repo_name, file_name + file_ext)
 
-        log_and_notify(f"API文档已保存到: {file_path}", "info")
+        # 如果文件已存在，则将API文档内容追加到文件末尾
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                existing_content = f.read()
+
+            # 添加分隔符和API文档内容
+            combined_content = existing_content + "\n\n## API文档\n\n" + content
+
+            # 保存合并后的文档
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(combined_content)
+        else:
+            # 如果文件不存在，则直接保存API文档内容
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        log_and_notify(f"API文档已整合到: {file_path}", "info")
 
         return file_path

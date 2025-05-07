@@ -129,17 +129,17 @@ class PublishNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> None:
+    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，更新共享存储
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            prep_res: 准备阶段的结果（未使用）
             exec_res: 执行结果
         """
         if exec_res.get("skipped", False):
             log_and_notify("跳过发布", "info")
-            return
+            return "default"
 
         if exec_res.get("success", False):
             # 更新共享存储
@@ -147,17 +147,22 @@ class PublishNode(Node):
             shared["publish_result"] = exec_res.get("publish_result", {})
 
             log_and_notify(f"发布完成，访问地址: {exec_res.get('publish_url', '未知')}", "info", notify=True)
+            return "default"
         elif "error" in exec_res:
             shared["error"] = exec_res["error"]
             log_and_notify(f"发布失败: {exec_res['error']}", "error", notify=True)
+            return "error"
 
-    def _publish_to_github_pages(self, output_dir: str, repo_url: str, auth_info: Dict[str, Any]) -> Dict[str, Any]:
+        # 默认返回
+        return "default"
+
+    def _publish_to_github_pages(self, output_dir: str, repo_url: str, _auth_info: Dict[str, Any]) -> Dict[str, Any]:
         """发布到 GitHub Pages
 
         Args:
             output_dir: 输出目录
             repo_url: 仓库 URL
-            auth_info: 认证信息
+            _auth_info: 认证信息（未使用）
 
         Returns:
             发布结果

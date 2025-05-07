@@ -379,7 +379,7 @@ class GenerateModuleDetailsNode(Node):
 
             response = llm_client.completion(
                 messages=messages, temperature=0.3, model=model, trace_name="生成模块详细文档"
-            )
+            , max_input_tokens=None)
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
