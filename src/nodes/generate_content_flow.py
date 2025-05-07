@@ -83,17 +83,35 @@ class GenerateContentFlow:
             流程
         """
         # 使用顺序执行而不是并行执行
-        # 创建一个简单的顺序流程
+        # 创建一个简单的顺序流程，并为错误情况添加终止路径
         self.overall_architecture_node >> self.api_docs_node
+        self.overall_architecture_node - "error" >> None
+
         self.api_docs_node >> self.timeline_node
+        self.api_docs_node - "error" >> None
+
         self.timeline_node >> self.dependency_node
+        self.timeline_node - "error" >> None
+
         self.dependency_node >> self.glossary_node
+        self.dependency_node - "error" >> None
+
         self.glossary_node >> self.quick_look_node
+        self.glossary_node - "error" >> None
+
         self.quick_look_node >> self.content_quality_node
+        self.quick_look_node - "error" >> None
 
         # 连接节点 - 模块详细内容生成
         self.content_quality_node >> self.module_details_node
+        self.content_quality_node - "error" >> None
+
         self.module_details_node >> self.module_quality_node
+        self.module_details_node - "error" >> None
+
+        # 最后一个节点 module_quality_node 如果出错，也应该能优雅停止
+        # 假设它也可能返回 "error"
+        self.module_quality_node - "error" >> None
 
         # 创建流程，使用第一个节点作为启动节点
         return Flow(start=self.overall_architecture_node)

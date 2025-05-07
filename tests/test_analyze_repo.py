@@ -69,10 +69,10 @@ class TestAnalyzeRepoFlow(unittest.TestCase):
         # 初始化流程
         analyze_repo_flow = AnalyzeRepoFlow(self.config)
 
-        # 验证节点连接
-        mock_parse_code_instance.__rshift__.assert_any_call(mock_ai_understand_instance)
-        mock_parse_code_instance.__rshift__.assert_any_call(mock_prepare_rag_instance)
-        mock_parse_code_instance.__rshift__.assert_any_call(mock_analyze_history_instance)
+        # 验证节点连接 - 更新以匹配串行流程
+        mock_parse_code_instance.__rshift__.assert_called_once_with(mock_ai_understand_instance)
+        mock_ai_understand_instance.__rshift__.assert_called_once_with(mock_analyze_history_instance)
+        mock_analyze_history_instance.__rshift__.assert_called_once_with(mock_prepare_rag_instance)
 
         # 验证流程创建
         mock_flow.assert_called_once_with(start=mock_parse_code_instance)

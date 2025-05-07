@@ -47,10 +47,10 @@ class AnalyzeRepoFlow:
         Returns:
             流程
         """
-        # 连接节点
+        # 连接节点 - 修改为串行执行以避免覆盖默认后继者
         self.parse_code_node >> self.ai_understand_node
-        self.parse_code_node >> self.prepare_rag_node
-        self.parse_code_node >> self.analyze_history_node
+        self.ai_understand_node >> self.analyze_history_node
+        self.analyze_history_node >> self.prepare_rag_node
 
         # 创建流程
         return Flow(start=self.parse_code_node)

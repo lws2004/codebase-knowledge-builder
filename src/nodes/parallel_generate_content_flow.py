@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from pocketflow import AsyncFlow, AsyncParallelBatchNode
+from pocketflow import AsyncFlow, AsyncNode
 
 from ..utils.logger import log_and_notify
 from .content_quality_check_node import ContentQualityCheckNode
@@ -17,8 +17,8 @@ from .generate_timeline_node import GenerateTimelineNode
 from .module_quality_check_node import ModuleQualityCheckNode
 
 
-class ParallelDocGenerationNode(AsyncParallelBatchNode):
-    """并行文档生成节点，使用AsyncParallelBatchNode模式实现"""
+class ParallelDocGenerationNode(AsyncNode):
+    """并行文档生成节点，实现手动并行"""
 
     def __init__(self, nodes_config: Dict[str, Dict[str, Any]]):
         """初始化并行文档生成节点
@@ -49,50 +49,59 @@ class ParallelDocGenerationNode(AsyncParallelBatchNode):
             self.nodes["quick_look"] = GenerateQuickLookNode(nodes_config["quick_look"])
 
     async def prep_async(self, shared: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """准备阶段，创建并行任务参数列表
+        """准备阶段，创建任务描述列表。这些任务将在exec_async中并行执行。
 
         Args:
             shared: 共享存储
 
         Returns:
-            参数字典列表，每个字典包含一个任务的参数
+            任务描述列表
         """
-        # 创建任务列表，每个任务对应一个文档生成节点
-        tasks = []
+        tasks_description = []
         for node_name, node in self.nodes.items():
-            tasks.append(
+            tasks_description.append(
                 {
                     "node_name": node_name,
                     "node": node,
-                    "shared": shared.copy(),  # 为每个节点创建共享存储的副本
+                    "shared": shared.copy(),  # 为每个子任务创建共享存储的副本
                 }
             )
+        return tasks_description
 
-        return tasks
-
-    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
-        """执行阶段，运行单个节点
-
-        Args:
-            prep_res: 准备阶段返回的任务参数
-
-        Returns:
-            节点执行结果
-        """
-        node_name = prep_res["node_name"]
-        node = prep_res["node"]
-        task_shared = prep_res["shared"]
-
-        log_and_notify(f"ParallelDocGenerationNode: 执行节点 {node_name}", "info")
-
+    async def _run_single_node_async(self, task_desc: Dict[str, Any]) -> Dict[str, Any]:
+        """异步运行单个子节点的辅助方法。"""
+        node_name = task_desc["node_name"]
+        node = task_desc["node"]
+        task_shared = task_desc["shared"]
+        log_and_notify(f"ParallelDocGenerationNode: 开始执行节点 {node_name}", "info")
         try:
-            # 运行节点
-            node.run(task_shared)
+            # 假设所有子节点都是同步的 Node，其 run 方法是阻塞的。
+            # 为了在异步的 exec_async 中非阻塞地运行它们，使用 asyncio.to_thread。
+            # 如果子节点本身是 AsyncNode 并有 run_async, 则可以直接 await node.run_async(task_shared)
+            # 当前子节点 (GenerateOverallArchitectureNode等) 都是普通 Node。
+            await asyncio.to_thread(node.run, task_shared)
+            log_and_notify(f"ParallelDocGenerationNode: 节点 {node_name} 执行成功", "info")
             return {"node_name": node_name, "result": task_shared, "success": True}
         except Exception as e:
             error_msg = f"节点 {node_name} 执行出错: {str(e)}"
             log_and_notify(error_msg, "error")
-            return {"node_name": node_name, "error": error_msg, "success": False}
+            return {"node_name": node_name, "result": task_shared, "error": error_msg, "success": False}
+
+    async def exec_async(self, tasks_description: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """执行阶段，使用 asyncio.gather 并行运行所有任务。
+
+        Args:
+            tasks_description: 从 prep_async 返回的任务描述列表。
+
+        Returns:
+            所有任务的执行结果列表。
+        """
+        if not tasks_description:
+            return []
+
+        coroutines = [self._run_single_node_async(task_desc) for task_desc in tasks_description]
+        results = await asyncio.gather(*coroutines)  # gather 默认 return_exceptions=False
+        return results
 
     async def post_async(
         self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res_list: List[Dict[str, Any]]
@@ -201,12 +210,18 @@ class ParallelGenerateContentFlow:
         # 第一阶段：并行生成基础文档
         # 第二阶段：质量检查
         self.parallel_doc_node >> self.content_quality_node
+        self.parallel_doc_node - "error" >> None
 
         # 第三阶段：模块详细内容生成
         self.content_quality_node >> self.module_details_node
+        self.content_quality_node - "error" >> None
 
         # 第四阶段：模块质量检查
         self.module_details_node >> self.module_quality_node
+        self.module_details_node - "error" >> None
+
+        # 最后一个节点 module_quality_node 如果出错，也应该能优雅停止
+        self.module_quality_node - "error" >> None
 
         # 创建流程，使用并行文档生成节点作为启动节点
         return AsyncFlow(start=self.parallel_doc_node)
