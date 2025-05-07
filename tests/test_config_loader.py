@@ -2,6 +2,7 @@
 
 import os
 import sys
+import unittest
 from unittest.mock import mock_open, patch
 
 # 确保当前目录在 Python 路径中
@@ -10,10 +11,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from src.utils.config_loader import ConfigLoader
 
 
-class TestConfigLoader:
+class TestConfigLoader(unittest.TestCase):
     """测试配置加载器类"""
 
-    def setup_method(self):
+    def setUp(self):
         """每个测试方法前的准备工作"""
         # 创建配置加载器实例
         self.config_loader = ConfigLoader()

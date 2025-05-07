@@ -186,12 +186,12 @@ class ParseCodeBatchNode(Node):
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:  # pylint: disable=unused-argument
+    def post(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将解析结果存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            _prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
@@ -206,6 +206,9 @@ class ParseCodeBatchNode(Node):
             shared["code_structure"] = {"error": error_msg, "success": False}
             return "error"
 
+        # 获取仓库名称
+        repo_name = shared.get("repo_name", "unknown")
+
         # 将解析结果存储到共享存储中
         shared["code_structure"] = {
             "file_count": exec_res.get("file_count", 0),
@@ -214,6 +217,7 @@ class ParseCodeBatchNode(Node):
             "file_types": exec_res.get("file_types", {}),
             "files": exec_res.get("files", {}),
             "directories": exec_res.get("directories", {}),
+            "repo_name": repo_name,  # 添加仓库名称
             "success": True,
         }
 

@@ -20,12 +20,19 @@ class TestEnvManager(unittest.TestCase):
         """测试前的准备工作"""
         # 保存原始环境变量
         self.original_env = os.environ.copy()
+        # 启动 patcher
+        self.load_dotenv_patcher = patch("src.utils.env_manager.load_dotenv")
+        self.mock_load_dotenv = self.load_dotenv_patcher.start()
+        # 确保 mock_load_dotenv 不执行实际的 .env 加载
+        self.mock_load_dotenv.return_value = None
 
     def tearDown(self):
         """测试后的清理工作"""
         # 恢复原始环境变量
         os.environ.clear()
         os.environ.update(self.original_env)
+        # 停止 patcher
+        self.load_dotenv_patcher.stop()
 
     @patch.dict(os.environ, {"LLM_MODEL": "openai/gpt-4", "LLM_API_KEY": "test-key"}, clear=True)
     def test_base_url_not_set_by_default(self):
@@ -39,19 +46,12 @@ class TestEnvManager(unittest.TestCase):
         # 验证base_url不在配置中
         self.assertNotIn("base_url", config)
 
-    @patch.dict(os.environ, {"OPENAI_BASE_URL": "https://custom-openai-api.com/v1"}, clear=True)
-    @patch("src.utils.env_manager.get_llm_config")
-    def test_base_url_set_when_env_var_exists(self, mock_get_llm_config):
+    @patch.dict(os.environ, {"OPENAI_BASE_URL": "https://custom-openai-api.com/v1", "LLM_MODEL": "openai/gpt-4", "LLM_API_KEY": "test-key"}, clear=True)
+    def test_base_url_set_when_env_var_exists(self):
         """测试当环境变量存在时设置base_url"""
-        # 设置模拟返回值
-        mock_get_llm_config.return_value = {
-            "provider": "openai",
-            "model": "gpt-4",
-            "api_key": "test-key",
-            "base_url": "https://custom-openai-api.com/v1",
-        }
-
-        # 调用函数
+        # 加载环境变量
+        load_env_vars()
+        # 获取LLM配置
         config = get_llm_config()
 
         # 验证结果

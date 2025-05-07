@@ -24,6 +24,8 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
         """
         你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
 
+        你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
         代码库结构:
         {code_structure}
 
@@ -32,13 +34,13 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
 
         请提供以下内容:
         1. 核心模块列表，每个模块包括:
-           - 模块名称
-           - 模块路径
-           - 模块功能描述
+           - 模块名称（使用{repo_name}的实际模块名）
+           - 模块路径（使用{repo_name}的实际文件路径）
+           - 模块功能描述（基于{repo_name}的实际功能）
            - 模块重要性评分 (1-10)
-           - 模块依赖关系
-        2. 整体架构概述
-        3. 模块之间的关系
+           - 模块依赖关系（基于{repo_name}的实际依赖关系）
+        2. 整体架构概述（描述{repo_name}的实际架构）
+        3. 模块之间的关系（描述{repo_name}模块间的实际关系）
 
         以 JSON 格式输出，格式如下:
         ```json
@@ -59,6 +61,14 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
           ]
         }}
         ```
+
+        重要提示：
+        1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+        2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+        3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+        4. 不要生成虚构的API，应该使用代码库中实际存在的API。
+        5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
+        6. 请使用{repo_name}的实际模块名称和文件路径，例如，如果是requests库，应该使用requests.api, requests.sessions等实际存在的模块。
         """,
         description="核心模块提示模板",
     )
@@ -118,6 +128,14 @@ class AIUnderstandCoreModulesNode(Node):
         # 获取目标语言
         target_language = shared.get("language", "zh")
 
+        # 获取仓库名称
+        repo_name = shared.get("repo_name", "unknown")
+        print(f"AIUnderstandCoreModulesNode.prep: 从共享存储中获取仓库名称 {repo_name}")
+
+        # 将仓库名称添加到代码结构中，以便在exec方法中使用
+        if isinstance(code_structure, dict):
+            code_structure["repo_name"] = repo_name
+
         return {
             "code_structure": code_structure,
             "llm_config": llm_config,
@@ -125,6 +143,7 @@ class AIUnderstandCoreModulesNode(Node):
             "retry_count": self.config.retry_count,
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
+            "repo_name": repo_name,  # 添加仓库名称
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,6 +167,13 @@ class AIUnderstandCoreModulesNode(Node):
         retry_count = prep_res["retry_count"]
         quality_threshold = prep_res["quality_threshold"]
         model = prep_res["model"]
+
+        # 获取仓库名称
+        repo_name = prep_res.get("repo_name", "unknown")
+        print(f"AIUnderstandCoreModulesNode.exec: 使用仓库名称 {repo_name}")
+
+        # 设置仓库名称，以便在_call_model方法中使用
+        self._current_repo_name = repo_name
 
         # 准备依赖关系（这里简化处理，实际应该从代码分析中获取）
         dependencies = "暂无依赖关系信息"
@@ -182,12 +208,12 @@ class AIUnderstandCoreModulesNode(Node):
         log_and_notify(error_msg, "error", notify=True)
         return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    def post(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将理解结果存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            _prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
@@ -236,9 +262,14 @@ class AIUnderstandCoreModulesNode(Node):
             "directories": self._simplify_directories(code_structure.get("directories", {})),
         }
 
+        # 获取仓库名称
+        repo_name = code_structure.get("repo_name", "unknown")
+
         # 格式化提示
         return self.config.core_modules_prompt_template.format(
-            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False), dependencies=dependencies
+            repo_name=repo_name,
+            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
+            dependencies=dependencies,
         )
 
     def _simplify_directories(self, directories: Dict[str, Any]) -> Dict[str, Any]:
@@ -278,15 +309,23 @@ class AIUnderstandCoreModulesNode(Node):
             # 创建 LLM 客户端
             llm_client = LLMClient(llm_config)
 
+            # 获取仓库名称，从exec方法中传递过来的参数中获取
+            # 由于_call_model方法的签名限制，我们使用类属性来传递仓库名称
+            repo_name = getattr(self, "_current_repo_name", "unknown")
+
             # 准备系统提示
             system_prompt = f"""你是一个代码库分析专家，擅长从代码结构中识别核心模块和它们之间的关系。
 请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
-你的回答必须是有效的 JSON 格式。"""
+你的回答必须是有效的 JSON 格式。
+
+重要提示：你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。请使用{repo_name}的实际模块名称和文件路径。"""
 
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="理解核心模块", max_input_tokens=None)
+            response = llm_client.completion(
+                messages=messages, temperature=0.3, model=model, trace_name="理解核心模块", max_input_tokens=None
+            )
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)

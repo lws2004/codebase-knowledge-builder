@@ -393,6 +393,24 @@ def split_content_into_files(
     # 从 content_dict 中获取仓库名称
     repo_name = content_dict.get("repo_name", "docs")
 
+    # 打印调试信息
+    print(f"拆分内容为文件，仓库名称: {repo_name}")
+    print(f"内容字典键: {list(content_dict.keys())}")
+
+    # 检查内容是否为空
+    has_content = False
+    for key, value in content_dict.items():
+        if key != "repo_name" and value:
+            has_content = True
+            break
+
+    if not has_content:
+        print("警告: 内容字典中没有实际内容")
+        # 如果内容为空，尝试使用整个translated_content
+        if "translated_content" in content_dict:
+            content_dict["overall_architecture"] = content_dict["translated_content"]
+            print("使用translated_content作为整体架构内容")
+
     # 使用默认文件结构或自定义结构
     if file_structure is None:
         file_structure = {
@@ -400,7 +418,7 @@ def split_content_into_files(
             f"{repo_name}/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
             f"{repo_name}/overview.md": {
                 "title": "系统架构",
-                "sections": ["overall_architecture", "core_modules_summary"],
+                "sections": ["overall_architecture", "core_modules_summary", "architecture"],
             },
             f"{repo_name}/glossary.md": {"title": "术语表", "sections": ["glossary"]},
             f"{repo_name}/evolution.md": {"title": "演变历史", "sections": ["evolution_narrative"]},
@@ -430,11 +448,18 @@ def split_content_into_files(
 
         # 收集章节内容
         sections_content = {}
+        has_section_content = False
         for section in sections:
-            if section in content_dict:
+            if section in content_dict and content_dict[section]:
                 sections_content[section] = content_dict[section]
+                has_section_content = True
             else:
                 sections_content[section] = ""
+
+        # 如果所有章节都没有内容，跳过此文件
+        if not has_section_content and file_path != f"{repo_name}/index.md":
+            print(f"跳过文件 {file_path}，因为没有内容")
+            continue
 
         # 创建文件内容
         file_content = f"# {title}\n\n"
@@ -462,6 +487,8 @@ def split_content_into_files(
         # 保存文件
         full_path = os.path.join(output_dir, file_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+        print(f"保存文件: {full_path}")
         with open(full_path, "w", encoding="utf-8") as f:
             f.write(file_content)
 

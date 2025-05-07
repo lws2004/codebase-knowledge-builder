@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from pocketflow import AsyncFlow, AsyncNode
+from pocketflow import AsyncFlow, AsyncParallelBatchNode
 
 from ..utils.logger import log_and_notify
 from .content_quality_check_node import ContentQualityCheckNode
@@ -17,7 +17,7 @@ from .generate_timeline_node import GenerateTimelineNode
 from .module_quality_check_node import ModuleQualityCheckNode
 
 
-class ParallelDocGenerationNode(AsyncNode):
+class ParallelDocGenerationNode(AsyncParallelBatchNode):
     """并行文档生成节点，使用AsyncParallelBatchNode模式实现"""
 
     def __init__(self, nodes_config: Dict[str, Dict[str, Any]]):
@@ -95,21 +95,21 @@ class ParallelDocGenerationNode(AsyncNode):
             return {"node_name": node_name, "error": error_msg, "success": False}
 
     async def post_async(
-        self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res: List[Dict[str, Any]]
+        self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res_list: List[Dict[str, Any]]
     ) -> str:
         """后处理阶段，合并所有节点结果
 
         Args:
             shared: 共享存储
             prep_res: 准备阶段返回的任务列表
-            exec_res: 所有任务的执行结果列表
+            exec_res_list: 所有任务的执行结果列表
 
         Returns:
             后续动作
         """
         # 检查是否有节点执行出错
         errors = []
-        for result in exec_res:
+        for result in exec_res_list:
             if not result.get("success", False):
                 errors.append(result.get("error", f"节点 {result.get('node_name', '未知')} 执行失败"))
 
@@ -120,7 +120,7 @@ class ParallelDocGenerationNode(AsyncNode):
             return "error"
 
         # 合并所有节点结果到共享存储
-        for result in exec_res:
+        for result in exec_res_list:
             node_name = result["node_name"]
             node_result = result["result"]
 

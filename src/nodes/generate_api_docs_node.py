@@ -22,6 +22,8 @@ class GenerateApiDocsNodeConfig(BaseModel):
         """
         你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
 
+        你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
         代码库结构:
         {code_structure}
 
@@ -35,7 +37,7 @@ class GenerateApiDocsNodeConfig(BaseModel):
         2. 核心API详解
            - 每个核心API的功能和用法
            - 参数说明和返回值
-           - 使用示例
+           - 使用示例（基于实际的{repo_name}用法）
         3. API分类
            - 按功能分类的API列表
            - 每类API的主要用途
@@ -49,6 +51,14 @@ class GenerateApiDocsNodeConfig(BaseModel):
         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
         确保文档中的代码引用能够链接到源代码。
+
+        重要提示：
+        1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+        2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+        3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+        4. 不要生成虚构的API，应该使用代码库中实际存在的API。
+        5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
+        6. 请使用{repo_name}的实际API和模块名称，例如，如果是requests库，应该使用requests.get(), requests.post()等实际存在的API。
         """,
         description="API文档提示模板",
     )
@@ -109,6 +119,14 @@ class GenerateApiDocsNode(Node):
         # 获取输出目录
         output_dir = shared.get("output_dir", "docs")
 
+        # 获取仓库名称
+        repo_name = shared.get("repo_name", "requests")
+        print(f"GenerateApiDocsNode.prep: 从共享存储中获取仓库名称 {repo_name}")
+
+        # 将仓库名称添加到代码结构中，以便在exec方法中使用
+        if isinstance(code_structure, dict):
+            code_structure["repo_name"] = repo_name
+
         return {
             "code_structure": code_structure,
             "core_modules": core_modules,
@@ -119,6 +137,7 @@ class GenerateApiDocsNode(Node):
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
             "output_format": self.config.output_format,
+            "repo_name": repo_name,  # 添加仓库名称
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,6 +164,10 @@ class GenerateApiDocsNode(Node):
         model = prep_res["model"]
         output_format = prep_res["output_format"]
 
+        # 获取仓库名称
+        repo_name = prep_res.get("repo_name", "requests")
+        print(f"GenerateApiDocsNode.exec: 使用仓库名称 {repo_name}")
+
         # 准备提示
         prompt = self._create_prompt(code_structure, core_modules)
 
@@ -158,6 +181,10 @@ class GenerateApiDocsNode(Node):
 
                 if success and quality_score["overall"] >= quality_threshold:
                     log_and_notify(f"成功生成API文档 (质量分数: {quality_score['overall']})", "info")
+
+                    # 修改_save_document方法，使其使用正确的仓库名称
+                    # 由于_save_document方法的签名限制，我们需要临时修改类的属性
+                    self._current_repo_name = repo_name
 
                     # 保存文档
                     file_path = self._save_document(content, output_dir, output_format)
@@ -173,12 +200,12 @@ class GenerateApiDocsNode(Node):
         log_and_notify(error_msg, "error", notify=True)
         return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    def post(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将API文档存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            _prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
@@ -224,8 +251,12 @@ class GenerateApiDocsNode(Node):
             "relationships": core_modules.get("relationships", []),
         }
 
+        # 获取仓库名称
+        repo_name = code_structure.get("repo_name", "unknown")
+
         # 格式化提示
         return self.config.api_docs_prompt_template.format(
+            repo_name=repo_name,
             code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
             core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
         )
@@ -248,12 +279,17 @@ class GenerateApiDocsNode(Node):
             # 创建 LLM 客户端
             llm_client = LLMClient(llm_config)
 
+            # 获取仓库名称
+            repo_name = getattr(self, "_current_repo_name", "unknown")
+
             # 准备系统提示
             system_prompt = f"""你是一个代码库API文档专家，擅长分析代码库并生成全面的API文档。
 请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
 你的回答应该是格式良好的 Markdown，使用适当的标题、列表、表格和代码块。
 使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-确保文档中的代码引用能够链接到源代码。"""
+确保文档中的代码引用能够链接到源代码。
+
+重要提示：你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。请使用{repo_name}的实际API和模块名称。"""
 
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
@@ -333,8 +369,9 @@ class GenerateApiDocsNode(Node):
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
 
-        # 从共享存储中获取仓库名称
-        repo_name = "requests"  # 默认使用 requests 作为仓库名称
+        # 使用exec方法中设置的仓库名称
+        repo_name = getattr(self, "_current_repo_name", "requests")
+        print(f"GenerateApiDocsNode._save_document: 使用仓库名称 {repo_name}")
 
         # 确保仓库目录存在
         os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)

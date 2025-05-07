@@ -80,12 +80,14 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-python_classes = "Test*"
-addopts = "--verbose"
-markers = ["asyncio: mark a test as an asyncio test"]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
 
 [tool.code-style]
 # 代码长度约束
@@ -126,3 +128,6 @@ import_order = [
     "local_folder",
 ]
 import_group_spacing = 1
+
+[tool.uv.sources]
+codebase-knowledge-builder = { path = ".", editable = true }

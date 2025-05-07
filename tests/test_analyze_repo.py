@@ -2,6 +2,7 @@
 
 import os
 import sys
+import unittest
 from unittest.mock import MagicMock, patch
 
 # 确保当前目录在 Python 路径中
@@ -10,10 +11,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from src.nodes.analyze_repo_flow import AnalyzeRepoFlow
 
 
-class TestAnalyzeRepoFlow:
+class TestAnalyzeRepoFlow(unittest.TestCase):
     """测试分析仓库流程类"""
 
-    def setup_method(self):
+    def setUp(self):
         """每个测试方法前的准备工作"""
         # 模拟配置
         self.config = {
