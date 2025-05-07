@@ -42,26 +42,6 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
         2. 整体架构概述（描述{repo_name}的实际架构）
         3. 模块之间的关系（描述{repo_name}模块间的实际关系）
 
-        以 JSON 格式输出，格式如下:
-        ```json
-        {{
-          "core_modules": [
-            {{
-              "name": "模块名称",
-              "path": "模块路径",
-              "description": "模块功能描述",
-              "importance": 评分,
-              "dependencies": ["依赖模块1", "依赖模块2"]
-            }}
-          ],
-          "architecture": "整体架构概述",
-          "module_relationships": [
-            "模块A 依赖 模块B",
-            "模块C 调用 模块D"
-          ]
-        }}
-        ```
-
         重要提示：
         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
@@ -265,12 +245,41 @@ class AIUnderstandCoreModulesNode(Node):
         # 获取仓库名称
         repo_name = code_structure.get("repo_name", "unknown")
 
-        # 格式化提示
-        return self.config.core_modules_prompt_template.format(
+        dumped_code_structure = json.dumps(simplified_structure, indent=2, ensure_ascii=False)
+
+        template_str = str(self.config.core_modules_prompt_template)
+
+        base_prompt = template_str.format(
             repo_name=repo_name,
-            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
+            code_structure=dumped_code_structure,
             dependencies=dependencies,
         )
+
+        json_example_instruction = """
+
+请以 JSON 格式输出，格式如下:
+```json
+{
+  "core_modules": [
+    {
+      "name": "模块名称",
+      "path": "模块路径",
+      "description": "模块功能描述",
+      "importance": 评分,
+      "dependencies": ["依赖模块1", "依赖模块2"]
+    }
+  ],
+  "architecture": "整体架构概述",
+  "module_relationships": [
+    "模块A 依赖 模块B",
+    "模块C 调用 模块D"
+  ]
+}
+```
+"""
+        # 将 JSON 示例附加到基础提示之后
+        full_prompt = base_prompt + json_example_instruction
+        return full_prompt
 
     def _simplify_directories(self, directories: Dict[str, Any]) -> Dict[str, Any]:
         """简化目录结构

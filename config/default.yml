@@ -167,25 +167,13 @@ nodes:
       2. 整体架构概述
       3. 模块之间的关系
 
-      以 JSON 格式输出，格式如下:
-      ```json
-      {
-        "core_modules": [
-          {
-            "name": "模块名称",
-            "path": "模块路径",
-            "description": "模块功能描述",
-            "importance": 评分,
-            "dependencies": ["依赖模块1", "依赖模块2"]
-          }
-        ],
-        "architecture": "整体架构概述",
-        "module_relationships": [
-          "模块A 依赖 模块B",
-          "模块C 调用 模块D"
-        ]
-      }
-      ```
+      重要提示：
+      1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+      2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+      3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+      4. 不要生成虚构的API，应该使用代码库中实际存在的API。
+      5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
+      6. 请使用{repo_name}的实际模块名称和文件路径，例如，如果是requests库，应该使用requests.api, requests.sessions等实际存在的模块。
 
   prepare_rag_data:
     max_chunk_size: 1000
