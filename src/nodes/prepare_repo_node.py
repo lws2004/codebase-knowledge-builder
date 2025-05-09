@@ -1,6 +1,6 @@
 """准备仓库节点，用于克隆和准备 Git 仓库。"""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from pocketflow import Node
 from pydantic import BaseModel, Field
@@ -49,11 +49,22 @@ class PrepareRepoNode(Node):
         Returns:
             用户输入
         """
-        input_data = shared.get("input", {})
+        # 直接从shared中获取参数，而不是从shared["input"]中获取
+        # 这是因为InputNode已经将参数放在了shared的顶层
+        repo_url = shared.get("repo_url")
+        local_path = shared.get("local_path")
+        branch = shared.get("branch")
+
+        # 创建输入数据字典
+        input_data = {
+            "repo_url": repo_url,
+            "local_path": local_path,
+            "branch": branch,
+        }
 
         # 检查输入是否有效
-        if not input_data:
-            return {"error": "缺少输入数据", "success": False}
+        if not repo_url and not local_path:
+            return {"error": "缺少仓库 URL 或本地路径", "success": False}
 
         return input_data
 
@@ -74,6 +85,23 @@ class PrepareRepoNode(Node):
         use_cache = not self.config.force_clone
         cache_ttl = self.config.cache_ttl
 
+        # 如果既没有repo_url也没有local_path，则返回错误
+        if not repo_url and not local_path:
+            return {"error": "缺少仓库 URL 或本地路径", "success": False}
+
+        # 如果只有local_path而没有repo_url，则使用本地路径
+        if local_path and not repo_url:
+            # 创建仓库信息
+            repo_info = {
+                "repo_path": local_path,
+                "branch": branch,
+                "repo_url": None,
+                "success": True,
+                "used_cache": False,
+            }
+            return cast(Dict[str, Any], repo_info)
+
+        # 确保repo_url不为None
         if not repo_url:
             return {"error": "缺少仓库 URL", "success": False}
 
@@ -105,19 +133,21 @@ class PrepareRepoNode(Node):
         if file_list:
             repo_info["file_count"] = len(file_list)
 
-        return repo_info
+        return cast(Dict[str, Any], repo_info)
 
     def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将仓库信息存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
             下一个节点的动作
         """
+        # 记录未使用的参数，避免IDE警告
+        _ = prep_res
         if not exec_res.get("success", False):
             shared["error"] = exec_res.get("error", "准备仓库失败")
             return "error"

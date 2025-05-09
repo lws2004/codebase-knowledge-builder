@@ -1,13 +1,14 @@
 """生成整体架构节点，用于生成代码库的整体架构文档。"""
 
+import asyncio  # Added for async operations
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional  # Ensure Tuple is imported for type hints if needed later
 
-from pocketflow import Node
+from pocketflow import AsyncNode  # Changed from Node to AsyncNode
 from pydantic import BaseModel, Field
 
-from ..utils.llm_wrapper import LLMClient
+from ..utils.llm_wrapper.llm_client import LLMClient  # Import LLMClient
 from ..utils.logger import log_and_notify
 
 
@@ -39,24 +40,45 @@ class GenerateOverallArchitectureNodeConfig(BaseModel):
            - 主要功能和用途
            - 技术栈概述
         2. 系统架构
-           - 高层架构图（用 ASCII 或 Markdown 表示）
+           - 高层架构图（必须使用Mermaid或ASCII图表表示）
            - 主要组件和它们的职责
            - 组件之间的交互
         3. 核心模块详解
            - 每个核心模块的功能和职责
-           - 模块之间的依赖关系
+           - 模块之间的依赖关系（使用Mermaid流程图或时序图表示）
            - 关键接口和数据流
         4. 设计模式和原则
            - 使用的主要设计模式
            - 代码组织原则
            - 最佳实践
         5. 部署架构（如果适用）
-           - 部署环境
+           - 部署环境（使用Mermaid图表表示）
            - 部署流程
            - 扩展性考虑
 
         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+
+        必须包含至少2个Mermaid图表，用于可视化系统架构和模块依赖关系。Mermaid图表示例：
+
+        ```mermaid
+        graph TD
+            A[模块A] --> B[模块B]
+            A --> C[模块C]
+            B --> D[模块D]
+            C --> D
+        ```
+
+        ```mermaid
+        sequenceDiagram
+            participant 用户
+            participant API
+            participant 数据库
+            用户->>API: 请求数据
+            API->>数据库: 查询数据
+            数据库-->>API: 返回结果
+            API-->>用户: 响应
+        ```
 
         重要提示：
         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
@@ -64,21 +86,24 @@ class GenerateOverallArchitectureNodeConfig(BaseModel):
         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
         4. 不要生成虚构的API，应该使用代码库中实际存在的API。
         5. 如果你不确定某个信息，请基于提供的代码库结构和历史分析进行合理推断，而不是编造。
+        6. 必须包含至少2个Mermaid图表，这是强制要求！文档中必须包含Mermaid图表来可视化系统架构和模块依赖关系。
         """,
         description="架构提示模板",
     )
 
 
-class GenerateOverallArchitectureNode(Node):
-    """生成整体架构节点，用于生成代码库的整体架构文档"""
+class AsyncGenerateOverallArchitectureNode(AsyncNode):  # Renamed class and changed base class
+    """生成整体架构节点（异步），用于生成代码库的整体架构文档"""
+
+    llm_client: Optional[LLMClient] = None  # Add type hint
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化生成整体架构节点
+        """初始化生成整体架构节点 (异步)
 
         Args:
             config: 节点配置
         """
-        super().__init__()
+        super().__init__()  # AsyncNode constructor
 
         # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
@@ -91,9 +116,10 @@ class GenerateOverallArchitectureNode(Node):
             merged_config.update(config)
 
         self.config = GenerateOverallArchitectureNodeConfig(**merged_config)
-        log_and_notify("初始化生成整体架构节点", "info")
+        # self._current_repo_name = None # No longer needed
+        log_and_notify("初始化 AsyncGenerateOverallArchitectureNode", "info")  # Updated class name
 
-    def prep(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+    async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:  # Renamed and made async
         """准备阶段，从共享存储中获取代码结构、核心模块和历史分析
 
         Args:
@@ -102,7 +128,7 @@ class GenerateOverallArchitectureNode(Node):
         Returns:
             包含代码结构、核心模块和历史分析的字典
         """
-        log_and_notify("GenerateOverallArchitectureNode: 准备阶段开始", "info")
+        log_and_notify("AsyncGenerateOverallArchitectureNode: 准备阶段开始", "info")  # Updated
 
         # 从共享存储中获取代码结构
         code_structure = shared.get("code_structure")
@@ -119,18 +145,31 @@ class GenerateOverallArchitectureNode(Node):
 
         # 从共享存储中获取核心模块
         core_modules = shared.get("core_modules")
-        if not core_modules:
+        if (
+            not core_modules
+        ):  # TODO: Check for core_modules.get("success", False) as well if it's a dict from another node
             log_and_notify("共享存储中缺少核心模块，将使用空数据", "warning")
             core_modules = {"modules": [], "architecture": "", "relationships": [], "success": True}
 
         # 从共享存储中获取历史分析
         history_analysis = shared.get("history_analysis")
-        if not history_analysis:
+        if not history_analysis:  # TODO: Check for history_analysis.get("success", False) as well
             log_and_notify("共享存储中缺少历史分析，将使用空数据", "warning")
             history_analysis = {"commit_count": 0, "contributor_count": 0, "history_summary": "", "success": True}
 
-        # 获取 LLM 配置
-        llm_config = shared.get("llm_config", {})
+        # Initialize LLMClient
+        llm_config_shared = shared.get("llm_config")
+        if not llm_config_shared:
+            error_msg = "共享存储中缺少 LLM 配置"
+            log_and_notify(error_msg, "error", notify=True)
+            return {"error": error_msg}
+        try:
+            if not self.llm_client:  # Initialize only if not already initialized (e.g. by a parent flow)
+                self.llm_client = LLMClient(config=llm_config_shared)
+        except Exception as e:
+            error_msg = f"AsyncGenerateOverallArchitectureNode: 初始化 LLMClient 失败: {e}"
+            log_and_notify(error_msg, "error", notify=True)
+            return {"error": error_msg}
 
         # 获取目标语言
         target_language = shared.get("language", "zh")
@@ -140,7 +179,9 @@ class GenerateOverallArchitectureNode(Node):
 
         # 获取仓库名称
         repo_name = shared.get("repo_name", "requests")
-        print(f"GenerateOverallArchitectureNode.prep: 从共享存储中获取仓库名称 {repo_name}")
+        log_and_notify(
+            f"AsyncGenerateOverallArchitectureNode.prep: 从共享存储中获取仓库名称 {repo_name}", "info"
+        )  # Updated
 
         # 将仓库名称添加到代码结构中，以便在exec方法中使用
         if isinstance(code_structure, dict):
@@ -150,7 +191,6 @@ class GenerateOverallArchitectureNode(Node):
             "code_structure": code_structure,
             "core_modules": core_modules,
             "history_analysis": history_analysis,
-            "llm_config": llm_config,
             "target_language": target_language,
             "output_dir": output_dir,
             "retry_count": self.config.retry_count,
@@ -160,7 +200,7 @@ class GenerateOverallArchitectureNode(Node):
             "repo_name": repo_name,  # 添加仓库名称
         }
 
-    def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:  # Renamed and made async
         """执行阶段，生成代码库的整体架构文档
 
         Args:
@@ -169,7 +209,7 @@ class GenerateOverallArchitectureNode(Node):
         Returns:
             生成结果
         """
-        log_and_notify("GenerateOverallArchitectureNode: 执行阶段开始", "info")
+        log_and_notify("AsyncGenerateOverallArchitectureNode: 执行阶段开始", "info")  # Updated
 
         # 检查准备阶段是否出错
         if "error" in prep_res:
@@ -178,7 +218,6 @@ class GenerateOverallArchitectureNode(Node):
         code_structure = prep_res["code_structure"]
         core_modules = prep_res["core_modules"]
         history_analysis = prep_res["history_analysis"]
-        llm_config = prep_res["llm_config"]
         target_language = prep_res["target_language"]
         output_dir = prep_res["output_dir"]
         retry_count = prep_res["retry_count"]
@@ -191,41 +230,60 @@ class GenerateOverallArchitectureNode(Node):
         repo_name = prep_res.get("repo_name", "requests")
 
         # 打印仓库名称，用于调试
-        print(f"GenerateOverallArchitectureNode: 使用仓库名称 {repo_name}")
+        log_and_notify(f"AsyncGenerateOverallArchitectureNode: 使用仓库名称 {repo_name}", "info")  # Updated
 
         # 准备提示
-        prompt = self._create_prompt(code_structure, core_modules, history_analysis)
+        prompt = self._create_prompt(code_structure, core_modules, history_analysis, repo_name)
 
         # 尝试调用 LLM
         for attempt in range(retry_count):
             try:
-                log_and_notify(f"尝试生成整体架构文档 (尝试 {attempt + 1}/{retry_count})", "info")
+                log_and_notify(
+                    f"AsyncGenerateOverallArchitectureNode: 尝试生成整体架构文档 (尝试 {attempt + 1}/{retry_count})",
+                    "info",
+                )  # Updated
 
                 # 调用 LLM
-                content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
+                content, quality_score, success = await self._call_model(prompt, target_language, model)
 
                 if success and quality_score["overall"] >= quality_threshold:
-                    log_and_notify(f"成功生成整体架构文档 (质量分数: {quality_score['overall']})", "info")
+                    log_and_notify(
+                        f"AsyncGenerateOverallArchitectureNode: 成功生成整体架构文档 "
+                        f"(质量分数: {quality_score['overall']})",
+                        "info",
+                    )
 
-                    # 修改_save_document方法，使其使用正确的仓库名称
-                    # 由于_save_document方法的签名限制，我们需要临时修改类的属性
-                    self._current_repo_name = repo_name
-
-                    # 保存文档
-                    file_path = self._save_document(content, output_dir, output_format)
+                    # 保存文档 (异步)
+                    file_path = await asyncio.to_thread(
+                        self._save_document, content, output_dir, output_format, repo_name
+                    )
 
                     return {"content": content, "file_path": file_path, "quality_score": quality_score, "success": True}
                 elif success:
-                    log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
+                    log_and_notify(
+                        f"AsyncGenerateOverallArchitectureNode: 生成质量不佳 "
+                        f"(分数: {quality_score['overall']}), 重试中...",
+                        "warning",
+                    )
+                else:
+                    log_and_notify("AsyncGenerateOverallArchitectureNode: _call_model指示失败, 重试中...", "warning")
+
             except Exception as e:
-                log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
+                log_and_notify(
+                    f"AsyncGenerateOverallArchitectureNode: LLM 调用或处理失败: {str(e)}, 重试中...", "warning"
+                )  # Updated
+
+            if attempt < retry_count - 1:
+                await asyncio.sleep(2**attempt)  # Exponential backoff
 
         # 所有尝试都失败
-        error_msg = f"无法生成整体架构文档，{retry_count} 次尝试后失败"
+        error_msg = f"AsyncGenerateOverallArchitectureNode: 无法生成整体架构文档，{retry_count} 次尝试后失败"  # Updated
         log_and_notify(error_msg, "error", notify=True)
         return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    async def post_async(
+        self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]
+    ) -> str:  # Renamed and made async
         """后处理阶段，将生成结果存储到共享存储中
 
         Args:
@@ -236,12 +294,14 @@ class GenerateOverallArchitectureNode(Node):
         Returns:
             下一个节点的动作
         """
-        log_and_notify("GenerateOverallArchitectureNode: 后处理阶段开始", "info")
+        log_and_notify("AsyncGenerateOverallArchitectureNode: 后处理阶段开始", "info")  # Updated
 
         # 检查执行阶段是否出错
         if not exec_res.get("success", False):
-            error_msg = exec_res.get("error", "未知错误")
-            log_and_notify(f"生成整体架构文档失败: {error_msg}", "error", notify=True)
+            error_msg = exec_res.get("error", "AsyncGenerateOverallArchitectureNode: 未知错误")  # Updated
+            log_and_notify(
+                f"AsyncGenerateOverallArchitectureNode: 生成整体架构文档失败: {error_msg}", "error", notify=True
+            )  # Updated
             shared["architecture_doc"] = {"error": error_msg, "success": False}
             return "error"
 
@@ -253,12 +313,15 @@ class GenerateOverallArchitectureNode(Node):
             "success": True,
         }
 
-        log_and_notify(f"成功生成整体架构文档，保存到: {exec_res.get('file_path', '')}", "info", notify=True)
-
+        log_and_notify("AsyncGenerateOverallArchitectureNode: 整体架构文档已存储到共享存储中", "info")  # Updated
         return "default"
 
     def _create_prompt(
-        self, code_structure: Dict[str, Any], core_modules: Dict[str, Any], history_analysis: Dict[str, Any]
+        self,
+        code_structure: Dict[str, Any],
+        core_modules: Dict[str, Any],
+        history_analysis: Dict[str, Any],
+        repo_name: str,
     ) -> str:
         """创建提示
 
@@ -266,6 +329,7 @@ class GenerateOverallArchitectureNode(Node):
             code_structure: 代码结构
             core_modules: 核心模块
             history_analysis: 历史分析
+            repo_name: 仓库名称
 
         Returns:
             提示
@@ -292,9 +356,6 @@ class GenerateOverallArchitectureNode(Node):
             "history_summary": history_analysis.get("history_summary", ""),
         }
 
-        # 获取仓库名称
-        repo_name = code_structure.get("repo_name", "unknown")
-
         # 格式化提示
         return self.config.architecture_prompt_template.format(
             repo_name=repo_name,
@@ -303,50 +364,46 @@ class GenerateOverallArchitectureNode(Node):
             history_analysis=json.dumps(simplified_history, indent=2, ensure_ascii=False),
         )
 
-    def _call_model(self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str) -> tuple:
-        """调用 LLM
+    async def _call_model(  # Made async
+        self, prompt: str, target_language: str, model: str
+    ) -> tuple:  # Python 3.8 doesn't support Tuple from typing for return type hint like this, use tuple
+        """调用 LLM 生成整体架构文档 (异步)
 
         Args:
-            llm_config: LLM 配置
-            prompt: 提示
+            prompt: 主提示内容
             target_language: 目标语言
-            model: 模型
+            model: 要使用的模型名称
 
         Returns:
-            生成内容、质量分数和成功标志
+            (生成的文档内容, 质量评估分数, 是否成功)
         """
+        assert self.llm_client is not None, "LLMClient has not been initialized!"
+
+        system_prompt_content = f"你是一个专业的代码库架构专家，请按照用户要求生成文档。目标语言: {target_language}。"
+
+        messages = [
+            {"role": "system", "content": system_prompt_content},
+            {"role": "user", "content": prompt},
+        ]
+
         try:
-            # 创建 LLM 客户端
-            llm_client = LLMClient(llm_config)
+            raw_response = await self.llm_client.acompletion(messages=messages, model=model)  # type: ignore[misc]
 
-            # 获取仓库名称
-            repo_name = getattr(self, "_current_repo_name", "unknown")
+            if not raw_response:
+                log_and_notify("AsyncGenerateOverallArchitectureNode: LLM 返回空响应", "error")
+                return "", {}, False
 
-            # 准备系统提示
-            system_prompt = f"""你是一个代码库架构专家，擅长分析代码库并生成全面的架构文档。
-请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
-你的回答应该是格式良好的 Markdown，使用适当的标题、列表、表格和代码块。
-使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+            content = self.llm_client.get_completion_content(raw_response)
+            if not content:
+                log_and_notify("AsyncGenerateOverallArchitectureNode: 从 LLM 响应中提取内容失败", "error")
+                return "", {}, False
 
-重要提示：你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。请使用{repo_name}的实际模块和类名称。"""
-
-            # 调用 LLM
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
-
-            response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="生成整体架构文档", max_input_tokens=None
-            )
-
-            # 获取响应内容
-            content = llm_client.get_completion_content(response)
-
-            # 评估质量
-            quality_score = self._evaluate_quality(content)
-
+            quality_score = self._evaluate_quality(content)  # This is a sync method
             return content, quality_score, True
+
         except Exception as e:
-            log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
-            raise
+            log_and_notify(f"AsyncGenerateOverallArchitectureNode: _call_model 异常: {str(e)}", "error")
+            return "", {}, False
 
     def _evaluate_quality(self, content: str) -> Dict[str, float]:
         """评估内容质量
@@ -357,51 +414,30 @@ class GenerateOverallArchitectureNode(Node):
         Returns:
             质量分数
         """
-        scores = {"completeness": 0.0, "structure": 0.0, "relevance": 0.0, "overall": 0.0}
+        score = {"overall": 0.0, "completeness": 0.0, "relevance": 0.0}
+        if not content or not content.strip():
+            log_and_notify("内容为空，质量评分为0", "warning")
+            return score
+        expected_keywords = ["代码库概述", "系统架构", "核心模块", "设计模式", "部署架构"]
+        found_keywords = sum(1 for kw in expected_keywords if kw in content)
+        score["completeness"] = min(1.0, found_keywords / len(expected_keywords) * 1.5)
+        if len(content) > 500:
+            score["relevance"] = 0.5
+        if len(content) > 1000:
+            score["relevance"] = 1.0
+        score["overall"] = min(1.0, (score["completeness"] + score["relevance"]) / 2)
+        score["overall"] = min(1.0, score["overall"])
+        log_and_notify(f"质量评估完成: {score}", "debug")
+        return score
 
-        # 检查完整性
-        required_sections = ["代码库概述", "系统架构", "核心模块", "设计模式"]
-
-        found_sections = 0
-        for section in required_sections:
-            if section in content:
-                found_sections += 1
-
-        scores["completeness"] = found_sections / len(required_sections)
-
-        # 检查结构
-        has_headings = "# " in content
-        has_lists = "- " in content or "* " in content
-        has_code_blocks = "```" in content
-        has_emojis = any(ord(c) > 0x1F000 for c in content)
-
-        structure_score = 0.0
-        if has_headings:
-            structure_score += 0.4
-        if has_lists:
-            structure_score += 0.2
-        if has_code_blocks:
-            structure_score += 0.2
-        if has_emojis:
-            structure_score += 0.2
-
-        scores["structure"] = structure_score
-
-        # 检查相关性（简化处理，实际应该基于代码库内容评估）
-        scores["relevance"] = 0.8  # 假设相关性较高
-
-        # 计算总体分数
-        scores["overall"] = (scores["completeness"] + scores["structure"] + scores["relevance"]) / 3
-
-        return scores
-
-    def _save_document(self, content: str, output_dir: str, output_format: str) -> str:
+    def _save_document(self, content: str, output_dir: str, output_format: str, repo_name: str) -> str:
         """保存文档
 
         Args:
             content: 文档内容
             output_dir: 输出目录
             output_format: 输出格式
+            repo_name: 仓库名称，用于创建子目录
 
         Returns:
             文件路径
@@ -409,19 +445,15 @@ class GenerateOverallArchitectureNode(Node):
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
 
-        # 使用exec方法中设置的仓库名称
-        repo_name = getattr(self, "_current_repo_name", "requests")
-        print(f"_save_document: 使用仓库名称 {repo_name}")
-
-        # 确保仓库目录存在
-        os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
+        # 使用传入的仓库名称
+        repo_output_dir = os.path.join(output_dir, repo_name or "default_repo")
+        os.makedirs(repo_output_dir, exist_ok=True)
 
         # 确定文件名和路径 - 将架构文档内容整合到overview.md中
-        file_name = "overview"
-        file_ext = ".md" if output_format == "markdown" else f".{output_format}"
-
-        # 将文件保存到仓库子目录中
-        file_path = os.path.join(output_dir, repo_name, file_name + file_ext)
+        # 确保使用.md扩展名
+        file_ext = ".md"
+        file_name = f"overall_architecture{file_ext}"
+        file_path = os.path.join(repo_output_dir, file_name)
 
         # 如果文件已存在，则将架构文档内容追加到文件末尾
         if os.path.exists(file_path):
@@ -439,6 +471,6 @@ class GenerateOverallArchitectureNode(Node):
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        log_and_notify(f"架构文档已整合到: {file_path}", "info")
+        log_and_notify(f"整体架构文档已保存到: {file_path}", "info")
 
         return file_path

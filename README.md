@@ -15,6 +15,7 @@
 - 分析 Git 仓库的提交历史
 - 识别重要文件和贡献者
 - 使用 LLM 生成历史总结
+- 直接以用户指定语言生成内容，无需额外翻译
 - 支持多种 LLM 提供商（OpenAI、OpenRouter、阿里百炼、火山引擎、硅基流动）
 
 ## 安装
@@ -204,6 +205,10 @@ python run_tests.py --all
 
 - `src/`: 源代码
   - `nodes/`: 节点实现
+    - `analyze_repo_flow.py`: 仓库分析流程
+    - `combine_content_node.py`: 内容组合节点
+    - `format_output_node.py`: 输出格式化节点
+    - `generate_content_flow.py`: 内容生成流程
   - `utils/`: 工具类
     - `git_utils/`: Git 相关工具
     - `llm_wrapper/`: LLM 调用工具

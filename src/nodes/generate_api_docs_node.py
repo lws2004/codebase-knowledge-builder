@@ -1,13 +1,14 @@
 """生成API文档节点，用于生成代码库的API文档。"""
 
+import asyncio
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
 
-from pocketflow import Node
+from pocketflow import AsyncNode
 from pydantic import BaseModel, Field
 
-from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.llm_wrapper import LLMClient
 from ..utils.logger import log_and_notify
 
 
@@ -58,17 +59,20 @@ class GenerateApiDocsNodeConfig(BaseModel):
         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
         4. 不要生成虚构的API，应该使用代码库中实际存在的API。
         5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
-        6. 请使用{repo_name}的实际API和模块名称，例如，如果是requests库，应该使用requests.get(), requests.post()等实际存在的API。
+        6. 请使用{repo_name}的实际API和模块名称，例如，如果是requests库，应该使用requests.get(),
+           requests.post()等实际存在的API。
         """,
         description="API文档提示模板",
     )
 
 
-class GenerateApiDocsNode(Node):
-    """生成API文档节点，用于生成代码库的API文档"""
+class AsyncGenerateApiDocsNode(AsyncNode):
+    """生成API文档节点（异步），用于生成代码库的API文档"""
+
+    llm_client: Optional[LLMClient] = None
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化生成API文档节点
+        """初始化生成API文档节点 (异步)
 
         Args:
             config: 节点配置
@@ -86,61 +90,73 @@ class GenerateApiDocsNode(Node):
             merged_config.update(config)
 
         self.config = GenerateApiDocsNodeConfig(**merged_config)
-        log_and_notify("初始化生成API文档节点", "info")
+        log_and_notify("初始化 AsyncGenerateApiDocsNode", "info")
 
-    def prep(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+    async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段，从共享存储中获取必要的数据
 
         Args:
             shared: 共享存储
 
         Returns:
-            准备结果
+            准备结果或包含错误的字典
         """
-        # 从共享存储中获取代码结构
+        log_and_notify("AsyncGenerateApiDocsNode: 准备阶段开始", "info")
         code_structure = shared.get("code_structure")
         if not code_structure:
             error_msg = "共享存储中缺少代码结构"
             log_and_notify(error_msg, "error", notify=True)
-            return {"error": error_msg}
+            return {"error": error_msg}  # 返回错误
 
-        # 从共享存储中获取核心模块
         core_modules = shared.get("core_modules")
         if not core_modules:
             log_and_notify("共享存储中缺少核心模块，将使用空数据", "warning")
-            core_modules = {"modules": [], "architecture": "", "relationships": [], "success": True}
+            core_modules = {"modules": [], "architecture": "", "relationships": "", "success": True}
+        elif not core_modules.get("success", False):
+            log_and_notify("共享存储中的核心模块标记为失败，API文档可能不完整", "warning")
 
-        # 获取 LLM 配置
-        llm_config = shared.get("llm_config", {})
+        llm_config_shared = shared.get("llm_config")
+        if llm_config_shared:
+            try:
+                if not self.llm_client:
+                    self.llm_client = LLMClient(config=llm_config_shared)
+                log_and_notify("AsyncGenerateApiDocsNode: LLMClient initialized.", "info")
+            except Exception as e:
+                error_msg = f"AsyncGenerateApiDocsNode: 初始化 LLM 客户端失败: {e}"
+                log_and_notify(error_msg, "error", notify=True)
+                self.llm_client = None
+        else:
+            log_and_notify(
+                "AsyncGenerateApiDocsNode: No LLM config in shared state. LLM-dependent features will fail.", "warning"
+            )
+            self.llm_client = None
 
-        # 获取目标语言
         target_language = shared.get("language", "zh")
-
-        # 获取输出目录
         output_dir = shared.get("output_dir", "docs")
+        repo_name = shared.get("repo_name", "requests")  # Default to 'requests' if not found?
+        log_and_notify(f"AsyncGenerateApiDocsNode.prep_async: 使用仓库名称 {repo_name}", "info")
 
-        # 获取仓库名称
-        repo_name = shared.get("repo_name", "requests")
-        print(f"GenerateApiDocsNode.prep: 从共享存储中获取仓库名称 {repo_name}")
-
-        # 将仓库名称添加到代码结构中，以便在exec方法中使用
+        # Ensure repo_name consistency if code_structure is dict
         if isinstance(code_structure, dict):
             code_structure["repo_name"] = repo_name
 
-        return {
+        # Prepare data for exec_async, ensuring multi-line formatting
+        prep_data = {
             "code_structure": code_structure,
             "core_modules": core_modules,
-            "llm_config": llm_config,
             "target_language": target_language,
             "output_dir": output_dir,
             "retry_count": self.config.retry_count,
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
             "output_format": self.config.output_format,
-            "repo_name": repo_name,  # 添加仓库名称
+            "repo_name": repo_name,
+            # Note: Removed "language" key as it's duplicated by "target_language"
+            # Note: Removed non-existent "api_example" key
         }
+        return prep_data
 
-    def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
         """执行阶段，生成API文档
 
         Args:
@@ -149,165 +165,147 @@ class GenerateApiDocsNode(Node):
         Returns:
             执行结果
         """
-        # 检查准备阶段是否有错误
+        log_and_notify("AsyncGenerateApiDocsNode: 执行阶段开始", "info")
         if "error" in prep_res:
             return {"success": False, "error": prep_res["error"]}
-
-        # 获取必要的数据
         code_structure = prep_res["code_structure"]
         core_modules = prep_res["core_modules"]
-        llm_config = prep_res["llm_config"]
         target_language = prep_res["target_language"]
         output_dir = prep_res["output_dir"]
         retry_count = prep_res["retry_count"]
         quality_threshold = prep_res["quality_threshold"]
-        model = prep_res["model"]
+        model_name = prep_res["model"]
         output_format = prep_res["output_format"]
-
-        # 获取仓库名称
         repo_name = prep_res.get("repo_name", "requests")
-        print(f"GenerateApiDocsNode.exec: 使用仓库名称 {repo_name}")
-
-        # 准备提示
-        prompt = self._create_prompt(code_structure, core_modules)
-
-        # 尝试调用 LLM
+        log_and_notify(f"AsyncGenerateApiDocsNode.exec_async: 使用仓库名称 {repo_name}", "info")
+        prompt_str = self._create_prompt(code_structure, core_modules, repo_name)
         for attempt in range(retry_count):
             try:
-                log_and_notify(f"尝试生成API文档 (尝试 {attempt + 1}/{retry_count})", "info")
-
-                # 调用 LLM
-                content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
-
+                log_and_notify(f"AsyncGenerateApiDocsNode: 尝试生成API文档 (尝试 {attempt + 1}/{retry_count})", "info")
+                content, quality_score, success = await self._call_model(
+                    prompt_str, target_language, model_name, repo_name
+                )
                 if success and quality_score["overall"] >= quality_threshold:
-                    log_and_notify(f"成功生成API文档 (质量分数: {quality_score['overall']})", "info")
-
-                    # 修改_save_document方法，使其使用正确的仓库名称
-                    # 由于_save_document方法的签名限制，我们需要临时修改类的属性
-                    self._current_repo_name = repo_name
-
-                    # 保存文档
-                    file_path = self._save_document(content, output_dir, output_format)
-
+                    log_and_notify(
+                        f"AsyncGenerateApiDocsNode: 成功生成API文档 (质量分数: {quality_score['overall']})", "info"
+                    )
+                    file_path = await asyncio.to_thread(
+                        self._save_document, content, output_dir, output_format, repo_name
+                    )
                     return {"content": content, "file_path": file_path, "quality_score": quality_score, "success": True}
                 elif success:
-                    log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
+                    log_and_notify(
+                        f"AsyncGenerateApiDocsNode: 生成质量不佳 (分数: {quality_score['overall']}), 重试中...",
+                        "warning",
+                    )
+                else:
+                    log_and_notify("AsyncGenerateApiDocsNode: _call_model 指示失败, 重试中...", "warning")
             except Exception as e:
-                log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
-
-        # 所有重试都失败
-        error_msg = f"无法生成高质量的API文档，已尝试 {retry_count} 次"
+                log_and_notify(f"AsyncGenerateApiDocsNode: LLM 调用或处理失败: {str(e)}, 重试中...", "warning")
+            if attempt < retry_count - 1:
+                await asyncio.sleep(2**attempt)
+        error_msg = f"AsyncGenerateApiDocsNode: 无法生成高质量的API文档，已尝试 {retry_count} 次"
         log_and_notify(error_msg, "error", notify=True)
         return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    async def post_async(self, shared: Dict[str, Any], _: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将API文档存储到共享存储中
 
         Args:
             shared: 共享存储
-            _prep_res: 准备阶段的结果（未使用）
+            _: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
             下一个节点的动作
         """
+        log_and_notify("AsyncGenerateApiDocsNode: 后处理阶段开始", "info")
         if not exec_res.get("success", False):
-            shared["error"] = exec_res.get("error", "生成API文档失败")
+            shared["error"] = exec_res.get("error", "AsyncGenerateApiDocsNode: 生成API文档失败")
             return "error"
 
-        # 将API文档存储到共享存储中
         shared["api_docs"] = {
-            "content": exec_res["content"],
-            "file_path": exec_res["file_path"],
-            "quality_score": exec_res["quality_score"],
+            "content": exec_res.get("content", ""),
+            "file_path": exec_res.get("file_path", ""),
+            "quality_score": exec_res.get("quality_score", {}),
             "success": True,
         }
-
-        log_and_notify("API文档已存储到共享存储中", "info")
+        log_and_notify("AsyncGenerateApiDocsNode: API文档已存储到共享存储中", "info")
         return "default"
 
-    def _create_prompt(self, code_structure: Dict[str, Any], core_modules: Dict[str, Any]) -> str:
+    def _create_prompt(self, code_structure: Dict[str, Any], core_modules: Dict[str, Any], repo_name: str) -> str:
         """创建提示
 
         Args:
             code_structure: 代码结构
             core_modules: 核心模块
+            repo_name: 仓库名称
 
         Returns:
             提示
         """
-        # 简化代码结构，避免提示过长
         simplified_structure = {
             "file_count": code_structure.get("file_count", 0),
             "directory_count": code_structure.get("directory_count", 0),
             "language_stats": code_structure.get("language_stats", {}),
             "file_types": code_structure.get("file_types", {}),
         }
-
-        # 简化核心模块
         simplified_modules = {
             "modules": core_modules.get("modules", []),
             "architecture": core_modules.get("architecture", ""),
             "relationships": core_modules.get("relationships", []),
         }
-
-        # 获取仓库名称
-        repo_name = code_structure.get("repo_name", "unknown")
-
-        # 格式化提示
         return self.config.api_docs_prompt_template.format(
             repo_name=repo_name,
             code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
             core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
         )
 
-    def _call_model(
-        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
+    async def _call_model(
+        self, prompt_str: str, target_language: str, model_name: str, repo_name: str
     ) -> Tuple[str, Dict[str, float], bool]:
-        """调用 LLM
+        """调用 LLM 生成API文档 (异步)
 
         Args:
-            llm_config: LLM 配置
-            prompt: 提示
+            prompt_str: 主提示内容
             target_language: 目标语言
-            model: 模型
+            model_name: 要使用的模型名称
+            repo_name: 仓库名称 (用于系统提示)
 
         Returns:
-            生成内容、质量分数和成功标志
+            (生成的文档内容, 质量评估分数, 是否成功)
         """
+        assert self.llm_client is not None, "LLMClient has not been initialized!"
+
+        system_prompt_content = (
+            f"你是一个代码库API文档专家。请根据以下信息为 {repo_name} 代码库生成一个全面的代码库API文档。"
+            f"目标语言: {target_language}。请确保你的分析基于实际的 {repo_name} 代码。"
+            f"使用 Markdown 格式，包含标题、列表、表格和代码块。使用表情符号使文档生动。"
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt_content},
+            {"role": "user", "content": prompt_str},
+        ]
+
         try:
-            # 创建 LLM 客户端
-            llm_client = LLMClient(llm_config)
+            raw_response = await self.llm_client.acompletion(messages=messages, model=model_name)
 
-            # 获取仓库名称
-            repo_name = getattr(self, "_current_repo_name", "unknown")
+            if not raw_response:
+                log_and_notify("AsyncGenerateApiDocsNode: LLM 返回空响应", "error")
+                return "", {}, False
 
-            # 准备系统提示
-            system_prompt = f"""你是一个代码库API文档专家，擅长分析代码库并生成全面的API文档。
-请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
-你的回答应该是格式良好的 Markdown，使用适当的标题、列表、表格和代码块。
-使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-确保文档中的代码引用能够链接到源代码。
+            content = self.llm_client.get_completion_content(raw_response)
+            if not content:
+                log_and_notify("AsyncGenerateApiDocsNode: 从 LLM 响应中提取内容失败", "error")
+                return "", {}, False
 
-重要提示：你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。请使用{repo_name}的实际API和模块名称。"""
-
-            # 调用 LLM
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
-
-            response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="生成API文档", max_input_tokens=None
-            )
-
-            # 获取响应内容
-            content = llm_client.get_completion_content(response)
-
-            # 评估质量
             quality_score = self._evaluate_quality(content)
-
             return content, quality_score, True
+
         except Exception as e:
-            log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
-            raise
+            log_and_notify(f"AsyncGenerateApiDocsNode: _call_model 异常: {str(e)}", "error")
+            return "", {}, False
 
     def _evaluate_quality(self, content: str) -> Dict[str, float]:
         """评估内容质量
@@ -355,13 +353,14 @@ class GenerateApiDocsNode(Node):
 
         return scores
 
-    def _save_document(self, content: str, output_dir: str, output_format: str) -> str:
+    def _save_document(self, content: str, output_dir: str, output_format: str, repo_name: str) -> str:
         """保存文档
 
         Args:
             content: 文档内容
             output_dir: 输出目录
             output_format: 输出格式
+            repo_name: 仓库名称
 
         Returns:
             文件路径
@@ -369,19 +368,20 @@ class GenerateApiDocsNode(Node):
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
 
-        # 使用exec方法中设置的仓库名称
-        repo_name = getattr(self, "_current_repo_name", "requests")
-        print(f"GenerateApiDocsNode._save_document: 使用仓库名称 {repo_name}")
+        # 使用传入的仓库名称
+        log_and_notify(f"AsyncGenerateApiDocsNode._save_document: 使用仓库名称 {repo_name}", "debug")
 
         # 确保仓库目录存在
-        os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
+        repo_specific_dir = os.path.join(output_dir, repo_name or "default_repo")
+        os.makedirs(repo_specific_dir, exist_ok=True)
 
         # 确定文件名和路径 - 将API文档内容整合到overview.md中
         file_name = "overview"
-        file_ext = ".md" if output_format == "markdown" else f".{output_format}"
+        # 确保使用.md扩展名
+        file_ext = ".md"
 
         # 将文件保存到仓库子目录中
-        file_path = os.path.join(output_dir, repo_name, file_name + file_ext)
+        file_path = os.path.join(repo_specific_dir, file_name + file_ext)
 
         # 如果文件已存在，则将API文档内容追加到文件末尾
         if os.path.exists(file_path):

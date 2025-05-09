@@ -78,14 +78,14 @@ class FormatOutputNode(Node):
         """
         log_and_notify("开始格式化输出", "info")
 
-        # 检查是否有翻译后的内容
-        if "translated_content" not in shared:
-            error_msg = "没有找到翻译后的内容"
+        # 检查是否有组合后的内容
+        if "combined_content" not in shared:
+            error_msg = "没有找到组合后的内容"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
 
-        # 获取翻译后的内容
-        translated_content = shared["translated_content"]
+        # 获取组合后的内容
+        combined_content = shared["combined_content"]
 
         # 获取文件结构
         file_structure = shared.get("file_structure", {})
@@ -111,7 +111,7 @@ class FormatOutputNode(Node):
         target_language = shared.get("language", "zh")
 
         return {
-            "translated_content": translated_content,
+            "combined_content": combined_content,
             "file_structure": file_structure,
             "repo_structure": repo_structure,
             "output_dir": output_dir,
@@ -124,6 +124,7 @@ class FormatOutputNode(Node):
             "add_emojis": self.config.add_emojis,
             "justdoc_compatible": self.config.justdoc_compatible,
             "template": self.config.template or self.config.default_template,
+            "shared": shared,  # 传递共享存储，以便在exec阶段使用
         }
 
     def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -140,7 +141,7 @@ class FormatOutputNode(Node):
             return {"success": False, "error": prep_res["error"]}
 
         # 获取参数
-        translated_content = prep_res["translated_content"]
+        combined_content = prep_res["combined_content"]
         file_structure = prep_res["file_structure"]
         repo_structure = prep_res["repo_structure"]
         output_dir = prep_res["output_dir"]
@@ -150,15 +151,18 @@ class FormatOutputNode(Node):
         add_emojis = prep_res["add_emojis"]
         justdoc_compatible = prep_res["justdoc_compatible"]
         template = prep_res["template"]
+        # Extract repo_url and repo_branch from prep_res
+        repo_url = prep_res.get("repo_url", "")
+        repo_branch = prep_res.get("repo_branch", "main")
 
         # 打印调试信息
         print(f"格式化输出文档，输出目录: {output_dir}")
-        print(f"翻译内容长度: {len(translated_content)}")
+        print(f"组合内容长度: {len(combined_content)}")
 
         try:
             # 解析内容为结构化数据
             log_and_notify("开始解析内容为结构化数据", "info")
-            content_dict = self._parse_content(translated_content)
+            content_dict = self._parse_content(combined_content)
 
             # 确保repo_name正确设置
             repo_name = repo_structure.get("repo_name", "requests")
@@ -168,6 +172,9 @@ class FormatOutputNode(Node):
             print(f"解析后的内容键: {list(content_dict.keys())}")
             print(f"仓库名称: {repo_name}")
 
+            # 从共享存储中获取已生成的文档内容
+            self._merge_generated_content(prep_res.get("shared", {}), content_dict)
+
             # 格式化 Markdown
             log_and_notify("开始格式化 Markdown", "info")
             formatted_content = format_markdown(
@@ -175,7 +182,7 @@ class FormatOutputNode(Node):
             )
 
             # 将原始内容添加到content_dict，以便在没有解析出内容时使用
-            content_dict["translated_content"] = translated_content
+            content_dict["combined_content"] = combined_content
 
             # 拆分内容为多个文件
             log_and_notify("开始拆分内容为多个文件", "info")
@@ -185,6 +192,8 @@ class FormatOutputNode(Node):
                 file_structure=file_structure,
                 repo_structure=repo_structure,
                 justdoc_compatible=justdoc_compatible,
+                repo_url=repo_url,
+                branch=repo_branch,
             )
 
             # 如果输出格式不是 Markdown，转换为其他格式
@@ -199,7 +208,7 @@ class FormatOutputNode(Node):
                 index_path = os.path.join(output_dir, repo_name, "index.md")
                 os.makedirs(os.path.dirname(index_path), exist_ok=True)
                 with open(index_path, "w", encoding="utf-8") as f:
-                    f.write(f"---\ntitle: 文档首页\n---\n\n# 文档首页\n\n{translated_content}")
+                    f.write(f"---\ntitle: 文档首页\n---\n\n# 文档首页\n\n{combined_content}")
                 output_files = [index_path]
                 log_and_notify(f"已将原始内容保存到 {index_path}", "info")
 
@@ -243,17 +252,28 @@ class FormatOutputNode(Node):
         # 默认返回
         return "default"
 
-    def _parse_content(self, content: str) -> Dict[str, Any]:
-        """解析内容为结构化数据
+    def _extract_section(self, content: str, section_names: List[str], flags: int = re.MULTILINE | re.DOTALL) -> str:
+        """从内容中提取指定部分
 
         Args:
             content: 内容
+            section_names: 部分名称列表
+            flags: 正则表达式标志
 
         Returns:
-            结构化数据
+            提取的内容
         """
-        # 初始化结构化数据
-        content_dict = {
+        pattern = r"##\s+(?:" + "|".join(section_names) + r")(.+?)(?=##\s+|$)"
+        match = re.search(pattern, content, flags)
+        return match.group(1).strip() if match else ""
+
+    def _initialize_content_dict(self) -> Dict[str, str]:
+        """初始化内容字典
+
+        Returns:
+            初始化的内容字典
+        """
+        return {
             "title": "代码库文档",
             "introduction": "",
             "architecture": "",
@@ -268,56 +288,28 @@ class FormatOutputNode(Node):
             "evolution_narrative": "",  # 演变历史
         }
 
-        # 查找标题
+    def _extract_title(self, content: str) -> str:
+        """提取标题
+
+        Args:
+            content: 内容
+
+        Returns:
+            标题
+        """
         title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-        if title_match:
-            content_dict["title"] = title_match.group(1)
+        return title_match.group(1) if title_match else "代码库文档"
 
-        # 查找简介
-        intro_match = re.search(r"##\s+(?:简介|介绍|概述)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if intro_match:
-            content_dict["introduction"] = intro_match.group(1).strip()
+    def _check_empty_content(self, content_dict: Dict[str, str], content: str) -> Dict[str, str]:
+        """检查内容是否为空，如果为空则使用整个内容
 
-        # 查找架构
-        arch_match = re.search(r"##\s+(?:架构|系统架构|设计)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if arch_match:
-            content_dict["architecture"] = arch_match.group(1).strip()
-            content_dict["overall_architecture"] = arch_match.group(1).strip()
+        Args:
+            content_dict: 内容字典
+            content: 原始内容
 
-        # 查找核心模块
-        modules_match = re.search(r"##\s+(?:核心模块|模块|组件)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if modules_match:
-            content_dict["core_modules"] = modules_match.group(1).strip()
-            content_dict["core_modules_summary"] = modules_match.group(1).strip()
-
-        # 查找示例
-        examples_match = re.search(r"##\s+(?:示例|使用示例|用法)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if examples_match:
-            content_dict["examples"] = examples_match.group(1).strip()
-
-        # 查找常见问题
-        faq_match = re.search(r"##\s+(?:常见问题|FAQ|问题)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if faq_match:
-            content_dict["faq"] = faq_match.group(1).strip()
-
-        # 查找参考资料
-        ref_match = re.search(r"##\s+(?:参考资料|参考|引用)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if ref_match:
-            content_dict["references"] = ref_match.group(1).strip()
-
-        # 查找术语表
-        glossary_match = re.search(r"##\s+(?:术语表|术语|名词解释)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL)
-        if glossary_match:
-            content_dict["glossary"] = glossary_match.group(1).strip()
-
-        # 查找演变历史
-        evolution_match = re.search(
-            r"##\s+(?:演变历史|历史|发展历程)(.+?)(?=##\s+|$)", content, re.MULTILINE | re.DOTALL
-        )
-        if evolution_match:
-            content_dict["evolution_narrative"] = evolution_match.group(1).strip()
-
-        # 如果内容为空，尝试直接使用整个内容
+        Returns:
+            更新后的内容字典
+        """
         if not any(
             [
                 content_dict["introduction"],
@@ -332,6 +324,219 @@ class FormatOutputNode(Node):
             content_dict["overall_architecture"] = content
 
         return content_dict
+
+    def _parse_content(self, content: str) -> Dict[str, Any]:
+        """解析内容为结构化数据
+
+        Args:
+            content: 内容
+
+        Returns:
+            结构化数据
+        """
+        # 初始化结构化数据
+        content_dict = self._initialize_content_dict()
+
+        # 提取标题
+        content_dict["title"] = self._extract_title(content)
+
+        # 提取各个部分
+        content_dict["introduction"] = self._extract_section(content, ["简介", "介绍", "概述"])
+
+        # 提取架构
+        architecture = self._extract_section(content, ["架构", "系统架构", "设计"])
+        content_dict["architecture"] = architecture
+        content_dict["overall_architecture"] = architecture
+
+        # 提取核心模块
+        core_modules = self._extract_section(content, ["核心模块", "模块", "组件"])
+        content_dict["core_modules"] = core_modules
+        content_dict["core_modules_summary"] = core_modules
+
+        # 提取示例
+        content_dict["examples"] = self._extract_section(content, ["示例", "使用示例", "用法"])
+
+        # 提取常见问题
+        content_dict["faq"] = self._extract_section(content, ["常见问题", "FAQ", "问题"])
+
+        # 提取参考资料
+        content_dict["references"] = self._extract_section(content, ["参考资料", "参考", "引用"])
+
+        # 提取术语表
+        content_dict["glossary"] = self._extract_section(content, ["术语表", "术语", "名词解释"])
+
+        # 提取演变历史
+        content_dict["evolution_narrative"] = self._extract_section(content, ["演变历史", "历史", "发展历程"])
+
+        # 如果内容为空，尝试直接使用整个内容
+        return self._check_empty_content(content_dict, content)
+
+    def _merge_generated_content(self, shared: Dict[str, Any], content_dict: Dict[str, Any]) -> None:
+        """从共享存储中合并已生成的文档内容
+
+        Args:
+            shared: 共享存储
+            content_dict: 内容字典
+        """
+        # 打印共享存储中的键，帮助调试
+        print(f"共享存储中的键: {list(shared.keys())}")
+
+        # 合并整体架构文档
+        if "overall_architecture" in shared and shared["overall_architecture"].get("success", False):
+            content_dict["overall_architecture"] = shared["overall_architecture"].get("content", "")
+            content_dict["architecture"] = shared["overall_architecture"].get("content", "")
+            print(f"合并了整体架构文档，长度: {len(content_dict['overall_architecture'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "overall_architecture.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["overall_architecture"] = content
+                        content_dict["architecture"] = content
+                        print(f"从文件读取了整体架构文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取整体架构文档失败: {str(e)}")
+
+        # 合并术语表文档
+        if "glossary" in shared and shared["glossary"].get("success", False):
+            content_dict["glossary"] = shared["glossary"].get("content", "")
+            print(f"合并了术语表文档，长度: {len(content_dict['glossary'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "glossary.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["glossary"] = content
+                        print(f"从文件读取了术语表文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取术语表文档失败: {str(e)}")
+
+        # 合并时间线文档
+        if "timeline" in shared and shared["timeline"].get("success", False):
+            content_dict["evolution_narrative"] = shared["timeline"].get("content", "")
+            print(f"合并了时间线文档，长度: {len(content_dict['evolution_narrative'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "timeline.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["evolution_narrative"] = content
+                        print(f"从文件读取了时间线文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取时间线文档失败: {str(e)}")
+
+        # 合并速览文档
+        if "quick_look" in shared and shared["quick_look"].get("success", False):
+            content_dict["introduction"] = shared["quick_look"].get("content", "")
+            print(f"合并了速览文档，长度: {len(content_dict['introduction'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "quick_look.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["introduction"] = content
+                        print(f"从文件读取了速览文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取速览文档失败: {str(e)}")
+
+        # 合并依赖关系文档
+        if "dependency" in shared and shared["dependency"].get("success", False):
+            content_dict["dependencies"] = shared["dependency"].get("content", "")
+            print(f"合并了依赖关系文档，长度: {len(content_dict['dependencies'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "dependency.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["dependencies"] = content
+                        print(f"从文件读取了依赖关系文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取依赖关系文档失败: {str(e)}")
+
+        # 合并API文档
+        if "api_docs" in shared and shared["api_docs"].get("success", False):
+            content_dict["api"] = shared["api_docs"].get("content", "")
+            print(f"合并了API文档，长度: {len(content_dict['api'])}")
+        else:
+            # 尝试从文件中读取
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "api.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        content_dict["api"] = content
+                        print(f"从文件读取了API文档，长度: {len(content)}")
+            except Exception as e:
+                print(f"读取API文档失败: {str(e)}")
+
+        # 合并模块详情文档
+        if "module_details" in shared and shared["module_details"].get("success", False):
+            module_docs = shared["module_details"].get("docs", [])
+            if module_docs:
+                content_dict["modules"] = module_docs
+                # 提取核心模块概述
+                core_modules_summary = []
+                for module_doc in module_docs:
+                    if "name" in module_doc and "description" in module_doc:
+                        core_modules_summary.append(f"- **{module_doc['name']}**: {module_doc['description']}")
+                if core_modules_summary:
+                    content_dict["core_modules"] = "\n".join(core_modules_summary)
+                    content_dict["core_modules_summary"] = "\n".join(core_modules_summary)
+                    print(f"合并了模块详情文档，模块数: {len(module_docs)}")
+        else:
+            # 尝试从文件中读取模块索引
+            try:
+                output_dir = shared.get("output_dir", "docs_output")
+                repo_name = shared.get("repo_name", "requests")
+                file_path = os.path.join(output_dir, repo_name, "modules", "index.md")
+                if os.path.exists(file_path):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        # 提取模块列表
+                        module_matches = re.findall(
+                            r"\| ([^\|]+) \| `([^\`]+)` \| \[([^\]]+)\]\(([^\)]+)\) \|", content
+                        )
+                        if module_matches:
+                            module_docs = []
+                            core_modules_summary = []
+                            for module_name, module_path, doc_title, doc_link in module_matches:
+                                module_doc = {
+                                    "name": module_name.strip(),
+                                    "path": module_path.strip(),
+                                    "description": f"查看 {doc_title.strip()} 文档",
+                                }
+                                module_docs.append(module_doc)
+                                core_modules_summary.append(f"- **{module_name.strip()}**: {module_path.strip()}")
+
+                            if module_docs:
+                                content_dict["modules"] = module_docs
+                                content_dict["core_modules"] = "\n".join(core_modules_summary)
+                                content_dict["core_modules_summary"] = "\n".join(core_modules_summary)
+                                print(f"从文件读取了模块索引，模块数: {len(module_docs)}")
+            except Exception as e:
+                print(f"读取模块索引失败: {str(e)}")
 
     def _convert_to_other_format(self, markdown_files: List[str], output_format: str) -> List[str]:
         """将 Markdown 文件转换为其他格式

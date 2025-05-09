@@ -7,13 +7,13 @@ from pocketflow import AsyncFlow, AsyncNode
 
 from ..utils.logger import log_and_notify
 from .content_quality_check_node import ContentQualityCheckNode
-from .generate_api_docs_node import GenerateApiDocsNode
-from .generate_dependency_node import GenerateDependencyNode
-from .generate_glossary_node import GenerateGlossaryNode
-from .generate_module_details_node import GenerateModuleDetailsNode
-from .generate_overall_architecture_node import GenerateOverallArchitectureNode
-from .generate_quick_look_node import GenerateQuickLookNode
-from .generate_timeline_node import GenerateTimelineNode
+from .generate_api_docs_node import AsyncGenerateApiDocsNode
+from .generate_dependency_node import AsyncGenerateDependencyNode
+from .generate_glossary_node import AsyncGenerateGlossaryNode
+from .generate_module_details_node import AsyncGenerateModuleDetailsNode
+from .generate_overall_architecture_node import AsyncGenerateOverallArchitectureNode
+from .generate_quick_look_node import AsyncGenerateQuickLookNode
+from .generate_timeline_node import AsyncGenerateTimelineNode
 from .module_quality_check_node import ModuleQualityCheckNode
 
 
@@ -27,26 +27,26 @@ class ParallelDocGenerationNode(AsyncNode):
             nodes_config: 节点配置字典，键为节点名称，值为节点配置
         """
         super().__init__()
-        self.nodes = {}
+        self.nodes: Dict[str, AsyncNode] = {}
 
         # 创建节点
         if "overall_architecture" in nodes_config:
-            self.nodes["architecture"] = GenerateOverallArchitectureNode(nodes_config["overall_architecture"])
+            self.nodes["architecture"] = AsyncGenerateOverallArchitectureNode(nodes_config["overall_architecture"])
 
         if "api_docs" in nodes_config:
-            self.nodes["api_docs"] = GenerateApiDocsNode(nodes_config["api_docs"])
+            self.nodes["api_docs"] = AsyncGenerateApiDocsNode(nodes_config["api_docs"])
 
         if "timeline" in nodes_config:
-            self.nodes["timeline"] = GenerateTimelineNode(nodes_config["timeline"])
+            self.nodes["timeline"] = AsyncGenerateTimelineNode(nodes_config["timeline"])
 
         if "dependency" in nodes_config:
-            self.nodes["dependency"] = GenerateDependencyNode(nodes_config["dependency"])
+            self.nodes["dependency"] = AsyncGenerateDependencyNode(nodes_config["dependency"])
 
         if "glossary" in nodes_config:
-            self.nodes["glossary"] = GenerateGlossaryNode(nodes_config["glossary"])
+            self.nodes["glossary"] = AsyncGenerateGlossaryNode(nodes_config["glossary"])
 
         if "quick_look" in nodes_config:
-            self.nodes["quick_look"] = GenerateQuickLookNode(nodes_config["quick_look"])
+            self.nodes["quick_look"] = AsyncGenerateQuickLookNode(nodes_config["quick_look"])
 
     async def prep_async(self, shared: Dict[str, Any]) -> List[Dict[str, Any]]:
         """准备阶段，创建任务描述列表。这些任务将在exec_async中并行执行。
@@ -71,20 +71,30 @@ class ParallelDocGenerationNode(AsyncNode):
     async def _run_single_node_async(self, task_desc: Dict[str, Any]) -> Dict[str, Any]:
         """异步运行单个子节点的辅助方法。"""
         node_name = task_desc["node_name"]
-        node = task_desc["node"]
+        node: AsyncNode = task_desc["node"]  # node is an AsyncNode
         task_shared = task_desc["shared"]
         log_and_notify(f"ParallelDocGenerationNode: 开始执行节点 {node_name}", "info")
         try:
-            # 假设所有子节点都是同步的 Node，其 run 方法是阻塞的。
-            # 为了在异步的 exec_async 中非阻塞地运行它们，使用 asyncio.to_thread。
-            # 如果子节点本身是 AsyncNode 并有 run_async, 则可以直接 await node.run_async(task_shared)
-            # 当前子节点 (GenerateOverallArchitectureNode等) 都是普通 Node。
-            await asyncio.to_thread(node.run, task_shared)
+            # Manually run the AsyncNode lifecycle
+            prep_result = await node.prep_async(task_shared)
+            # Ensure prep_result doesn't indicate immediate failure before exec
+            if isinstance(prep_result, dict) and prep_result.get("error"):
+                raise Exception(f"Prep stage failed for node {node_name}: {prep_result['error']}")
+
+            exec_result = await node.exec_async(prep_result)
+            # task_shared might be modified by exec if prep_result was task_shared and modified in place,
+            # but primarily modifications happen in post_async based on exec_result.
+            await node.post_async(
+                task_shared, prep_result, exec_result
+            )  # task_shared is modified in place by post_async
+
             log_and_notify(f"ParallelDocGenerationNode: 节点 {node_name} 执行成功", "info")
+            # 'task_shared' now contains the results from the node's post_async
             return {"node_name": node_name, "result": task_shared, "success": True}
         except Exception as e:
             error_msg = f"节点 {node_name} 执行出错: {str(e)}"
             log_and_notify(error_msg, "error")
+            task_shared["error"] = error_msg  # Ensure error is in the shared dict for this task
             return {"node_name": node_name, "result": task_shared, "error": error_msg, "success": False}
 
     async def exec_async(self, tasks_description: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -103,6 +113,47 @@ class ParallelDocGenerationNode(AsyncNode):
         results = await asyncio.gather(*coroutines)  # gather 默认 return_exceptions=False
         return results
 
+    def _check_for_errors(self, exec_res_list: List[Dict[str, Any]]) -> List[str]:
+        """检查执行结果中是否有错误
+
+        Args:
+            exec_res_list: 执行结果列表
+
+        Returns:
+            错误列表
+        """
+        errors = []
+        for result in exec_res_list:
+            if not result.get("success", False):
+                errors.append(result.get("error", f"节点 {result.get('node_name', '未知')} 执行失败"))
+        return errors
+
+    def _merge_node_results(self, shared: Dict[str, Any], exec_res_list: List[Dict[str, Any]]) -> None:
+        """合并节点结果到共享存储
+
+        Args:
+            shared: 共享存储
+            exec_res_list: 执行结果列表
+        """
+        # 定义节点名称到共享存储键的映射
+        node_to_shared_key = {
+            "architecture": "architecture_doc",
+            "api_docs": "api_docs",
+            "timeline": "timeline_doc",
+            "dependency": "dependency_doc",
+            "glossary": "glossary_doc",
+            "quick_look": "quick_look_doc",
+        }
+
+        for result in exec_res_list:
+            node_name = result["node_name"]
+            node_result = result["result"]
+
+            # 如果节点名称在映射中，并且对应的键在节点结果中存在
+            shared_key = node_to_shared_key.get(node_name)
+            if shared_key and shared_key in node_result:
+                shared[shared_key] = node_result[shared_key]
+
     async def post_async(
         self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res_list: List[Dict[str, Any]]
     ) -> str:
@@ -117,10 +168,7 @@ class ParallelDocGenerationNode(AsyncNode):
             后续动作
         """
         # 检查是否有节点执行出错
-        errors = []
-        for result in exec_res_list:
-            if not result.get("success", False):
-                errors.append(result.get("error", f"节点 {result.get('node_name', '未知')} 执行失败"))
+        errors = self._check_for_errors(exec_res_list)
 
         if errors:
             error_msg = "; ".join(errors)
@@ -129,23 +177,7 @@ class ParallelDocGenerationNode(AsyncNode):
             return "error"
 
         # 合并所有节点结果到共享存储
-        for result in exec_res_list:
-            node_name = result["node_name"]
-            node_result = result["result"]
-
-            # 根据节点名称，将结果存储到共享存储中
-            if node_name == "architecture" and "architecture_doc" in node_result:
-                shared["architecture_doc"] = node_result["architecture_doc"]
-            elif node_name == "api_docs" and "api_docs" in node_result:
-                shared["api_docs"] = node_result["api_docs"]
-            elif node_name == "timeline" and "timeline_doc" in node_result:
-                shared["timeline_doc"] = node_result["timeline_doc"]
-            elif node_name == "dependency" and "dependency_doc" in node_result:
-                shared["dependency_doc"] = node_result["dependency_doc"]
-            elif node_name == "glossary" and "glossary_doc" in node_result:
-                shared["glossary_doc"] = node_result["glossary_doc"]
-            elif node_name == "quick_look" and "quick_look_doc" in node_result:
-                shared["quick_look_doc"] = node_result["quick_look_doc"]
+        self._merge_node_results(shared, exec_res_list)
 
         return "default"
 
@@ -192,7 +224,7 @@ class ParallelGenerateContentFlow:
         # 创建节点
         self.parallel_doc_node = ParallelDocGenerationNode(nodes_config)
         self.content_quality_node = ContentQualityCheckNode(content_quality_config)
-        self.module_details_node = GenerateModuleDetailsNode(module_details_config)
+        self.module_details_node = AsyncGenerateModuleDetailsNode(module_details_config)
         self.module_quality_node = ModuleQualityCheckNode(module_quality_config)
 
         # 创建流程
@@ -210,18 +242,18 @@ class ParallelGenerateContentFlow:
         # 第一阶段：并行生成基础文档
         # 第二阶段：质量检查
         self.parallel_doc_node >> self.content_quality_node
-        self.parallel_doc_node - "error" >> None
+        self.parallel_doc_node - "error" >> None  # type: ignore[operator]
 
         # 第三阶段：模块详细内容生成
         self.content_quality_node >> self.module_details_node
-        self.content_quality_node - "error" >> None
+        self.content_quality_node - "error" >> None  # type: ignore[operator]
 
         # 第四阶段：模块质量检查
         self.module_details_node >> self.module_quality_node
-        self.module_details_node - "error" >> None
+        self.module_details_node - "error" >> None  # type: ignore[operator]
 
         # 最后一个节点 module_quality_node 如果出错，也应该能优雅停止
-        self.module_quality_node - "error" >> None
+        self.module_quality_node - "error" >> None  # type: ignore[operator]
 
         # 创建流程，使用并行文档生成节点作为启动节点
         return AsyncFlow(start=self.parallel_doc_node)

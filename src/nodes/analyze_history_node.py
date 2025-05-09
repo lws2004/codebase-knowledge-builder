@@ -1,10 +1,11 @@
 """Git 历史分析节点，用于分析 Git 仓库的提交历史。"""
 
+import asyncio
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
-from pocketflow import Node
+from pocketflow import AsyncNode
 from pydantic import BaseModel, Field
 
 from ..utils.git_utils import GitHistoryAnalyzer
@@ -41,31 +42,28 @@ class AnalyzeHistoryNodeConfig(BaseModel):
     )
 
 
-class AnalyzeHistoryNode(Node):
-    """Git 历史分析节点，用于分析 Git 仓库的提交历史"""
+class AsyncAnalyzeHistoryNode(AsyncNode):
+    """Git 历史分析节点（异步），用于分析 Git 仓库的提交历史"""
+
+    llm_client: Optional[LLMClient] = None
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化 Git 历史分析节点
+        """初始化 Git 历史分析节点 (异步)
 
         Args:
             config: 节点配置
         """
         super().__init__()
-
-        # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
 
         default_config = get_node_config("analyze_history")
-
-        # 合并配置
         merged_config = default_config.copy()
         if config:
             merged_config.update(config)
-
         self.config = AnalyzeHistoryNodeConfig(**merged_config)
-        log_and_notify("初始化 Git 历史分析节点", "info")
+        log_and_notify("初始化 AsyncAnalyzeHistoryNode", "info")
 
-    def prep(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+    async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段，从共享存储中获取仓库路径
 
         Args:
@@ -74,44 +72,55 @@ class AnalyzeHistoryNode(Node):
         Returns:
             包含仓库路径的字典
         """
-        log_and_notify("AnalyzeHistoryNode: 准备阶段开始", "info")
+        log_and_notify("AsyncAnalyzeHistoryNode: 准备阶段开始", "info")
 
-        # 从共享存储中获取仓库路径
         repo_path = shared.get("repo_path")
         if not repo_path:
             error_msg = "共享存储中缺少仓库路径"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
 
-        # 检查仓库路径是否存在
         if not os.path.exists(repo_path):
             error_msg = f"仓库路径不存在: {repo_path}"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
 
-        # 检查是否为 Git 仓库
         if not os.path.exists(os.path.join(repo_path, ".git")):
             error_msg = f"路径不是 Git 仓库: {repo_path}"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
 
-        # 获取分支名称
         branch = shared.get("branch", "main")
+        llm_config_shared = shared.get("llm_config")  # Get config, might be None
 
-        # 获取 LLM 配置
-        llm_config = shared.get("llm_config", {})
+        if llm_config_shared:  # Proceed only if llm_config exists in shared
+            try:
+                self.llm_client = LLMClient(config=llm_config_shared)
+                log_and_notify("AsyncAnalyzeHistoryNode: LLMClient initialized for history summary.", "info")
+            except Exception as e:
+                log_and_notify(
+                    f"AsyncAnalyzeHistoryNode: LLMClient initialization failed: {e}. Summarization will be skipped.",
+                    "warning",
+                )
+                self.llm_client = None  # Ensure it's None if init fails
+        else:
+            log_and_notify(
+                "AsyncAnalyzeHistoryNode: No LLM config in shared state. History summarization will be skipped.", "info"
+            )
+            self.llm_client = None
 
         return {
             "repo_path": repo_path,
             "branch": branch,
-            "llm_config": llm_config,
+            # "llm_config" is no longer directly passed if client is instance var
             "max_commits": self.config.max_commits,
             "include_file_history": self.config.include_file_history,
             "analyze_contributors": self.config.analyze_contributors,
+            "target_language": shared.get("language", "zh"),  # For summary prompt
         }
 
-    def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
-        """执行阶段，分析 Git 仓库历史
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+        """执行阶段，异步分析 Git 仓库历史
 
         Args:
             prep_res: 准备阶段的结果
@@ -119,9 +128,8 @@ class AnalyzeHistoryNode(Node):
         Returns:
             分析结果
         """
-        log_and_notify("AnalyzeHistoryNode: 执行阶段开始", "info")
+        log_and_notify("AsyncAnalyzeHistoryNode: 执行阶段开始", "info")
 
-        # 检查准备阶段是否出错
         if "error" in prep_res:
             return {"error": prep_res["error"], "success": False}
 
@@ -130,150 +138,160 @@ class AnalyzeHistoryNode(Node):
         max_commits = prep_res["max_commits"]
         include_file_history = prep_res["include_file_history"]
         analyze_contributors = prep_res["analyze_contributors"]
+        target_language = prep_res["target_language"]
 
         try:
-            # 创建 Git 历史分析器
             analyzer = GitHistoryAnalyzer(repo_path)
 
-            # 获取提交历史
-            log_and_notify(f"获取提交历史，最大数量: {max_commits}", "info")
-            commit_history = analyzer.get_commit_history(max_count=max_commits, branch=branch)
-
+            log_and_notify(f"AsyncAnalyzeHistoryNode: 开始异步获取提交历史，最大数量: {max_commits}", "info")
+            commit_history = await asyncio.to_thread(analyzer.get_commit_history, max_count=max_commits, branch=branch)
             result = {"commit_history": commit_history, "commit_count": len(commit_history), "success": True}
 
-            # 分析贡献者
             if analyze_contributors:
-                log_and_notify("分析贡献者", "info")
-                contributors = analyzer.analyze_contributors()
+                log_and_notify("AsyncAnalyzeHistoryNode: 开始异步分析贡献者", "info")
+                contributors = await asyncio.to_thread(analyzer.analyze_contributors)
                 result["contributors"] = contributors
                 result["contributor_count"] = len(contributors)
 
-            # 获取文件历史（可选）
             if include_file_history:
-                log_and_notify("获取重要文件的历史", "info")
-
-                # 获取一些重要文件的历史
-                important_files = self._get_important_files(commit_history)
+                log_and_notify("AsyncAnalyzeHistoryNode: 开始异步获取重要文件的历史", "info")
+                important_files = await asyncio.to_thread(
+                    self._get_important_files, commit_history
+                )  # Assuming _get_important_files might do I/O or be heavy
                 file_histories = {}
+                file_history_tasks = []
+                for file_path in important_files[:10]:  # Limit for performance
+                    task = asyncio.to_thread(analyzer.get_file_history, file_path, max_count=20)
+                    file_history_tasks.append((file_path, task))
 
-                for file_path in important_files[:10]:  # 限制为前 10 个重要文件
-                    file_history = analyzer.get_file_history(file_path, max_count=20)
-                    if file_history:
-                        file_histories[file_path] = file_history
-
+                for file_path, task in file_history_tasks:
+                    file_history_detail = await task
+                    if file_history_detail:
+                        file_histories[file_path] = file_history_detail
                 result["file_histories"] = file_histories
 
-            # 使用 LLM 生成历史总结
-            if "llm_config" in prep_res and commit_history:
-                log_and_notify("使用 LLM 生成历史总结", "info")
-                summary = self._generate_history_summary(
-                    prep_res["llm_config"], commit_history, result.get("contributors", [])
-                )
+            if self.llm_client and commit_history:
+                log_and_notify("AsyncAnalyzeHistoryNode: 开始异步使用 LLM 生成历史总结", "info")
+                contributors_list = cast(List[Dict[str, Any]], result.get("contributors", []))
+                summary = await self._generate_history_summary_async(commit_history, contributors_list, target_language)
                 result["history_summary"] = summary
 
             return result
         except Exception as e:
-            error_msg = f"分析 Git 历史失败: {str(e)}"
+            error_msg = f"AsyncAnalyzeHistoryNode: 分析 Git 历史失败: {str(e)}"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    async def post_async(self, shared: Dict[str, Any], _prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将分析结果存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            _prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
             下一个节点的动作
         """
-        log_and_notify("AnalyzeHistoryNode: 后处理阶段开始", "info")
+        # 记录未使用的参数，避免IDE警告
+        _ = _prep_res
+        log_and_notify("AsyncAnalyzeHistoryNode: 后处理阶段开始", "info")
 
-        # 检查执行阶段是否出错
         if not exec_res.get("success", False):
-            error_msg = exec_res.get("error", "未知错误")
+            error_msg = exec_res.get("error", "AsyncAnalyzeHistoryNode: 未知执行错误")
             log_and_notify(f"Git 历史分析失败: {error_msg}", "error", notify=True)
             shared["history_analysis"] = {"error": error_msg, "success": False}
             return "error"
 
-        # 将分析结果存储到共享存储中
         shared["history_analysis"] = {
-            "commit_history": exec_res.get("commit_history", []),
             "commit_count": exec_res.get("commit_count", 0),
-            "contributors": exec_res.get("contributors", []),
             "contributor_count": exec_res.get("contributor_count", 0),
-            "file_histories": exec_res.get("file_histories", {}),
+            "first_commit_date": exec_res.get("first_commit_date"),
+            "last_commit_date": exec_res.get("last_commit_date"),
             "history_summary": exec_res.get("history_summary", ""),
             "success": True,
         }
-
         log_and_notify(
-            f"Git 历史分析完成，分析了 {exec_res.get('commit_count', 0)} 个提交和 "
-            f"{exec_res.get('contributor_count', 0)} 个贡献者",
+            f"AsyncAnalyzeHistoryNode: 历史分析完成并存入共享存储. "
+            f"提交: {exec_res.get('commit_count', 0)}, "
+            f"贡献者: {exec_res.get('contributor_count', 0)}",
             "info",
             notify=True,
         )
-
         return "default"
 
     def _get_important_files(self, commit_history: List[Dict[str, Any]]) -> List[str]:
-        """从提交历史中获取重要文件
+        """从提交历史中获取重要文件 (同步 helper, called via to_thread if needed)
 
         Args:
             commit_history: 提交历史
-
         Returns:
             重要文件列表
         """
-        # 我们需要获取详细的提交信息来获取文件路径
-        # 由于 commit_history 中的 stats.files 只是一个数字，我们需要使用其他方法
+        # 从提交消息中提取文件名
+        # 这是一个简化的实现，实际上应该更复杂
+        file_mentions: Dict[str, int] = {}
 
-        # 简单方法：返回一个空列表，避免错误
-        # 在实际应用中，我们可以使用 GitHistoryAnalyzer.get_commit_details 方法获取详细信息
-        return []
+        # 从提交消息中提取文件名
+        for commit in commit_history:
+            if isinstance(commit, dict) and "message" in commit:
+                message = commit.get("message", "")
+                # 简单地查找可能的文件名（包含.的单词）
+                words = message.split()
+                for word in words:
+                    if "." in word and "/" in word:  # 可能是文件路径
+                        # 清理单词，移除标点符号
+                        clean_word = word.strip(",.;:()[]{}\"'")
+                        if clean_word:
+                            file_mentions[clean_word] = file_mentions.get(clean_word, 0) + 1
 
-    def _generate_history_summary(
-        self, llm_config: Dict[str, Any], commit_history: List[Dict[str, Any]], contributors: List[Dict[str, Any]]
+        # 如果没有从消息中找到文件，返回一些常见的文件名
+        if not file_mentions:
+            return ["README.md", "setup.py", "requirements.txt", "main.py", "src/main.py"]
+
+        # 按提及频率排序
+        sorted_files = sorted(file_mentions.items(), key=lambda item: item[1], reverse=True)
+        # 使用下划线表示未使用的变量，避免IDE警告
+        return [f_path for f_path, _ in sorted_files][:10]  # 限制为前10个
+
+    async def _generate_history_summary_async(
+        self, commit_history: List[Dict[str, Any]], contributors: List[Dict[str, Any]], target_language: str
     ) -> str:
-        """使用 LLM 生成历史总结
+        """使用 LLM 生成历史总结 (异步)
 
         Args:
-            llm_config: LLM 配置
             commit_history: 提交历史
             contributors: 贡献者信息
+            target_language: 目标语言
 
         Returns:
-            历史总结
+            历史总结字符串
         """
+        if not self.llm_client:
+            log_and_notify("LLMClient未初始化，无法生成历史总结", "error")
+            return ""
+
+        # Prepare prompt context
+        commit_history_str = json.dumps(commit_history[:20], indent=2)  # Limit history length for prompt
+        contributors_str = json.dumps(contributors, indent=2)
+        prompt_str = self.config.summary_prompt_template.format(
+            commit_history=commit_history_str, contributors=contributors_str
+        )
+
+        system_prompt = f"你是一个代码库历史分析专家，请用{target_language}语言回答。"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt_str},
+        ]
+
         try:
-            # 创建 LLM 客户端
-            llm_client = LLMClient(llm_config)
-
-            # 准备提示
-            commit_history_str = json.dumps(commit_history[:50], indent=2, ensure_ascii=False)  # 限制为前 50 个提交
-            contributors_str = json.dumps(contributors, indent=2, ensure_ascii=False)
-
-            prompt = self.config.summary_prompt_template.format(
-                commit_history=commit_history_str, contributors=contributors_str
-            )
-
-            # 调用 LLM
-            messages = [
-                {"role": "system", "content": "你是一个代码库历史分析专家，擅长从 Git 提交历史中提取有价值的见解。"},
-                {"role": "user", "content": prompt},
-            ]
-
-            response = llm_client.completion(
-                messages=messages, temperature=0.3, trace_name="Git 历史总结", max_input_tokens=None
-            )
-
-            # 获取响应内容
-            summary = llm_client.get_completion_content(response)
-
-            log_and_notify("成功生成 Git 历史总结", "info")
-            return summary
+            # Use the model configured within self.llm_client
+            raw_response = await self.llm_client.acompletion(messages=messages, trace_name="生成历史总结")
+            if not raw_response:
+                log_and_notify("AsyncAnalyzeHistoryNode: LLM 返回空响应 (历史总结)", "error")
+                return ""
+            content = self.llm_client.get_completion_content(raw_response)
+            return content
         except Exception as e:
-            error_msg = f"生成历史总结失败: {str(e)}"
-            log_and_notify(error_msg, "error")
-            return f"无法生成历史总结: {str(e)}"
+            log_and_notify(f"AsyncAnalyzeHistoryNode: 生成历史总结失败: {str(e)}", "error")
+            return ""

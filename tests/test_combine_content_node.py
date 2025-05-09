@@ -1,17 +1,17 @@
-"""测试 CombineAndTranslateNode"""
+"""测试 CombineContentNode"""
 
 import unittest
 from unittest.mock import patch
 
-from src.nodes.combine_and_translate_node import CombineAndTranslateNode
+from src.nodes.combine_content_node import CombineContentNode
 
 
-class TestCombineAndTranslateNode(unittest.TestCase):
-    """测试 CombineAndTranslateNode"""
+class TestCombineContentNode(unittest.TestCase):
+    """测试 CombineContentNode"""
 
     def setUp(self):
         """设置测试环境"""
-        self.node = CombineAndTranslateNode()
+        self.node = CombineContentNode()
         self.shared = {
             "architecture_doc": {"success": True, "content": "# 架构文档\n\n这是架构文档的内容。"},
             "api_docs": {"success": True, "content": "# API 文档\n\n这是 API 文档的内容。"},
@@ -23,8 +23,7 @@ class TestCombineAndTranslateNode(unittest.TestCase):
             "core_modules": {},
         }
 
-    @patch("src.nodes.combine_and_translate_node.detect_natural_language")
-    def test_prep(self, mock_detect):
+    def test_prep(self):
         """测试准备阶段"""
         # 执行准备阶段
         prep_res = self.node.prep(self.shared)
@@ -37,12 +36,8 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         self.assertEqual(prep_res["repo_url"], "https://github.com/test/repo")
         self.assertEqual(prep_res["repo_branch"], "main")
 
-    @patch("src.nodes.combine_and_translate_node.detect_natural_language")
-    def test_exec(self, mock_detect):
+    def test_exec(self):
         """测试执行阶段"""
-        # 模拟语言检测
-        mock_detect.return_value = ("zh", 0.9)
-
         # 准备测试数据
         prep_res = {
             "content_dict": {
@@ -59,7 +54,6 @@ class TestCombineAndTranslateNode(unittest.TestCase):
             "retry_count": 3,
             "quality_threshold": 0.7,
             "model": "gpt-4",
-            "preserve_technical_terms": True,
         }
 
         # 执行阶段
@@ -69,7 +63,6 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         # 验证结果
         self.assertTrue(exec_res["success"])
         self.assertIn("combined_content", exec_res)
-        self.assertIn("translated_content", exec_res)
         self.assertIn("file_structure", exec_res)
         self.assertIn("repo_structure", exec_res)
 
@@ -80,7 +73,6 @@ class TestCombineAndTranslateNode(unittest.TestCase):
         exec_res = {
             "success": True,
             "combined_content": "# 组合文档\n\n这是组合文档的内容。",
-            "translated_content": "# 翻译后的文档\n\n这是翻译后的文档的内容。",
             "file_structure": {},
             "repo_structure": {},
         }
@@ -90,7 +82,6 @@ class TestCombineAndTranslateNode(unittest.TestCase):
 
         # 验证结果
         self.assertEqual(self.shared["combined_content"], exec_res["combined_content"])
-        self.assertEqual(self.shared["translated_content"], exec_res["translated_content"])
         self.assertEqual(self.shared["file_structure"], exec_res["file_structure"])
         self.assertEqual(self.shared["repo_structure"], exec_res["repo_structure"])
 

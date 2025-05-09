@@ -121,20 +121,43 @@ class TestFormatter(unittest.TestCase):
             {"path": "docs/page2.md", "title": "页面2"},
             {"path": "docs/page3.md", "title": "页面3"},
         ]
-        current_file = "docs/page2.md"
+        # current_file should be a path that would exist within the mock output structure
+        # Assuming output_dir is self.test_output_dir and repo_name is 'test_repo'
+        # Let current_file be self.test_output_dir / 'test_repo' / 'docs' / 'page2.md' for realistic testing
+        mock_repo_name = "test_repo"
+        current_file_rel_to_output = os.path.join(mock_repo_name, "docs", "page2.md")
+        current_file_abs = os.path.join(self.test_output_dir, current_file_rel_to_output)
+        # Ensure the directory for current_file_abs exists for Path().parent.resolve()
+        # to work reliably in the tested function
+        os.makedirs(os.path.dirname(current_file_abs), exist_ok=True)
+
         related_content = [
             {"group": "相关页面", "title": "相关1", "path": "docs/related1.md"},
             {"group": "相关页面", "title": "相关2", "path": "docs/related2.md"},
         ]
 
         # 调用函数
-        result = generate_navigation_links(files_info, current_file, related_content)
+        result = generate_navigation_links(
+            files_info,
+            current_file_abs,  # Pass the absolute path
+            related_content,
+            self.test_output_dir,  # Pass mock output_dir
+            mock_repo_name,  # Pass mock repo_name
+        )
 
-        # 验证结果
-        self.assertIn("[← 页面1](docs/page1.md)", result)
-        self.assertIn("[🏠 首页](../index.md)", result)
+        # 验证结果 - Home link will now be relative from current_file_abs
+        # to self.test_output_dir/mock_repo_name/index.md
+        # Expected relative path from test_output/test_repo/docs/ to test_output/test_repo/index.md is ../../index.md
+        self.assertIn("[🏠 首页](../../index.md)", result)
+        self.assertIn(
+            "[← 页面1](docs/page1.md)", result
+        )  # These paths are from files_info, and might need to be relative or absolute depending on how they are used
         self.assertIn("[页面3 →](docs/page3.md)", result)
         self.assertIn("> 当前位置:", result)
+        # Breadcrumb check needs to align with the new logic and current_file_abs
+        # current_file_abs: test_output_dir/test_repo/docs/page2.md
+        # Expected breadcrumb: Test Repo > Docs > Page2
+        self.assertIn("> 当前位置: Test Repo > Docs > Page2", result)
         self.assertIn("### 相关内容", result)
         self.assertIn("**相关页面:** [相关1](docs/related1.md), [相关2](docs/related2.md)", result)
 
@@ -210,77 +233,165 @@ class TestFormatter(unittest.TestCase):
 
     def test_split_content_into_files(self):
         """测试 split_content_into_files 函数"""
-        # 准备测试数据
         repo_name_for_test = "test_repo"
+        mock_repo_url = "https://example.com/user/test_repo"
+
         content_dict = {
             "repo_name": repo_name_for_test,
-            "introduction": "# 简介\n这是简介内容。",
-            "quick_look": "# 快速概览\n这是快速概览。",
-            "overall_architecture": "这是整体架构。",
-            "core_modules_summary": "这是核心模块概述。",
-            "glossary": "这是术语表。",
-            "evolution_narrative": "这是演变历史。",
+            "introduction": "这是项目简介。它提到了 `formatter` 模块。",
+            "overall_architecture": "整体架构描述。",
+            "core_modules_summary": "核心模块包括 `formatter` 和 `parser`。",
+            "glossary": "术语A: 解释A",
+            "evolution_narrative": "项目演变历史。",
             "modules": [
                 {
-                    "name": "formatter",
-                    "path": "src/utils/formatter.py",
-                    "description": "这是格式化模块。",
-                    "api": "这是API描述。",
-                    "examples": "这是示例。",
+                    "name": "formatter",  # Will be mapped to test_repo/utils/formatter.md
+                    "title": "Formatter Module",
+                    "description": "格式化模块，依赖 `parser` 模块。也包含一个函数 `format_text`。",
+                    "api": "API: `format_text(text: str) -> str`",
+                    "examples": "示例: `format_text('hello')`",
+                    "code_references": [  # For linking function_name
+                        {
+                            "function_name": "format_text",
+                            "file_path": "src/utils/formatter.py",
+                            "line_start": 1,
+                            "line_end": 5,
+                        }
+                    ],
                 },
                 {
-                    "name": "parser",
-                    "path": "src/utils/parser.py",
-                    "description": "这是解析模块。",
-                    "api": "这是API描述。",
-                    "examples": "这是示例。",
+                    "name": "parser",  # Will be mapped to test_repo/utils/parser.md
+                    "title": "Parser Module",
+                    "description": "解析模块，被 `formatter` 使用。",
+                    "api": "API: `parse_data(data: bytes) -> dict`",
+                    "examples": "示例: `parse_data(b'data')`",
+                    "code_references": [
+                        {
+                            "function_name": "parse_data",
+                            "file_path": "src/utils/parser.py",
+                            "line_start": 10,
+                            "line_end": 15,
+                        }
+                    ],
+                },
+                {
+                    "name": "core_logic",  # Will be mapped to test_repo/core/logic.md
+                    "title": "Core Logic",
+                    "description": "核心逻辑模块。",
+                    "api": "API: `run_core()`",
+                    "examples": "示例: `run_core()`",
+                    "code_references": [
+                        {"function_name": "run_core", "file_path": "src/core/logic.py", "line_start": 1, "line_end": 1}
+                    ],
                 },
             ],
         }
-        print(f"拆分内容为文件，仓库名称 (来自content_dict): {content_dict.get('repo_name')}")
-        print(f"内容字典键: {list(content_dict.keys())}")
 
-        # 调用函数 - 使用正确的关键字参数
-        files_info = split_content_into_files(
-            content_dict=content_dict, 
+        # Mock repo_structure for map_module_to_docs_path
+        repo_structure = {
+            "repo_name": repo_name_for_test,
+            "formatter": {"path": "src/utils/formatter.py"},
+            "parser": {"path": "src/utils/parser.py"},
+            "core_logic": {"path": "src/core/logic.py"},
+        }
+
+        generated_files = split_content_into_files(
+            content_dict=content_dict,
             output_dir=self.test_output_dir,
-            justdoc_compatible=False
+            repo_structure=repo_structure,
+            justdoc_compatible=True,  # Enable to test metadata and category logic
+            repo_url=mock_repo_url,
+            branch="main",
         )
 
-        # 打印生成的文件信息用于调试
-        for file_path_in_info in files_info:
-            print(f"检查由函数返回并实际创建的文件: {file_path_in_info}")
-            self.assertTrue(os.path.exists(file_path_in_info), f"函数报告已生成但实际未找到的文件: {file_path_in_info}")
-
-        # 验证生成的文件
-        expected_files = [
+        # Expected file paths (relative to self.test_output_dir)
+        # map_module_to_docs_path will produce repo_name/utils/formatter.md,
+        # repo_name/utils/parser.md, repo_name/core/logic.md
+        expected_paths_relative = {
             f"{repo_name_for_test}/index.md",
-            f"{repo_name_for_test}/introduction.md",
             f"{repo_name_for_test}/overview.md",
             f"{repo_name_for_test}/glossary.md",
-            f"{repo_name_for_test}/evolution_narrative.md",
-            f"{repo_name_for_test}/modules/module1.md",
-            f"{repo_name_for_test}/modules/module2.md",
-            f"{repo_name_for_test}/modules/index.md",
-        ]
+            f"{repo_name_for_test}/evolution.md",
+            f"{repo_name_for_test}/modules.md",
+            f"{repo_name_for_test}/utils/formatter.md",
+            f"{repo_name_for_test}/utils/parser.md",
+            f"{repo_name_for_test}/utils/index.md",  # Index for utils directory
+            f"{repo_name_for_test}/core/logic.md",
+            f"{repo_name_for_test}/core/index.md",  # Index for core directory
+        }
 
-        # 检查主文件是否存在 (现在应该是 test_output/test_repo/index.md)
-        main_file_path = os.path.join(self.test_output_dir, repo_name_for_test, "index.md")
-        self.assertTrue(os.path.exists(main_file_path), f"主文件 {main_file_path} 未找到")
+        generated_files_relative = {os.path.relpath(p, self.test_output_dir) for p in generated_files}
+        self.assertEqual(
+            expected_paths_relative,
+            generated_files_relative,
+            f"Expected files do not match generated files. "
+            f"Missing: {expected_paths_relative - generated_files_relative}, "
+            f"Extra: {generated_files_relative - expected_paths_relative}",
+        )
 
-        # 检查其他预期的文件
-        actual_expected_files = [
-            os.path.join(self.test_output_dir, repo_name_for_test, "index.md"),
-            os.path.join(self.test_output_dir, repo_name_for_test, "overview.md"),
-            os.path.join(self.test_output_dir, repo_name_for_test, "glossary.md"),
-            os.path.join(self.test_output_dir, repo_name_for_test, "evolution_narrative.md"),
-        ]
+        # --- Content validation ---
 
-        # 简化检查：只检查 files_info 中返回的文件是否存在
-        self.assertGreater(len(files_info), 0, "split_content_into_files 没有返回任何文件信息")
-        for file_path_in_info in files_info:
-            print(f"检查由函数返回并实际创建的文件: {file_path_in_info}")
-            self.assertTrue(os.path.exists(file_path_in_info), f"函数报告已生成但实际未找到的文件: {file_path_in_info}")
+        # 1. Check index.md for link to modules.md
+        index_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "index.md")
+        with open(index_md_path, "r", encoding="utf-8") as f:
+            index_content = f.read()
+        self.assertIn("[模块列表](./modules.md)", index_content)
+        self.assertIn("title: 文档首页", index_content)  # Check metadata
+        # Category for root index should ideally not be repo_name, or be absent, or be a specific site title.
+        # Based on current logic in split_content_into_files, it might get repo_name.
+        # Let's check for that or its absence.
+        # self.assertNotIn(f"category: {repo_name_for_test.replace('-',' ').title()}", index_content)
+
+        # 2. Check overview.md for link to modules.md
+        overview_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "overview.md")
+        with open(overview_md_path, "r", encoding="utf-8") as f:
+            overview_content = f.read()
+        self.assertIn("[模块列表](./modules.md)", overview_content)
+        self.assertIn("title: 系统架构", overview_content)
+        # self.assertIn(f"category: {repo_name_for_test.replace('-',' ').title()}", overview_content)
+        # Similar to index.md category
+
+        # 3. Check repo_name/modules.md content
+        modules_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "modules.md")
+        with open(modules_md_path, "r", encoding="utf-8") as f:
+            modules_content = f.read()
+        self.assertIn("[Formatter Module](./utils/formatter.md)", modules_content)
+        self.assertIn("[Parser Module](./utils/parser.md)", modules_content)
+        self.assertIn("[Core Logic](./core/logic.md)", modules_content)
+        self.assertIn("title: 模块列表", modules_content)
+        self.assertIn(f"category: {repo_name_for_test.replace('-', ' ').title()}", modules_content)
+
+        # 4. Check a module file (e.g., utils/formatter.md)
+        formatter_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "utils", "formatter.md")
+        with open(formatter_md_path, "r", encoding="utf-8") as f:
+            formatter_content = f.read()
+
+        self.assertIn("格式化模块，依赖 [`parser`](../parser.md) 模块。", formatter_content)
+        self.assertIn(
+            "API: [`format_text`](https://example.com/user/test_repo/blob/main/src/utils/formatter.py#L1-L5)",
+            formatter_content,
+        )
+        self.assertIn("title: Formatter Module", formatter_content)
+        self.assertIn("category: Utils", formatter_content)  # from parent dir 'utils'
+
+        # 5. Check another module file (e.g., core/logic.md) to test inter-directory linking if applicable
+        core_logic_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "core", "logic.md")
+        with open(core_logic_md_path, "r", encoding="utf-8") as f_core:
+            core_content = f_core.read()
+        self.assertIn("核心逻辑模块。", core_content)  # Just check its own content for now
+        self.assertIn("title: Core Logic", core_content)
+        self.assertIn("category: Core", core_content)
+
+        # 6. Check utils/index.md (directory index)
+        utils_index_md_path = os.path.join(self.test_output_dir, repo_name_for_test, "utils", "index.md")
+        with open(utils_index_md_path, "r", encoding="utf-8") as f_utils_index:
+            utils_index_content = f_utils_index.read()
+        self.assertIn("[Formatter Module](./formatter.md)", utils_index_content)  # Link to sibling
+        self.assertIn("[Parser Module](./parser.md)", utils_index_content)  # Link to sibling
+        self.assertIn("title: Utils 模块", utils_index_content)
+        self.assertIn(
+            f"category: {repo_name_for_test.replace('-', ' ').title()}", utils_index_content
+        )  # Parent is repo_name
 
     def test_map_module_to_docs_path(self):
         """测试 map_module_to_docs_path 函数"""

@@ -1,76 +1,13 @@
 """模块质量检查节点，用于检查模块文档的质量。"""
 
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from pocketflow import Node
-from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
-
-
-class ModuleQualityCheckNodeConfig(BaseModel):
-    """ModuleQualityCheckNode 配置"""
-
-    retry_count: int = Field(3, ge=1, le=10, description="重试次数")
-    quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
-    model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
-    auto_fix: bool = Field(True, description="是否自动修复")
-    check_aspects: List[str] = Field(["completeness", "accuracy", "readability", "formatting"], description="检查方面")
-    quality_check_prompt_template: str = Field(
-        """
-        你是一个文档质量评估专家。请评估以下模块文档的质量，并提供改进建议。
-
-        文档内容:
-        {content}
-
-        请从以下几个方面评估文档质量:
-        1. 完整性 (Completeness): 文档是否涵盖了模块的所有重要方面，包括功能、接口、用法等
-        2. 准确性 (Accuracy): 文档中的信息是否准确，是否与代码一致
-        3. 可读性 (Readability): 文档是否易于阅读和理解，语言是否清晰简洁
-        4. 格式化 (Formatting): 文档的格式是否规范，是否使用了适当的标题、列表、代码块等
-
-        对于每个方面，请给出1-10的评分，并提供具体的改进建议。
-        然后，给出一个总体评分 (1-10)。
-
-        如果文档质量不佳，请提供修复后的内容。
-
-        请按以下格式输出:
-        ```json
-        {
-          "completeness": {
-            "score": 评分,
-            "comments": "评论和建议"
-          },
-          "accuracy": {
-            "score": 评分,
-            "comments": "评论和建议"
-          },
-          "readability": {
-            "score": 评分,
-            "comments": "评论和建议"
-          },
-          "formatting": {
-            "score": 评分,
-            "comments": "评论和建议"
-          },
-          "overall": 总体评分,
-          "needs_fix": true/false,
-          "fix_suggestions": "具体的修复建议"
-        }
-        ```
-
-        ## 修复后的内容
-
-        如果文档需要修复，请在这里提供修复后的完整内容:
-
-        ```markdown
-        修复后的文档内容
-        ```
-        """,
-        description="质量检查提示模板",
-    )
+from .module_quality_check_config import ModuleQualityCheckNodeConfig
+from .module_quality_check_evaluator import EvaluationResult, ModuleQualityCheckEvaluator
 
 
 class ModuleQualityCheckNode(Node):
@@ -148,13 +85,11 @@ class ModuleQualityCheckNode(Node):
         llm_config = prep_res["llm_config"]
         target_language = prep_res["target_language"]
         retry_count = prep_res["retry_count"]
-        prep_res["quality_threshold"]
         model = prep_res["model"]
         auto_fix = prep_res["auto_fix"]
-        prep_res["check_aspects"]
 
         # 获取模块列表
-        modules = module_details.get("modules", [])
+        modules = module_details.get("docs", [])
         if not modules:
             error_msg = "模块详细文档中没有模块"
             log_and_notify(error_msg, "error", notify=True)
@@ -190,17 +125,29 @@ class ModuleQualityCheckNode(Node):
                             log_and_notify(f"成功检查模块质量 (质量分数: {quality_score['overall']})", "info")
 
                             # 检查是否需要修复
-                            needs_fix = evaluation.get("needs_fix", False)
+                            needs_fix = (
+                                evaluation.get("needs_fix", False)
+                                or quality_score["overall"] < self.config.quality_threshold
+                            )
+
+                            # 记录评估结果
+                            module["quality_score"] = quality_score
+                            module["evaluation"] = evaluation
+                            module["needs_fix"] = needs_fix
+
+                            # 如果需要修复且启用了自动修复且有修复后的内容
                             if needs_fix and auto_fix and fixed_content:
                                 log_and_notify("自动修复模块内容", "info")
                                 module["content"] = fixed_content
-                                module["quality_score"] = quality_score
-                                module["evaluation"] = evaluation
                                 module["fixed"] = True
                             else:
-                                module["quality_score"] = quality_score
-                                module["evaluation"] = evaluation
                                 module["fixed"] = False
+
+                            # 如果需要修复但没有启用自动修复，记录警告
+                            if needs_fix and not auto_fix:
+                                log_and_notify(
+                                    f"模块 {module.get('name', 'unknown')} 需要改进，但自动修复未启用", "warning"
+                                )
 
                             checked_modules.append(module)
                             break
@@ -231,22 +178,68 @@ class ModuleQualityCheckNode(Node):
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            prep_res: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
             下一个节点的动作
         """
+        # 使用prep_res参数，避免IDE警告
+        _ = prep_res
         if not exec_res.get("success", False):
             shared["error"] = exec_res.get("error", "检查模块质量失败")
             return "error"
 
         # 更新模块详细文档
-        shared["module_details"]["modules"] = exec_res["modules"]
+        shared["module_details"]["docs"] = exec_res["modules"]
         shared["module_details"]["overall_score"] = exec_res["overall_score"]
 
-        log_and_notify(f"模块质量检查完成 (整体分数: {exec_res['overall_score']})", "info", notify=True)
-        return "default"
+        # 检查是否有需要修复的模块
+        modules_need_fix = [m for m in exec_res["modules"] if m.get("needs_fix", False)]
+
+        # 将检查结果存储到共享存储中
+        shared["module_quality_check"] = {
+            "overall_score": exec_res["overall_score"],
+            "modules_checked": len(exec_res["modules"]),
+            "modules_need_fix": len(modules_need_fix),
+            "success": True,
+        }
+
+        # 确定下一个动作
+        if modules_need_fix:
+            if self.config.auto_fix:
+                # 如果启用了自动修复，检查是否有模块被修复
+                modules_fixed = [m for m in modules_need_fix if m.get("fixed", False)]
+                if len(modules_fixed) == len(modules_need_fix):
+                    log_and_notify(
+                        f"模块质量检查完成，已自动修复 {len(modules_fixed)} 个模块 (整体分数: {exec_res['overall_score']})",
+                        "info",
+                        notify=True,
+                    )
+                    return "default"
+                else:
+                    log_and_notify(
+                        f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，但只有 {len(modules_fixed)} 个被自动修复 (整体分数: {exec_res['overall_score']})",
+                        "warning",
+                        notify=True,
+                    )
+                    # 返回需要修复的信号，让生成节点重新生成
+                    return "fix"
+            else:
+                log_and_notify(
+                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进 (整体分数: {exec_res['overall_score']})",
+                    "warning",
+                    notify=True,
+                )
+                # 返回需要修复的信号，让生成节点重新生成
+                return "fix"
+        else:
+            log_and_notify(
+                f"模块质量检查完成，所有模块质量良好 (整体分数: {exec_res['overall_score']})",
+                "info",
+                notify=True,
+            )
+            return "default"
 
     def _create_prompt(self, content: str) -> str:
         """创建提示
@@ -262,7 +255,7 @@ class ModuleQualityCheckNode(Node):
 
     def _call_model(
         self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
-    ) -> Tuple[Dict[str, Any], Optional[str], Dict[str, float], bool]:
+    ) -> Tuple[EvaluationResult, Optional[str], Dict[str, float], bool]:
         """调用 LLM
 
         Args:
@@ -287,116 +280,29 @@ class ModuleQualityCheckNode(Node):
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
 
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="检查模块质量", max_input_tokens=None)
+            response = llm_client.completion(
+                messages=messages, temperature=0.3, model=model, trace_name="检查模块质量", max_input_tokens=None
+            )
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
 
-            # 解析评估结果
-            evaluation = self._parse_evaluation(content)
-
-            # 提取修复后的内容
-            fixed_content = self._extract_fixed_content(content)
-
-            # 计算质量分数
-            quality_score = {
-                "completeness": evaluation.get("completeness", {}).get("score", 0) / 10,
-                "accuracy": evaluation.get("accuracy", {}).get("score", 0) / 10,
-                "readability": evaluation.get("readability", {}).get("score", 0) / 10,
-                "formatting": evaluation.get("formatting", {}).get("score", 0) / 10,
-                "overall": evaluation.get("overall", 0) / 10,
-            }
+            # 使用评估器解析结果
+            evaluator = ModuleQualityCheckEvaluator()
+            evaluation: EvaluationResult = evaluator.parse_evaluation(content)
+            fixed_content = evaluator.extract_fixed_content(content)
+            quality_score = evaluator.calculate_quality_score(evaluation)
 
             return evaluation, fixed_content, quality_score, True
         except Exception as e:
             log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
-            raise
-
-    def _parse_evaluation(self, content: str) -> Dict[str, Any]:
-        """解析评估结果
-
-        Args:
-            content: 内容
-
-        Returns:
-            评估结果
-        """
-        # 提取 JSON 部分
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            try:
-                import json
-
-                return json.loads(json_match.group(1))
-            except Exception as e:
-                log_and_notify(f"解析 JSON 失败: {str(e)}", "error")
-
-        # 如果无法提取 JSON，尝试手动解析
-        result = {
-            "completeness": {"score": 0, "comments": ""},
-            "accuracy": {"score": 0, "comments": ""},
-            "readability": {"score": 0, "comments": ""},
-            "formatting": {"score": 0, "comments": ""},
-            "overall": 0,
-            "needs_fix": False,
-            "fix_suggestions": "",
-        }
-
-        # 提取完整性评分
-        completeness_match = re.search(r"完整性.*?(\d+).*?[评分分数]", content, re.DOTALL)
-        if completeness_match:
-            result["completeness"]["score"] = int(completeness_match.group(1))
-
-        # 提取准确性评分
-        accuracy_match = re.search(r"准确性.*?(\d+).*?[评分分数]", content, re.DOTALL)
-        if accuracy_match:
-            result["accuracy"]["score"] = int(accuracy_match.group(1))
-
-        # 提取可读性评分
-        readability_match = re.search(r"可读性.*?(\d+).*?[评分分数]", content, re.DOTALL)
-        if readability_match:
-            result["readability"]["score"] = int(readability_match.group(1))
-
-        # 提取格式化评分
-        formatting_match = re.search(r"格式化.*?(\d+).*?[评分分数]", content, re.DOTALL)
-        if formatting_match:
-            result["formatting"]["score"] = int(formatting_match.group(1))
-
-        # 提取总体评分
-        overall_match = re.search(r"总体[评分分数].*?(\d+)", content, re.DOTALL)
-        if overall_match:
-            result["overall"] = int(overall_match.group(1))
-
-        # 判断是否需要修复
-        result["needs_fix"] = "需要修复" in content or "建议修复" in content
-
-        # 提取修复建议
-        fix_match = re.search(r"修复建议[：:](.*?)(?=##|$)", content, re.DOTALL)
-        if fix_match:
-            result["fix_suggestions"] = fix_match.group(1).strip()
-
-        return result
-
-    def _extract_fixed_content(self, content: str) -> Optional[str]:
-        """提取修复后的内容
-
-        Args:
-            content: 内容
-
-        Returns:
-            修复后的内容
-        """
-        # 提取修复后的内容
-        fixed_match = re.search(r"```markdown\s*(.*?)\s*```", content, re.DOTALL)
-        if fixed_match:
-            return fixed_match.group(1).strip()
-
-        # 如果没有明确的修复内容块，尝试提取整个修复后的内容部分
-        fixed_section_match = re.search(r"## 修复后的内容\s*\n(.*?)(?:\n##|$)", content, re.DOTALL)
-        if fixed_section_match:
-            fixed_content = fixed_section_match.group(1).strip()
-            # 移除可能的 Markdown 代码块标记
-            fixed_content = re.sub(r"^```markdown\s*|\s*```$", "", fixed_content, flags=re.MULTILINE)
-            return fixed_content
-
-        return None
+            default_eval: EvaluationResult = {
+                "completeness": {"score": 0, "comments": "Error calling model"},
+                "accuracy": {"score": 0, "comments": ""},
+                "readability": {"score": 0, "comments": ""},
+                "formatting": {"score": 0, "comments": ""},
+                "overall": 0,
+                "needs_fix": False,
+                "fix_suggestions": "",
+            }
+            return default_eval, None, {"overall": 0.0}, False

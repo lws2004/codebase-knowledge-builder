@@ -2,7 +2,7 @@
 
 import concurrent.futures
 import time
-from typing import Callable, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 from tqdm import tqdm
 
@@ -19,7 +19,7 @@ def parallel_process(
     chunk_size: int = 1,
     show_progress: bool = True,
     desc: str = "Processing",
-) -> List[R]:
+) -> List[Optional[R]]:
     """并行处理项目列表
 
     Args:
@@ -47,7 +47,7 @@ def parallel_process(
     # 限制最大工作线程数，避免创建过多线程
     max_workers = min(max_workers, len(items))
 
-    results = []
+    results: List[Tuple[int, Optional[R]]] = []
     errors = []
 
     # 使用线程池并行执行处理函数
@@ -105,6 +105,87 @@ def chunk_list(items: List[T], chunk_size: int) -> List[List[T]]:
     return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
+def _calculate_max_workers(items: List[T], max_workers: Optional[int], rate_limit: int) -> int:
+    """计算合适的工作线程数
+
+    Args:
+        items: 待处理项列表
+        max_workers: 用户指定的最大工作线程数
+        rate_limit: 速率限制
+
+    Returns:
+        计算后的最大工作线程数
+    """
+    if max_workers is None:
+        max_workers = min(rate_limit, len(items))
+    else:
+        max_workers = min(max_workers, rate_limit, len(items))
+    return max_workers
+
+
+def _submit_tasks(
+    executor: concurrent.futures.ThreadPoolExecutor,
+    items: List[T],
+    process_func: Callable[[T], R],
+    max_workers: int,
+    interval: float,
+) -> Dict[concurrent.futures.Future, int]:
+    """提交任务到线程池
+
+    Args:
+        executor: 线程池执行器
+        items: 待处理项列表
+        process_func: 处理函数
+        max_workers: 最大工作线程数
+        interval: 请求间隔时间
+
+    Returns:
+        Future到项目索引的映射
+    """
+    future_to_item = {}
+    for i, item in enumerate(items):
+        # 添加延迟以符合速率限制
+        if i > 0 and i % max_workers == 0:
+            time.sleep(interval * max_workers)
+        future = executor.submit(process_func, item)
+        future_to_item[future] = i
+    return future_to_item
+
+
+def _process_results(
+    future_to_item: Dict[concurrent.futures.Future, int], pbar: Optional[tqdm]
+) -> Tuple[List[Tuple[int, Any]], List[Tuple[int, str]]]:
+    """处理任务结果
+
+    Args:
+        future_to_item: Future到项目索引的映射
+        pbar: 进度条对象
+
+    Returns:
+        结果列表和错误列表的元组
+    """
+    results = []
+    errors = []
+
+    for future in concurrent.futures.as_completed(future_to_item):
+        idx = future_to_item[future]
+        try:
+            result = future.result()
+            # 保持原始顺序
+            results.append((idx, result))
+        except Exception as exc:
+            error_msg = f"处理项目 {idx} 时出错: {exc}"
+            log_and_notify(error_msg, "error")
+            errors.append((idx, error_msg))
+            # 添加错误结果，保持结果列表长度与输入列表一致
+            results.append((idx, None))
+        finally:
+            if pbar:
+                pbar.update(1)
+
+    return results, errors
+
+
 def process_with_rate_limit(
     items: List[T],
     process_func: Callable[[T], R],
@@ -131,50 +212,22 @@ def process_with_rate_limit(
     if not items:
         return []
 
-    # 计算合适的工作线程数，不超过速率限制
-    if max_workers is None:
-        max_workers = min(rate_limit, len(items))
-    else:
-        max_workers = min(max_workers, rate_limit, len(items))
-
-    results = []
-    errors = []
+    # 计算合适的工作线程数
+    max_workers = _calculate_max_workers(items, max_workers, rate_limit)
 
     # 计算请求间隔时间（秒）
     interval = 1.0 / rate_limit
 
-    # 使用信号量控制并发数
+    # 使用线程池并行执行
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 创建进度条
-        pbar = None
-        if show_progress:
-            pbar = tqdm(total=len(items), desc=desc)
+        pbar = tqdm(total=len(items), desc=desc) if show_progress else None
 
         # 提交所有任务
-        future_to_item = {}
-        for i, item in enumerate(items):
-            # 添加延迟以符合速率限制
-            if i > 0 and i % max_workers == 0:
-                time.sleep(interval * max_workers)
-            future = executor.submit(process_func, item)
-            future_to_item[future] = i
+        future_to_item = _submit_tasks(executor, items, process_func, max_workers, interval)
 
         # 处理结果
-        for future in concurrent.futures.as_completed(future_to_item):
-            idx = future_to_item[future]
-            try:
-                result = future.result()
-                # 保持原始顺序
-                results.append((idx, result))
-            except Exception as exc:
-                error_msg = f"处理项目 {idx} 时出错: {exc}"
-                log_and_notify(error_msg, "error")
-                errors.append((idx, error_msg))
-                # 添加错误结果，保持结果列表长度与输入列表一致
-                results.append((idx, None))
-            finally:
-                if pbar:
-                    pbar.update(1)
+        results, errors = _process_results(future_to_item, pbar)
 
         # 关闭进度条
         if pbar:

@@ -5,7 +5,7 @@ import json
 
 from pocketflow import Flow, Node
 
-from src.nodes import AnalyzeHistoryNode
+from src.nodes import AsyncAnalyzeHistoryNode
 from src.utils.env_manager import get_llm_config, load_env_vars
 from src.utils.git_utils import GitRepoManager
 
@@ -116,7 +116,7 @@ def create_flow():
     # 创建节点
     input_node = InputNode()
     prepare_repo_node = PrepareRepoNode()
-    analyze_history_node = AnalyzeHistoryNode()
+    analyze_history_node = AsyncAnalyzeHistoryNode()
 
     # 连接节点
     input_node >> prepare_repo_node >> analyze_history_node

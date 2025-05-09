@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 import time
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from git import GitCommandError, Repo
 
@@ -19,6 +19,7 @@ class GitRepoManager:
 
     # 缓存目录
     CACHE_DIR = ".cache/git_repos"
+    repo: Optional[Repo]  # 添加类型注解
 
     def __init__(self, repo_url: str, local_path: Optional[str] = None, branch: str = "main", use_cache: bool = True):
         """初始化 Git 仓库管理器
@@ -250,7 +251,7 @@ class GitRepoManager:
             return None
 
         try:
-            return self.repo.git.show(f"{ref}:{file_path}")
+            return cast(str, self.repo.git.show(f"{ref}:{file_path}"))
         except GitCommandError:
             return None
 

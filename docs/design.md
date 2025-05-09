@@ -41,8 +41,8 @@
 6.  **技术团队负责人**: **AI 结合代码分析与版本历史理解**，生成能自动关联最新代码设计思路的教程，确保新成员高效同步。
     - _验收标准_: 教程能够反映代码库的最新状态，并解释关键设计决策。
 
-7.  **国际化社区**: 支持**根据用户指定语言（如中、英文）直接生成**教程内容，同时保持代码和技术术语的准确性。
-    - _验收标准_: 能够生成指定语言的教程，技术术语保持一致性和准确性。
+7.  **国际化社区**: 支持**根据用户指定语言（如中、英文）直接生成**教程内容，同时保持代码和技术术语的准确性。系统应直接以用户指定的语言生成内容，而非先生成一种语言再翻译。
+    - _验收标准_: 能够直接以用户指定语言生成教程，技术术语保持一致性和准确性。
 
 8.  **开发者体验**: **AI 基于代码理解生成** API 功能说明，并结合代码上下文生成或提取可运行的测试用例作为功能演示。
     - _验收标准_: 生成的 API 文档准确反映代码功能，提供的测试用例可以运行并演示功能。
@@ -116,7 +116,7 @@ flowchart TD
 
     subgraph Stage4 ["🏷️ 4: 组合与格式化"]
         direction TB
-        Combine("组合/翻译") --> Format("格式化输出");
+        Combine("内容组合") --> Format("格式化输出");
         Format --> ErrorCheck4{"错误检查"};
         ErrorCheck4 -- 失败 --> HandleError4["错误处理"];
         HandleError4 --> Retry4["重试/降级输出"];
@@ -283,31 +283,25 @@ flowchart TD
     Combine --> GenerateNavLinks["🔗 生成内部导航链接"];
     GenerateNavLinks --> ConsistencyCheck["✓ 一致性检查"];
     ConsistencyCheck -- 不一致 --> FixConsistency["🔧 修复一致性问题"];
-    ConsistencyCheck -- 一致 --> Stage4_2_1_Input("进入 🏷️ 4.2.1: 翻译检查");
+    ConsistencyCheck -- 一致 --> Stage4_2_1_Input("进入 🏷️ 4.2: 格式化准备");
     FixConsistency --> ConsistencyCheck;
 ```
 
 > _按层级顺序组合所有生成的内容，生成内部导航链接，并进行一致性检查。_
 
-##### `🏷️ 4.2.1`: 翻译检查 (可选)
+##### `🏷️ 4.2`: 格式化准备
 
 ```mermaid
 flowchart TD
     Input["来自 🏷️ 4.1: 组合后的内容"]
-    Input --> CheckTranslate{🌐 需要翻译/检查?};
-    CheckTranslate -- 是 --> DetectMixedLanguage["🔍 检测混合语言"];
-    DetectMixedLanguage --> PreserveTerms["📝 标记保留术语"];
-    PreserveTerms --> Translate["🌍 AI: 翻译/检查"];
-    CheckTranslate -- 否 --> SkipTranslate((跳过));
-    Translate --> TranslationQuality["✓ 翻译质量检查"];
-    TranslationQuality -- 不满足 --> RefineTranslation["🔄 细化翻译"];
-    TranslationQuality -- 满足 --> OutputTextForFormatting(准备格式化的文本);
-    SkipTranslate --> OutputTextForFormatting;
-    RefineTranslation --> TranslationQuality;
+    Input --> ConsistencyCheck["✓ 内容一致性检查"];
+    ConsistencyCheck --> TerminologyCheck["📝 术语一致性检查"];
+    TerminologyCheck --> PrepareFormatting["📋 准备格式化"];
+    PrepareFormatting --> OutputTextForFormatting(准备格式化的文本);
     OutputTextForFormatting --> Stage4_2_2_Start("进入 🏷️ 4.2.2: 格式化输出");
 ```
 
-> _此子阶段处理可选的最终翻译检查，包含混合语言检测、术语保留和翻译质量评估。_
+> _此子阶段处理格式化准备，包含一致性检查和内容质量评估。_
 
 ##### `🏷️ 4.2.2`: 格式化输出
 
@@ -398,7 +392,7 @@ flowchart TD
 1.  **`call_llm(prompt, context=None, task_type=None, target_language='en', retry_count=3, config=None)`** (`utils/llm_wrapper.py`) - **核心 🧠**
     - _输入_: 主要提示 (str), 上下文信息 (代码片段, 结构, 历史等) (str), 可选的任务类型标识 (str, 如 'summarize', 'explain_code', 'translate'), **目标语言 (str, 默认 'en')**, 重试次数 (int, 默认 3), 配置 (dict, 默认从环境变量加载)
     - _输出_: LLM 生成的文本 (str), 成功/失败状态 (bool), 元数据 (dict, 包含模型信息、延迟、token 使用等)
-    - _必要性_: **驱动几乎所有的内容理解和生成任务**。需要在 prompt 中结合 target_language 指示 AI 输出语言，并强调不翻译代码/技术术语。
+    - _必要性_: **驱动几乎所有的内容理解和生成任务**。需要在 prompt 中结合 target_language 指示 AI 直接以目标语言输出，并强调保留代码/技术术语。
     - _错误处理_: 实现指数退避重试机制，处理 API 超时、限流等问题。记录详细错误日志。
     - _缓存机制_: 对相同或相似的提示实现本地缓存，避免重复调用，提高效率和降低成本。
     - _推荐实现_: **使用 `litellm` 库** 统一调用不同的 LLM API。
@@ -825,7 +819,7 @@ flowchart TD
 22. **`extract_technical_terms(text, domain=None, language=None)`** (`utils/language_utils.py`)
     - _输入_: 文本 (str), 领域 (str), 语言 (str)
     - _输出_: 提取的技术术语列表 (list of str)
-    - _必要性_: 识别需要在翻译过程中保留的技术术语。
+    - _必要性_: 识别需要在内容生成过程中保留的技术术语。
     - _实现建议_: 结合规则和 NLP 技术识别专业术语。
     - _多语言支持_: 支持多种语言的术语识别，包括英文、中文等。
     - _功能概要_:
@@ -961,7 +955,7 @@ shared = {
     },
 
     # 输出阶段产出
-    "final_tutorial_markdown": None, # 最终组合和翻译后的 Markdown 文本 (str)
+    "combined_content": None, # 最终组合后的 Markdown 文本 (str)
     "output_file_path": None,      # 生成的本地文件路径 (str)
     "publish_url": None,           # 发布后的 URL (str, 可选)
     "gh_pages_config": None,       # GitHub Pages 配置信息 (dict)
@@ -1005,8 +999,8 @@ graph TD
         GenModules --> QualityCheck2[ModuleQualityCheckNode]
     end
 
-    GenerateContent --> CombineTranslate[CombineAndTranslateNode]
-    CombineTranslate --> FormatOutput[FormatOutputNode]
+    GenerateContent --> CombineContent[CombineContentNode]
+    CombineContent --> FormatOutput[FormatOutputNode]
     FormatOutput --> InteractiveQA[InteractiveQANode]
     InteractiveQA --> Publish[PublishNode]
 ```
@@ -1015,33 +1009,48 @@ graph TD
 
 下表概述了主要节点/流程在各流程阶段中的对应关系、错误处理策略和可扩展性设计：
 
-| 节点/流程 (Node/Flow)               | 对应流程阶段                      | 错误处理策略               | 可扩展性设计                                                                                                                                                     |
-| :---------------------------------- | :-------------------------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `InputNode`                         | 🏷️ 1: 输入与准备                   | 输入验证，提供默认值       | 支持自定义参数扩展                                                                                                                                               |
-| `PrepareRepoNode`                   | 🏷️ 1: 输入与准备                   | 处理网络错误，权限问题     | 支持多种代码库来源                                                                                                                                               |
-| `AnalyzeRepoFlow`                   | 🏷️ 2: AI 理解                      | 合并可用分析结果           | 模块化设计，支持新分析器                                                                                                                                         |
-| ↳ `ParseCodeBatchNode`              | 🏷️ 2.1: 代码解析                   | 降级解析，跳过问题文件     | 支持多种编程语言                                                                                                                                                 |
-| ↳ `AIUnderstandCoreModulesNode`     | 🏷️ 2.2: AI 核心理解                | LLM 调用重试，结果验证     | 可配置理解深度，支持多语言                                                                                                                                       |
-| ↳ `AnalyzeHistoryNode`              | 🏷️ 2.1: 代码解析                   | 处理空仓库，历史截断       | 支持过滤和聚焦                                                                                                                                                   |
-| ↳ `PrepareRAGDataNode`              | 🏷️ 2.3: RAG 数据准备               | 处理大文件，优化分块       | 可配置索引类型和参数                                                                                                                                             |
-| `GenerateContentFlow`               | 🏷️ 3: AI 生成                      | 内容质量检查，重新生成     | 插件式内容生成器                                                                                                                                                 |
-| ↳ `GenerateOverallArchitectureNode` | 🏷️ 3.1: 生成整体内容               | 结构验证，降级生成         | 支持多种架构表示，增强可视化                                                                                                                                     |
-| ↳ `GenerateApiDocsNode`             | 🏷️ 3.1: 生成整体内容               | API 提取失败处理           | 支持多种 API 风格                                                                                                                                                |
-| ↳ `ContentQualityCheckNode`         | 🏷️ 3.1: 生成整体内容               | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
-| ↳ `GenerateModuleDetailsNode`       | 🏷️ 3.2: 生成模块细节               | 模块缺失处理               | 支持自定义模块模板                                                                                                                                               |
-| ↳ `ModuleQualityCheckNode`          | 🏷️ 3.2: 生成模块细节               | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
-| ↳ `GenerateTimelineNode`            | 🏷️ 3.1: 生成整体内容               | 历史数据不足处理           | 支持多种时间线格式                                                                                                                                               |
-| ↳ `GenerateDependencyNode`          | 🏷️ 3.1: 生成整体内容               | 依赖分析失败处理           | 支持多种依赖图表示                                                                                                                                               |
-| ↳ `GenerateGlossaryNode`            | 🏷️ 3.1: 生成整体内容               | 术语提取失败处理           | 支持领域特定术语                                                                                                                                                 |
-| ↳ `GenerateQuickLookNode`           | 🏷️ 3.1: 生成整体内容               | 内容不足处理               | 可配置概览深度                                                                                                                                                   |
-| `CombineAndTranslateNode`           | 🏷️ 4.1: 内容组合 & 4.2.1: 翻译检查 | 内容缺失处理，翻译错误     | 支持多语言和自定义模板，增强术语处理                                                                                                                             |
-| `FormatOutputNode`                  | 🏷️ 4.2.2: 格式化输出               | 格式转换错误处理           | 支持多种输出格式                                                                                                                                                 |
-| `InteractiveQANode`                 | 🏷️ 5: 交互问答                     | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈                                                                                                                                               |
-| `PublishNode`                       | 🏷️ 6: 发布                         | 认证失败，网络错误         | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 [Just the Docs](https://just-the-docs.com/) |
+| 节点/流程 (Node/Flow)               | 对应流程阶段        | 错误处理策略               | 可扩展性设计                                                                                                                                                     |
+| :---------------------------------- | :------------------ | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InputNode`                         | 🏷️ 1: 输入与准备     | 输入验证，提供默认值       | 支持自定义参数扩展                                                                                                                                               |
+| `PrepareRepoNode`                   | 🏷️ 1: 输入与准备     | 处理网络错误，权限问题     | 支持多种代码库来源                                                                                                                                               |
+| `AnalyzeRepoFlow`                   | 🏷️ 2: AI 理解        | 合并可用分析结果           | 模块化设计，支持新分析器                                                                                                                                         |
+| ↳ `ParseCodeBatchNode`              | 🏷️ 2.1: 代码解析     | 降级解析，跳过问题文件     | 支持多种编程语言                                                                                                                                                 |
+| ↳ `AIUnderstandCoreModulesNode`     | 🏷️ 2.2: AI 核心理解  | LLM 调用重试，结果验证     | 可配置理解深度，支持多语言                                                                                                                                       |
+| ↳ `AnalyzeHistoryNode`              | 🏷️ 2.1: 代码解析     | 处理空仓库，历史截断       | 支持过滤和聚焦                                                                                                                                                   |
+| ↳ `PrepareRAGDataNode`              | 🏷️ 2.3: RAG 数据准备 | 处理大文件，优化分块       | 可配置索引类型和参数                                                                                                                                             |
+| `GenerateContentFlow`               | 🏷️ 3: AI 生成        | 内容质量检查，重新生成     | 插件式内容生成器                                                                                                                                                 |
+| ↳ `GenerateOverallArchitectureNode` | 🏷️ 3.1: 生成整体内容 | 结构验证，降级生成         | 支持多种架构表示，增强可视化                                                                                                                                     |
+| ↳ `GenerateApiDocsNode`             | 🏷️ 3.1: 生成整体内容 | API 提取失败处理           | 支持多种 API 风格                                                                                                                                                |
+| ↳ `ContentQualityCheckNode`         | 🏷️ 3.1: 生成整体内容 | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
+| ↳ `GenerateModuleDetailsNode`       | 🏷️ 3.2: 生成模块细节 | 模块缺失处理               | 支持自定义模块模板                                                                                                                                               |
+| ↳ `ModuleQualityCheckNode`          | 🏷️ 3.2: 生成模块细节 | 质量评估反馈               | 可配置质量标准                                                                                                                                                   |
+| ↳ `GenerateTimelineNode`            | 🏷️ 3.1: 生成整体内容 | 历史数据不足处理           | 支持多种时间线格式                                                                                                                                               |
+| ↳ `GenerateDependencyNode`          | 🏷️ 3.1: 生成整体内容 | 依赖分析失败处理           | 支持多种依赖图表示                                                                                                                                               |
+| ↳ `GenerateGlossaryNode`            | 🏷️ 3.1: 生成整体内容 | 术语提取失败处理           | 支持领域特定术语                                                                                                                                                 |
+| ↳ `GenerateQuickLookNode`           | 🏷️ 3.1: 生成整体内容 | 内容不足处理               | 可配置概览深度                                                                                                                                                   |
+| `CombineContentNode`                | 🏷️ 4.1: 内容组合     | 内容缺失处理，一致性检查   | 支持多语言直接生成内容，自定义模板，增强术语处理                                                                                                                 |
+| `FormatOutputNode`                  | 🏷️ 4.2: 格式化输出   | 格式转换错误处理           | 支持多种输出格式                                                                                                                                                 |
+| `InteractiveQANode`                 | 🏷️ 5: 交互问答       | 问题理解失败，RAG 检索失败 | 支持多轮对话和反馈                                                                                                                                               |
+| `PublishNode`                       | 🏷️ 6: 发布           | 认证失败，网络错误         | 支持多平台发布，包括 GitHub Pages、GitLab Pages、ReadTheDocs、Netlify、Vercel、Gitbook、Docsify、VuePress、MkDocs 和 [Just the Docs](https://just-the-docs.com/) |
 
 #### 核心节点详细设计
 
-##### 1. `PrepareRepoNode`
+##### 1. `CombineContentNode`
+
+- **目的**: 组合生成的内容，检查一致性，确保内容质量。
+- **输入**: `shared["architecture_doc"]`, `shared["api_docs"]`, `shared["timeline_doc"]`, `shared["dependency_doc"]`, `shared["glossary_doc"]`, `shared["quick_look_doc"]`, `shared["module_details"]`
+- **输出**: `shared["combined_content"]`, `shared["file_structure"]`, `shared["repo_structure"]`
+- **错误处理**:
+  - 处理内容缺失: 提供适当的占位内容，记录错误
+  - 处理一致性问题: 尝试自动修复，提供警告
+- **实现要点**:
+  - 使用 LLM 进行一致性检查
+  - 确保技术术语和代码片段的准确性
+  - 实现质量评估机制
+  - 提供降级处理策略
+  - 直接以用户指定语言生成内容，无需额外翻译
+
+##### 2. `PrepareRepoNode`
 
 - **目的**: 准备本地代码库，处理 URL 或本地路径，验证权限，分析代码库大小。
 - **输入**: `shared["repo_source"]`
@@ -1056,7 +1065,7 @@ graph TD
   - 实现缓存机制避免重复下载
   - 提供详细的错误信息和恢复建议
 
-##### 2. `AIUnderstandCoreModulesNode`
+##### 3. `AIUnderstandCoreModulesNode`
 
 - **目的**: 利用 AI 理解代码库的核心模块和整体架构。
 - **输入**: `shared["code_structure"]`, `shared["dependencies"]`
@@ -1070,7 +1079,7 @@ graph TD
   - 实现质量评估机制，确保分析结果的准确性
   - 提供降级处理策略，在 LLM 调用失败时生成基本理解
 
-##### 3. `InteractiveQANode`
+##### 4. `InteractiveQANode`
 
 - **目的**: 处理用户的交互式问题，利用 RAG 和 AI 生成回答，支持多轮对话和个性化学习路径。
 - **输入**: `shared["user_query"]`, `shared["vector_index"]`, `shared["text_chunks"]`, `shared["conversation_history"]`
@@ -1822,7 +1831,7 @@ codebase-knowledge-builder/
 
 4. **丰富功能完善**（2-3周）
    - 实现依赖图、术语表等生成功能
-   - 实现多语言支持和翻译检查
+   - 实现多语言支持和内容一致性检查
    - 实现 GitHub Pages 发布功能
 
 5. **测试与优化**（1-2周）
@@ -1950,8 +1959,8 @@ def update_documentation(new_content, existing_file, user_sections_marker='<!-- 
    - 缓解：实现质量评估、多轮细化和用户反馈机制
 
 4. **多语言支持挑战**
-   - 风险：翻译不准确、技术术语混乱
-   - 缓解：实现术语表、翻译检查和专业领域适配
+   - 风险：内容不一致、技术术语混乱
+   - 缓解：实现术语表、一致性检查和专业领域适配
 
 通过遵循本设计文档中的原则和最佳实践，团队可以构建一个高质量、可靠且易于扩展的代码库教程生成 Agent，为不同用户角色提供有价值的学习资源。
 

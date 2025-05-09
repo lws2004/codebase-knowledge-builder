@@ -1,12 +1,16 @@
 """代码库知识构建器的主入口点。"""
 
 import argparse
+import asyncio
+import os
+import re
+from typing import Any, Dict, Optional
 
-from pocketflow import Flow
+from pocketflow import AsyncFlow
 
 from src.nodes import (
     AnalyzeRepoFlow,
-    CombineAndTranslateNode,
+    CombineContentNode,
     FormatOutputNode,
     GenerateContentFlow,
     InputNode,
@@ -17,9 +21,10 @@ from src.nodes import (
 from src.nodes.flow_connector_nodes import AnalyzeRepoConnector, GenerateContentConnector
 from src.utils.config_loader import ConfigLoader
 from src.utils.env_manager import get_llm_config, load_env_vars
+from src.utils.logger import log_and_notify
 
 
-def create_flow():
+def create_flow() -> AsyncFlow:
     """创建流程
 
     Returns:
@@ -33,13 +38,14 @@ def create_flow():
     prepare_repo_node = PrepareRepoNode(config_loader.get_node_config("prepare_repo"))
     analyze_repo_flow = AnalyzeRepoFlow(config_loader.get("nodes.analyze_repo"))
     generate_content_flow = GenerateContentFlow(config_loader.get("nodes.generate_content"))
-    combine_translate_node = CombineAndTranslateNode(config_loader.get_node_config("combine_translate"))
+    combine_content_node = CombineContentNode(config_loader.get_node_config("combine_content"))
     format_output_node = FormatOutputNode(config_loader.get_node_config("format_output"))
     interactive_qa_node = InteractiveQANode(config_loader.get_node_config("interactive_qa"))
     publish_node = PublishNode(config_loader.get_node_config("publish"))
 
     # 连接节点
     input_node >> prepare_repo_node
+    # 错误处理通过post_async方法返回"error"字符串，不需要额外连接
 
     # 创建连接器节点
     analyze_repo_connector = AnalyzeRepoConnector(analyze_repo_flow)
@@ -48,18 +54,21 @@ def create_flow():
     # 连接节点
     prepare_repo_node >> analyze_repo_connector
     analyze_repo_connector >> generate_content_connector
-    generate_content_connector >> combine_translate_node
-    combine_translate_node >> format_output_node
+    generate_content_connector >> combine_content_node
+    combine_content_node >> format_output_node
     format_output_node >> interactive_qa_node
     interactive_qa_node >> publish_node
 
     # 创建流程
-    return Flow(start=input_node)
+    return AsyncFlow(start=input_node)
 
 
-def main():
-    """主函数"""
-    # 解析命令行参数
+def parse_arguments() -> argparse.Namespace:
+    """解析命令行参数
+
+    Returns:
+        解析后的参数
+    """
     parser = argparse.ArgumentParser(description="代码库知识构建器")
     parser.add_argument("--repo-url", type=str, help="Git 仓库 URL")
     parser.add_argument("--branch", type=str, help="分支名称")
@@ -71,9 +80,19 @@ def main():
     parser.add_argument("--publish-repo", type=str, help="发布目标仓库")
     parser.add_argument("--output-format", type=str, default="markdown", help="输出格式")
     parser.add_argument("--env", type=str, default="default", help="环境名称，用于加载对应的配置文件")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # 加载环境变量和配置
+
+def load_configuration(args: argparse.Namespace) -> ConfigLoader:
+    """加载环境变量和配置
+
+    Args:
+        args: 命令行参数
+
+    Returns:
+        配置加载器
+    """
+    # 加载环境变量
     load_env_vars(env=args.env)
 
     # 加载配置
@@ -82,59 +101,86 @@ def main():
         config_loader.load_env_config(args.env)
 
     # 打印当前环境变量中的模型配置，用于调试
-    import os
-
-    print("当前环境变量中的模型配置:")
+    log_and_notify("当前环境变量中的模型配置:", "debug")
     for key in os.environ:
         if key.startswith("LLM_MODEL"):
-            print(f"- {key}={os.environ[key]}")
+            log_and_notify(f"- {key}={os.environ[key]}", "debug")
 
-    # 获取 LLM 配置
-    llm_config = get_llm_config()
+    return config_loader
 
-    # 从仓库 URL 中提取仓库名称
-    repo_name = "docs"
-    if args.repo_url:
-        # 解析仓库 URL 获取仓库名称
-        import re
 
+def extract_repo_name(repo_url: Optional[str], local_path: Optional[str]) -> str:
+    """从仓库URL或本地路径中提取仓库名称
+
+    Args:
+        repo_url: 仓库URL
+        local_path: 本地仓库路径
+
+    Returns:
+        仓库名称
+    """
+    repo_name = "docs"  # 默认仓库名称
+
+    if repo_url:
         # 匹配 GitHub/GitLab 等常见 Git 仓库 URL 格式
-        match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", args.repo_url)
+        match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", repo_url)
         if match:
             # 提取组织/用户名和仓库名
             full_name = match.group(1)
             # 只使用仓库名部分
             repo_name = full_name.split("/")[-1]
+    elif local_path:
+        # 如果没有 repo_url 但有 local_path，从 local_path 推断 repo_name
+        repo_name = os.path.basename(os.path.normpath(local_path))
 
-    # 打印提取的仓库名称
-    print(f"提取的仓库名称: {repo_name}")
+    log_and_notify(f"提取的仓库名称: {repo_name}", "info")
+    return repo_name
 
+
+def create_shared_storage(
+    args: argparse.Namespace,
+    config_loader: ConfigLoader,
+    repo_name: str,
+    llm_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """创建共享存储
+
+    Args:
+        args: 命令行参数
+        config_loader: 配置加载器
+        repo_name: 仓库名称
+        llm_config: LLM配置
+
+    Returns:
+        共享存储
+    """
     # 设置输出目录，如果用户未指定则使用仓库名
     output_dir = args.output_dir or config_loader.get("nodes.input.default_output_dir", "docs_output")
 
     # 创建共享存储
-    shared = {
+    return {
         "llm_config": llm_config,
         "repo_url": args.repo_url,
         "branch": args.branch,
         "output_dir": output_dir,
-        "repo_name": repo_name,  # 添加仓库名称
+        "repo_name": repo_name,
         "language": args.language or config_loader.get("nodes.input.default_language", "zh"),
         "local_path": args.local_path,
         "user_query": args.user_query,
         "publish_target": args.publish_target,
         "publish_repo": args.publish_repo,
         "output_format": args.output_format,
+        "cli_args": args,
     }
 
-    # 创建流程
-    flow = create_flow()
 
-    # 运行流程
-    print(f"开始分析仓库: {args.repo_url or '未指定'}")
-    flow.run(shared)
+def print_results(shared: Dict[str, Any]) -> None:
+    """打印处理结果
 
-    # 输出结果
+    Args:
+        shared: 共享存储
+    """
+    # 输出结果 - these are user-facing outputs, so print is appropriate
     if "output_files" in shared and shared["output_files"]:
         # 打印输出文件信息
         print("\n文档生成完成:")
@@ -157,10 +203,43 @@ def main():
 
     # 如果有错误，打印错误信息
     if "error" in shared:
+        # Using log_and_notify for errors is good, but final user message can be print
+        log_and_notify(f"处理失败: {shared['error']}", "error", notify=True)
         print(f"\n处理失败: {shared['error']}")
     elif "output_files" not in shared or not shared["output_files"]:
+        # This is a valid outcome, not necessarily an error.
         print("\n处理完成，但没有生成文档文件")
 
 
+async def main() -> None:
+    """主函数"""
+    # 解析命令行参数
+    args = parse_arguments()
+
+    # 加载配置
+    config_loader = load_configuration(args)
+
+    # 获取 LLM 配置
+    llm_config = get_llm_config()
+
+    # 提取仓库名称
+    repo_name = extract_repo_name(args.repo_url, args.local_path)
+
+    # 创建共享存储
+    shared = create_shared_storage(args, config_loader, repo_name, llm_config)
+
+    # 创建流程
+    flow = create_flow()
+
+    # 运行流程
+    log_and_notify(f"开始分析仓库: {args.repo_url or args.local_path or '未指定'}", "info")
+    await flow.run_async(shared)
+
+    # 打印结果
+    print_results(shared)
+
+
 if __name__ == "__main__":
-    main()
+    # Setup basic logging if log_and_notify doesn't do it
+    # For now, assuming log_and_notify handles its own setup or uses a pre-configured logger
+    asyncio.run(main())

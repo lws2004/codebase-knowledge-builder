@@ -1,4 +1,5 @@
 """Git 历史分析器，用于分析 Git 仓库的提交历史。"""
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,8 @@ from ..logger import log_and_notify
 
 class GitHistoryAnalyzer:
     """Git 历史分析器，用于分析 Git 仓库的提交历史"""
+
+    repo: Optional[Repo]  # 添加类型注解
 
     def __init__(self, repo_path: str):
         """初始化 Git 历史分析器
@@ -44,18 +47,20 @@ class GitHistoryAnalyzer:
 
             history = []
             for commit in commits:
-                history.append({
-                    "hash": commit.hexsha,
-                    "short_hash": commit.hexsha[:7],
-                    "author": f"{commit.author.name} <{commit.author.email}>",
-                    "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
-                    "message": commit.message.strip(),
-                    "stats": {
-                        "files": len(commit.stats.files),
-                        "insertions": commit.stats.total["insertions"],
-                        "deletions": commit.stats.total["deletions"],
+                history.append(
+                    {
+                        "hash": commit.hexsha,
+                        "short_hash": commit.hexsha[:7],
+                        "author": f"{commit.author.name} <{commit.author.email}>",
+                        "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
+                        "message": commit.message.strip(),
+                        "stats": {
+                            "files": len(commit.stats.files),
+                            "insertions": commit.stats.total["insertions"],
+                            "deletions": commit.stats.total["deletions"],
+                        },
                     }
-                })
+                )
 
             return history
         except Exception as e:
@@ -82,12 +87,14 @@ class GitHistoryAnalyzer:
             # 获取文件变更
             file_changes = []
             for file_path, stats in commit.stats.files.items():
-                file_changes.append({
-                    "path": file_path,
-                    "insertions": stats["insertions"],
-                    "deletions": stats["deletions"],
-                    "changes": stats["lines"],
-                })
+                file_changes.append(
+                    {
+                        "path": file_path,
+                        "insertions": stats["insertions"],
+                        "deletions": stats["deletions"],
+                        "changes": stats["lines"],
+                    }
+                )
 
             return {
                 "hash": commit.hexsha,
@@ -128,13 +135,15 @@ class GitHistoryAnalyzer:
 
             history = []
             for commit in commits:
-                history.append({
-                    "hash": commit.hexsha,
-                    "short_hash": commit.hexsha[:7],
-                    "author": f"{commit.author.name} <{commit.author.email}>",
-                    "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
-                    "message": commit.message.strip(),
-                })
+                history.append(
+                    {
+                        "hash": commit.hexsha,
+                        "short_hash": commit.hexsha[:7],
+                        "author": f"{commit.author.name} <{commit.author.email}>",
+                        "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
+                        "message": commit.message.strip(),
+                    }
+                )
 
             return history
         except Exception as e:
@@ -171,11 +180,13 @@ class GitHistoryAnalyzer:
                         name = author_info.split("<")[0].strip()
                         email = author_info.split("<")[1].split(">")[0].strip()
 
-                    contributors.append({
-                        "name": name,
-                        "email": email,
-                        "commits": commits,
-                    })
+                    contributors.append(
+                        {
+                            "name": name,
+                            "email": email,
+                            "commits": commits,
+                        }
+                    )
 
             return contributors
         except Exception as e:

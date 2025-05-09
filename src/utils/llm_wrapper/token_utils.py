@@ -1,6 +1,6 @@
 """Token 工具模块，提供 token 计数和处理相关功能。"""
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, cast
 
 import litellm
 
@@ -42,8 +42,8 @@ def count_tokens(text: str, model: str) -> int:
 
         # 从响应中获取token数量
         usage = getattr(response, "usage", None)
-        if usage:
-            return usage.prompt_tokens
+        if usage and hasattr(usage, "prompt_tokens"):
+            return cast(int, usage.prompt_tokens)
 
         # 如果无法获取token数量，使用备用方法
         raise Exception("无法从响应中获取token数量")
@@ -90,8 +90,8 @@ def count_message_tokens(messages: List[Dict[str, str]], model: str) -> int:
 
         # 从响应中获取token数量
         usage = getattr(response, "usage", None)
-        if usage:
-            return usage.prompt_tokens
+        if usage and hasattr(usage, "prompt_tokens"):
+            return cast(int, usage.prompt_tokens)
 
         # 如果无法获取token数量，使用备用方法
         raise Exception("无法从响应中获取token数量")
@@ -201,7 +201,7 @@ def truncate_non_system_messages(
         return []
 
     # 从最新的消息开始保留
-    truncated_messages = []
+    truncated_messages: List[Dict[str, str]] = []
     current_tokens = 0
 
     for msg in reversed(messages):

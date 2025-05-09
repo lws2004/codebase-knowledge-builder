@@ -67,7 +67,7 @@ class TestAnalyzeRepoFlow(unittest.TestCase):
         mock_prepare_rag.return_value = mock_prepare_rag_instance
 
         # 初始化流程
-        analyze_repo_flow = AnalyzeRepoFlow(self.config)
+        AnalyzeRepoFlow(self.config)
 
         # 验证节点连接 - 更新以匹配串行流程
         mock_parse_code_instance.__rshift__.assert_called_once_with(mock_ai_understand_instance)

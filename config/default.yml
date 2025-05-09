@@ -2,607 +2,822 @@
 
 # 应用程序配置
 app:
-  name: "Codebase Knowledge Builder"
-  version: "0.1.0"
-  debug: false
+   name: "Codebase Knowledge Builder"
+   version: "0.1.0"
+   debug: false
 
 # LLM 配置
 llm:
-  # 模型配置 - 应从环境变量中获取，这里不设置默认值
-  # 格式: "provider/model"，例如: "openai/gpt-4", "anthropic/claude-3-opus-20240229"
-  # 对于 OpenRouter，格式应为: "openrouter/provider/model"，例如: "openrouter/anthropic/claude-3-opus-20240229"
-  model: ""
-  # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
-  max_tokens: 4000 # 控制LLM输出的最大token数
-  # max_input_tokens: 25000 # 控制输入到LLM的最大token数
-  # 注意: max_input_tokens + max_tokens 的总和不应超过模型的最大上下文长度
-  temperature: 0.7
-  # 缓存配置
-  cache_enabled: true # 是否启用缓存
-  cache_ttl: 86400 # 缓存有效期，单位：秒（86400秒 = 24小时）
-  cache_dir: ".cache/llm" # 缓存目录
+   # 模型配置 - 应从环境变量中获取，这里不设置默认值
+   # 格式: "provider/model"，例如: "openai/gpt-4", "anthropic/claude-3-opus-20240229"
+   # 对于 OpenRouter，格式应为: "openrouter/provider/model"，例如: "openrouter/anthropic/claude-3-opus-20240229"
+   model: ""
+   # Token 限制配置（两个参数共同控制LLM的上下文窗口使用）
+   max_tokens: 4000 # 控制LLM输出的最大token数
+   # max_input_tokens: 25000 # 控制输入到LLM的最大token数
+   # 注意: max_input_tokens + max_tokens 的总和不应超过模型的最大上下文长度
+   temperature: 0.7
+   # 缓存配置
+   cache_enabled: true # 是否启用缓存
+   cache_ttl: 86400 # 缓存有效期，单位：秒（86400秒 = 24小时）
+   cache_dir: ".cache/llm" # 缓存目录
 
-  # OpenAI 配置
-  openai:
-    base_url: "https://api.openai.com/v1"
+   # OpenAI 配置
+   openai:
+      base_url: "https://api.openai.com/v1"
 
-  # OpenRouter 配置
-  openrouter:
-    base_url: "https://openrouter.ai/api/v1"
-    app_url: "http://localhost:3000"
-    app_name: "Codebase Knowledge Builder"
+   # OpenRouter 配置
+   openrouter:
+      base_url: "https://openrouter.ai/api/v1"
+      app_url: "http://localhost:3000"
+      app_name: "Codebase Knowledge Builder"
 
-  # 阿里百炼配置
-  alibaba:
-    base_url: "https://dashscope.aliyuncs.com/api/v1"
+   # 阿里百炼配置
+   alibaba:
+      base_url: "https://dashscope.aliyuncs.com/api/v1"
 
-  # 火山引擎配置
-  volcengine:
-    base_url: "https://api.volcengine.com/ml/api/v1/services"
-    service_id: "" # 需要在环境变量中设置
+   # 火山引擎配置
+   volcengine:
+      base_url: "https://api.volcengine.com/ml/api/v1/services"
+      service_id: "" # 需要在环境变量中设置
 
-  # 硅基流动配置
-  moonshot:
-    base_url: "https://api.moonshot.cn/v1"
+   # 硅基流动配置
+   moonshot:
+      base_url: "https://api.moonshot.cn/v1"
 
 # Langfuse 配置
 langfuse:
-  enabled: true
-  host: "https://cloud.langfuse.com"
-  project_name: "codebase-knowledge-builder"
+   enabled: true
+   host: "https://cloud.langfuse.com"
+   project_name: "codebase-knowledge-builder"
 
 # Git 仓库配置
 git:
-  default_branch: "main"
-  cache_ttl: 86400 # 24小时，单位：秒
-  max_commits: 100
+   default_branch: "main"
+   cache_ttl: 86400 # 24小时，单位：秒
+   max_commits: 100
 
 # 节点配置
 nodes:
-  input:
-    default_repo_url: ""
-    default_branch: ""
-    default_output_dir: "docs_output"
-    default_language: "zh"
-
-  prepare_repo:
-    cache_ttl: 86400 # 24小时，单位：秒
-    force_clone: false
-
-  analyze_history:
-    max_commits: 100
-    include_file_history: true
-    analyze_contributors: true
-    summary_prompt_template: |
-      你是一个代码库历史分析专家。请分析以下 Git 提交历史，并提供一个全面的总结。
-
-      提交历史:
-      {commit_history}
-
-      贡献者信息:
-      {contributors}
-
-      请提供以下内容:
-      1. 代码库的总体发展历程和主要里程碑
-      2. 主要贡献者及其贡献领域
-      3. 代码库的主要模块和组件（基于提交信息推断）
-      4. 代码库的开发模式和协作方式
-      5. 任何其他有价值的见解
-
-      请以 Markdown 格式输出，使用适当的标题、列表和强调。
-
-  parse_code_batch:
-    max_files: 1000
-    batch_size: 100
-    ignore_patterns:
-      - ".git"
-      - ".vscode"
-      - ".idea"
-      - "__pycache__"
-      - "node_modules"
-      - "venv"
-      - ".env"
-      - ".venv"
-      - ".DS_Store"
-      - ".pytest_cache"
-      - ".coverage"
-      - "htmlcov"
-      - "dist"
-      - "build"
-      - ".cache"
-    binary_extensions:
-      - "png"
-      - "jpg"
-      - "jpeg"
-      - "gif"
-      - "bmp"
-      - "ico"
-      - "svg"
-      - "pdf"
-      - "doc"
-      - "docx"
-      - "ppt"
-      - "pptx"
-      - "xls"
-      - "xlsx"
-      - "zip"
-      - "tar"
-      - "gz"
-      - "rar"
-      - "7z"
-      - "exe"
-      - "dll"
-      - "so"
-      - "dylib"
-      - "pyc"
-      - "pyo"
-      - "pyd"
-      - "class"
-      - "o"
-      - "obj"
-      - "bin"
-      - "dat"
-
-  ai_understand_core_modules:
-    retry_count: 3
-    quality_threshold: 0.7
-    language_detection: true
-    terminology_extraction: true
-    core_modules_prompt_template: |
-      你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
-
-      代码库结构:
-      {code_structure}
-
-      依赖关系:
-      {dependencies}
-
-      请提供以下内容:
-      1. 核心模块列表，每个模块包括:
-         - 模块名称
-         - 模块路径
-         - 模块功能描述
-         - 模块重要性评分 (1-10)
-         - 模块依赖关系
-      2. 整体架构概述
-      3. 模块之间的关系
-
-      重要提示：
-      1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
-      2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
-      3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
-      4. 不要生成虚构的API，应该使用代码库中实际存在的API。
-      5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
-      6. 请使用{repo_name}的实际模块名称和文件路径，例如，如果是requests库，应该使用requests.api, requests.sessions等实际存在的模块。
-
-  prepare_rag_data:
-    max_chunk_size: 1000
-    chunk_overlap: 200
-    max_files: 100
-    exclude_extensions:
-      - "jpg"
-      - "jpeg"
-      - "png"
-      - "gif"
-      - "svg"
-      - "ico"
-      - "pdf"
-      - "zip"
-      - "tar"
-      - "gz"
-    include_extensions:
-      - "py"
-      - "js"
-      - "ts"
-      - "java"
-      - "c"
-      - "cpp"
-      - "h"
-      - "hpp"
-      - "cs"
-      - "go"
-      - "rs"
-      - "md"
-      - "txt"
-      - "json"
-      - "yml"
-      - "yaml"
-      - "toml"
-
-  generate_api_docs:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    api_docs_prompt_template: |
-      你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
-
-      代码库结构:
-      {code_structure}
-
-      核心模块:
-      {core_modules}
-
-      请提供以下内容:
-      1. API概述
-         - 主要API接口和功能
-         - API设计原则和约定
-      2. 核心API详解
-         - 每个核心API的功能和用法
-         - 参数说明和返回值
-         - 使用示例
-      3. API分类
-         - 按功能分类的API列表
-         - 每类API的主要用途
-      4. 错误处理
-         - 常见错误码和含义
-         - 错误处理最佳实践
-      5. 版本兼容性（如果适用）
-         - 版本间的API变化
-         - 向后兼容性考虑
-
-      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      确保文档中的代码引用能够链接到源代码。
-
-  generate_overall_architecture:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    architecture_prompt_template: |
-      你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
-
-      代码库结构:
-      {code_structure}
-
-      核心模块:
-      {core_modules}
-
-      历史分析:
-      {history_analysis}
-
-      请提供以下内容:
-      1. 代码库概述
-         - 项目名称和简介
-         - 主要功能和用途
-         - 技术栈概述
-      2. 系统架构
-         - 高层架构图（用 ASCII 或 Markdown 表示）
-         - 主要组件和它们的职责
-         - 组件之间的交互
-      3. 核心模块详解
-         - 每个核心模块的功能和职责
-         - 模块之间的依赖关系
-         - 关键接口和数据流
-      4. 设计模式和原则
-         - 使用的主要设计模式
-         - 代码组织原则
-         - 最佳实践
-      5. 部署架构（如果适用）
-         - 部署环境
-         - 部署流程
-         - 扩展性考虑
-
-      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-
-  generate_timeline:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    timeline_prompt_template: |
-      你是一个代码库历史分析专家。请根据以下信息生成一个全面的代码库演变时间线文档。
-
-      历史分析:
-      {history_analysis}
-
-      请提供以下内容:
-      1. 项目演变概述
-         - 项目的起源和发展历程
-         - 主要里程碑和转折点
-      2. 关键版本时间线
-         - 按时间顺序列出关键版本
-         - 每个版本的主要变化和贡献
-      3. 功能演进
-         - 主要功能的引入和发展
-         - 技术栈的变化和升级
-      4. 贡献者分析
-         - 主要贡献者及其贡献领域
-         - 贡献模式和团队协作方式
-      5. 未来发展趋势
-         - 基于历史数据的发展趋势预测
-         - 潜在的改进方向
-
-      请以 Markdown 格式输出，使用适当的标题、列表、表格和时间线图表。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      如果可能，请使用 Mermaid 语法创建时间线图表。
-
-  generate_dependency:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    dependency_prompt_template: |
-      你是一个代码库依赖分析专家。请根据以下信息生成一个全面的代码库依赖关系文档。
-
-      代码库结构:
-      {code_structure}
-
-      核心模块:
-      {core_modules}
-
-      请提供以下内容:
-      1. 依赖概述
-         - 主要依赖类型和分类
-         - 依赖管理策略
-      2. 内部依赖关系
-         - 模块间的依赖关系
-         - 关键组件的依赖图
-      3. 外部依赖分析
-         - 主要第三方依赖
-         - 版本要求和兼容性
-      4. 依赖优化建议
-         - 潜在的循环依赖问题
-         - 依赖简化和优化方向
-      5. 依赖管理最佳实践
-         - 推荐的依赖管理方法
-         - 版本控制和更新策略
-
-      请以 Markdown 格式输出，使用适当的标题、列表、表格和依赖图。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      如果可能，请使用 Mermaid 语法创建依赖关系图。
-
-  generate_glossary:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    glossary_prompt_template: |
-      你是一个代码库术语专家。请根据以下信息生成一个全面的代码库术语表。
-
-      代码库结构:
-      {code_structure}
-
-      核心模块:
-      {core_modules}
-
-      历史分析:
-      {history_analysis}
-
-      请提供以下内容:
-      1. 术语表概述
-         - 术语表的目的和使用方法
-         - 术语分类方式
-      2. 核心术语
-         - 项目特有的术语和概念
-         - 每个术语的详细解释和用法
-      3. 技术术语
-         - 项目使用的技术栈相关术语
-         - 每个术语的详细解释和在项目中的应用
-      4. 缩写和首字母缩略词
-         - 项目中使用的缩写和首字母缩略词
-         - 每个缩写的全称和含义
-      5. 命名约定
-         - 项目中使用的命名约定
-         - 不同类型实体的命名规则
-
-      请以 Markdown 格式输出，使用适当的标题、列表和表格。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      按字母顺序排列术语，并提供交叉引用。
-
-  generate_quick_look:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    quick_look_prompt_template: |
-      你是一个代码库分析专家。请根据以下信息生成一个简洁的代码库速览文档，让读者能在5分钟内了解这个代码库的核心内容。
-
-      代码库结构:
-      {code_structure}
-
-      核心模块:
-      {core_modules}
-
-      历史分析:
-      {history_analysis}
-
-      请提供以下内容:
-      1. 项目概述 (1-2段)
-         - 项目的主要目的和功能
-         - 核心价值和应用场景
-      2. 关键特性 (5-7个要点)
-         - 最重要的功能和特性
-         - 每个特性的简短描述
-      3. 技术栈概览 (简短列表)
-         - 主要编程语言和框架
-         - 关键依赖和工具
-      4. 架构速览 (简短描述)
-         - 核心架构模式
-         - 主要组件及其关系
-      5. 快速上手指南 (3-5个步骤)
-         - 如何快速开始使用
-         - 基本使用示例
-
-      请以 Markdown 格式输出，使用适当的标题、列表和强调。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      整个文档应该简洁明了，不超过500字。
-
-  content_quality_check:
-    retry_count: 2
-    quality_threshold: 0.7
-    auto_fix: true
-    check_aspects:
-      - "completeness"
-      - "accuracy"
-      - "readability"
-      - "formatting"
-    quality_check_prompt_template: |
-      你是一个内容质量检查专家。请评估以下文档的质量，并提供改进建议。
-
-      文档内容:
-      {content}
-
-      请从以下方面评估文档质量:
-      1. 完整性: 文档是否涵盖了所有必要的信息？是否有明显的遗漏？
-      2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
-      3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
-      4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
-
-      对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
-
-      如果需要修复，请提供修复后的完整文档。
-
-  generate_module_details:
-    retry_count: 3
-    quality_threshold: 0.7
-    output_format: "markdown"
-    max_modules_per_batch: 5
-    module_details_prompt_template: |
-      你是一个代码库文档专家。请为以下模块生成详细的文档。
-
-      模块信息:
-      {module_info}
-
-      代码内容:
-      {code_content}
-
-      请提供以下内容:
-      1. 模块概述
-         - 模块名称和路径
-         - 模块的主要功能和用途
-         - 模块在整个代码库中的角色
-      2. 类和函数详解
-         - 每个类的功能、属性和方法
-         - 每个函数的功能、参数和返回值
-         - 重要的代码片段解释
-      3. 使用示例
-         - 如何使用该模块的主要功能
-         - 常见用例和模式
-      4. 依赖关系
-         - 该模块依赖的其他模块
-         - 依赖该模块的其他模块
-      5. 注意事项和最佳实践
-         - 使用该模块时需要注意的事项
-         - 推荐的最佳实践
-
-      请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
-      使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-      确保文档中的代码引用能够链接到源代码。
-
-  module_quality_check:
-    retry_count: 2
-    quality_threshold: 0.7
-    auto_fix: true
-    check_aspects:
-      - "completeness"
-      - "accuracy"
-      - "readability"
-      - "formatting"
-    quality_check_prompt_template: |
-      你是一个模块文档质量检查专家。请评估以下模块文档的质量，并提供改进建议。
-
-      文档内容:
-      {content}
-
-      请从以下方面评估文档质量:
-      1. 完整性: 文档是否涵盖了模块的所有重要方面？是否有明显的遗漏？
-      2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
-      3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
-      4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
-
-      对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
-
-      如果需要修复，请提供修复后的完整文档。
-
-  combine_translate:
-    retry_count: 3
-    quality_threshold: 0.7
-    preserve_technical_terms: true
-    translation_prompt_template: |
-      你是一个专业的技术文档翻译专家。请将以下技术文档内容翻译成{target_language}语言。
-
-      请注意以下要求：
-      1. 保持代码、变量名和技术术语的原始形式，不要翻译它们
-      2. 保持 Markdown 格式，包括标题、列表、表格、代码块等
-      3. 保持文档结构和链接
-      4. 翻译应该准确、流畅、符合技术文档风格
-      5. 保留原文中的表情符号
-
-      以下是需要保留原样的技术术语列表：
-      {technical_terms}
-
-      需要翻译的内容：
-      {content}
-
-    consistency_check_prompt_template: |
-      你是一个技术文档质量检查专家。请检查以下技术文档内容的一致性问题，并提供修复建议。
-
-      请检查以下方面：
-      1. 术语一致性：同一概念在整个文档中应使用相同的术语
-      2. 格式一致性：标题、列表、表格等格式应保持一致
-      3. 风格一致性：语言风格、语气应保持一致
-      4. 链接一致性：确保所有内部链接正确指向目标
-      5. 结构一致性：文档结构应合理、层次分明
-
-      文档内容：
-      {content}
-
-  format_output:
-    output_format: "markdown"
-    add_toc: true
-    add_nav_links: true
-    add_emojis: true
-    justdoc_compatible: true
-    template: |
-      # {title}
-
-      {toc}
-
-      ## 简介
-
-      {introduction}
-
-      ## 系统架构
-
-      {architecture}
-
-      ## 核心模块
-
-      {core_modules}
-
-      ## 使用示例
-
-      {examples}
-
-      ## 常见问题
-
-      {faq}
-
-      ## 参考资料
-
-      {references}
-
-  interactive_qa:
-    retry_count: 3
-    quality_threshold: 0.7
-    max_context_chunks: 5
-    qa_prompt_template: |
-      你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。
-
-      代码库信息:
-      {code_info}
-
-      相关上下文:
-      {context}
-
-      用户问题:
-      {question}
-
-      请提供准确、全面的回答，包括相关代码引用和解释。如果无法回答，请说明原因。
-
-  publish:
-    platforms:
-      - "github"
-    github_pages_branch: "gh-pages"
-    github_pages_dir: "docs"
-    github_pages_index: "index.md"
-    github_pages_theme: "jekyll-theme-cayman"
-    github_pages_title: "代码库文档"
-    github_pages_description: "自动生成的代码库文档"
+   input:
+      default_repo_url: ""
+      default_branch: ""
+      default_output_dir: "docs_output"
+      default_language: "zh"
+
+   prepare_repo:
+      cache_ttl: 86400 # 24小时，单位：秒
+      force_clone: false
+
+   analyze_history:
+      max_commits: 100
+      include_file_history: true
+      analyze_contributors: true
+      summary_prompt_template: |
+         你是一个代码库历史分析专家。请分析以下 Git 提交历史，并提供一个全面的总结。
+
+         提交历史:
+         {commit_history}
+
+         贡献者信息:
+         {contributors}
+
+         请提供以下内容:
+         1. 代码库的总体发展历程和主要里程碑
+         2. 主要贡献者及其贡献领域
+         3. 代码库的主要模块和组件（基于提交信息推断）
+         4. 代码库的开发模式和协作方式
+         5. 任何其他有价值的见解
+
+         请以 Markdown 格式输出，使用适当的标题、列表和强调。
+
+   parse_code_batch:
+      max_files: 1000
+      batch_size: 100
+      ignore_patterns:
+         - ".git"
+         - ".vscode"
+         - ".idea"
+         - "__pycache__"
+         - "node_modules"
+         - "venv"
+         - ".env"
+         - ".venv"
+         - ".DS_Store"
+         - ".pytest_cache"
+         - ".coverage"
+         - "htmlcov"
+         - "dist"
+         - "build"
+         - ".cache"
+      binary_extensions:
+         - "png"
+         - "jpg"
+         - "jpeg"
+         - "gif"
+         - "bmp"
+         - "ico"
+         - "svg"
+         - "pdf"
+         - "doc"
+         - "docx"
+         - "ppt"
+         - "pptx"
+         - "xls"
+         - "xlsx"
+         - "zip"
+         - "tar"
+         - "gz"
+         - "rar"
+         - "7z"
+         - "exe"
+         - "dll"
+         - "so"
+         - "dylib"
+         - "pyc"
+         - "pyo"
+         - "pyd"
+         - "class"
+         - "o"
+         - "obj"
+         - "bin"
+         - "dat"
+
+   ai_understand_core_modules:
+      retry_count: 3
+      quality_threshold: 0.7
+      language_detection: true
+      terminology_extraction: true
+      core_modules_prompt_template: |
+         你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
+
+         代码库结构:
+         {code_structure}
+
+         依赖关系:
+         {dependencies}
+
+         请提供以下内容:
+         1. 核心模块列表，每个模块包括:
+            - 模块名称
+            - 模块路径
+            - 模块功能描述
+            - 模块重要性评分 (1-10)
+            - 模块依赖关系
+         2. 整体架构概述
+         3. 模块之间的关系 (请以列表形式给出，每一项格式为: '模块A -> 模块B'，表示模块A调用或依赖模块B。例如: ["requests.api -> requests.sessions", "requests.sessions -> requests.adapters"]):
+
+         重要提示：
+         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+         4. 不要生成虚构的API，应该使用代码库中实际存在的API。
+         5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
+         6. 请使用{repo_name}的实际模块名称和文件路径，例如，如果是requests库，应该使用requests.api, requests.sessions等实际存在的模块。
+
+   prepare_rag_data:
+      max_chunk_size: 1000
+      chunk_overlap: 200
+      max_files: 100
+      exclude_extensions:
+         - "jpg"
+         - "jpeg"
+         - "png"
+         - "gif"
+         - "svg"
+         - "ico"
+         - "pdf"
+         - "zip"
+         - "tar"
+         - "gz"
+      include_extensions:
+         - "py"
+         - "js"
+         - "ts"
+         - "java"
+         - "c"
+         - "cpp"
+         - "h"
+         - "hpp"
+         - "cs"
+         - "go"
+         - "rs"
+         - "md"
+         - "txt"
+         - "json"
+         - "yml"
+         - "yaml"
+         - "toml"
+
+   generate_api_docs:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      api_docs_prompt_template: |
+         你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
+
+         代码库结构:
+         {code_structure}
+
+         核心模块:
+         {core_modules}
+
+         请提供以下内容:
+         1. API概述
+            - 主要API接口和功能
+            - API设计原则和约定
+         2. 核心API详解
+            - 每个核心API的功能和用法
+            - 参数说明和返回值
+            - 使用示例
+         3. API分类
+            - 按功能分类的API列表
+            - 每类API的主要用途
+         4. 错误处理
+            - 常见错误码和含义
+            - 错误处理最佳实践
+         5. 版本兼容性（如果适用）
+            - 版本间的API变化
+            - 向后兼容性考虑
+
+         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+         确保文档中的代码引用能够链接到源代码。
+
+   generate_overall_architecture:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      architecture_prompt_template: |
+         你是一个代码库架构专家。请根据以下信息生成一个全面的代码库架构文档。
+
+         你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
+         代码库结构:
+         {code_structure}
+
+         核心模块:
+         {core_modules}
+
+         历史分析:
+         {history_analysis}
+
+         请提供以下内容:
+         1. 代码库概述
+            - 项目名称({repo_name})和简介
+            - 主要功能和用途
+            - 技术栈概述
+         2. 系统架构
+            - 高层架构图（必须使用Mermaid图表表示）
+            - 主要组件和它们的职责
+            - 组件之间的交互流程（使用Mermaid时序图或流程图）
+         3. 核心模块详解
+            - 每个核心模块的功能和职责
+            - 模块之间的依赖关系（使用Mermaid流程图表示）
+            - 关键接口和数据流（使用Mermaid图表表示）
+         4. 设计模式和原则
+            - 使用的主要设计模式（使用Mermaid图表展示至少一个关键设计模式）
+            - 代码组织原则
+            - 最佳实践
+         5. 部署架构（如果适用）
+            - 部署环境（使用Mermaid图表表示）
+            - 部署流程（使用Mermaid时序图表示）
+            - 扩展性考虑
+
+         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+
+         必须包含至少4个Mermaid图表，用于可视化：
+         1. 系统高层架构
+         2. 模块依赖关系
+         3. 关键数据流或处理流程
+         4. 一个设计模式实现或部署架构
+
+         Mermaid图表示例：
+
+         ```mermaid
+         graph TD
+             A[模块A] --> B[模块B]
+             A --> C[模块C]
+             B --> D[模块D]
+             C --> D
+             style A fill:#f9d77e,stroke:#e8ae00
+             style B fill:#a8d6ff,stroke:#0066cc
+             style C fill:#a8d6ff,stroke:#0066cc
+             style D fill:#b9f5b9,stroke:#00a300
+         ```
+
+         ```mermaid
+         sequenceDiagram
+             participant 用户
+             participant API
+             participant 数据库
+             用户->>API: 请求数据
+             API->>数据库: 查询数据
+             数据库-->>API: 返回结果
+             API-->>用户: 响应
+         ```
+
+         ```mermaid
+         classDiagram
+             class 核心类 {
+                 +属性1
+                 +属性2
+                 +方法1()
+                 +方法2()
+             }
+             class 子类1
+             class 子类2
+             核心类 <|-- 子类1
+             核心类 <|-- 子类2
+         ```
+
+         重要提示：
+         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+         4. 不要生成虚构的API，应该使用代码库中实际存在的API。
+         5. 如果你不确定某个信息，请基于提供的代码库结构和历史分析进行合理推断，而不是编造。
+         6. 必须包含至少4个Mermaid图表，这是强制要求！文档中必须包含Mermaid图表来可视化系统架构和模块依赖关系。
+
+   generate_timeline:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      timeline_prompt_template: |
+         你是一个代码库历史分析专家。请根据以下信息生成一个全面的代码库演变时间线文档。
+
+         历史分析:
+         {history_analysis}
+
+         请提供以下内容:
+         1. 项目演变概述
+            - 项目的起源和发展历程
+            - 主要里程碑和转折点
+         2. 关键版本时间线
+            - 按时间顺序列出关键版本
+            - 每个版本的主要变化和贡献
+         3. 功能演进
+            - 主要功能的引入和发展
+            - 技术栈的变化和升级
+         4. 贡献者分析
+            - 主要贡献者及其贡献领域
+            - 贡献模式和团队协作方式
+         5. 未来发展趋势
+            - 基于历史数据的发展趋势预测
+            - 潜在的改进方向
+
+         请以 Markdown 格式输出，使用适当的标题、列表、表格和时间线图表。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+
+         必须使用 Mermaid 语法创建至少两个图表：
+         1. 一个时间线图表，展示项目的关键里程碑
+         2. 一个贡献者活跃度或功能演进图表
+
+         Mermaid时间线图表示例：
+
+         ```mermaid
+         timeline
+             title 项目发展时间线
+             section 2011
+                 创建项目 : 初始版本发布
+             section 2012
+                 添加会话支持 : 增强功能
+             section 2013
+                 重构核心模块 : 性能优化
+             section 2014
+                 2.0版本发布 : 重大更新
+                 增加异步支持 : 新特性
+             section 2015
+                 安全更新 : 修复漏洞
+         ```
+
+         Mermaid饼图示例（用于展示贡献者分布）：
+
+         ```mermaid
+         pie
+             title 贡献者代码贡献比例
+             "开发者A" : 40
+             "开发者B" : 30
+             "开发者C" : 20
+             "其他贡献者" : 10
+         ```
+
+         Mermaid流程图示例（用于展示功能演进）：
+
+         ```mermaid
+         graph TD
+             A[初始版本] --> B[基础功能]
+             B --> C[高级特性]
+             B --> D[安全增强]
+             C --> E[性能优化]
+             D --> E
+             E --> F[当前版本]
+             style A fill:#f9d77e
+             style F fill:#b9f5b9
+         ```
+
+         重要提示：必须包含至少两个Mermaid图表，这是强制要求！
+
+   generate_dependency:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      dependency_prompt_template: |
+         你是一个代码库依赖分析专家。请根据以下信息生成一个全面的代码库依赖关系文档。
+
+         你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
+         代码库结构:
+         {code_structure}
+
+         核心模块:
+         {core_modules}
+
+         请提供以下内容:
+         1. 依赖概述
+            - 主要依赖类型和分类
+            - 依赖管理策略
+         2. 内部依赖关系
+            - 模块间的依赖关系（使用Mermaid图表展示）
+            - 关键组件的依赖图（使用Mermaid图表展示）
+         3. 外部依赖分析
+            - 主要第三方依赖（使用Mermaid图表或表格展示）
+            - 版本要求和兼容性
+         4. 依赖优化建议
+            - 潜在的循环依赖问题（如有，使用Mermaid图表展示）
+            - 依赖简化和优化方向
+         5. 依赖管理最佳实践
+            - 推荐的依赖管理方法
+            - 版本控制和更新策略
+
+         请以 Markdown 格式输出，使用适当的标题、列表、表格和依赖图。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+
+         必须使用 Mermaid 语法创建至少两个图表：
+         1. 一个模块间依赖关系图
+         2. 一个外部依赖关系图或依赖层次结构图
+
+         Mermaid依赖关系图示例：
+
+         ```mermaid
+         graph TD
+             A[核心模块] --> B[子模块1]
+             A --> C[子模块2]
+             B --> D[工具模块]
+             C --> D
+             A --> E[外部依赖1]
+             B --> F[外部依赖2]
+             style A fill:#f9d77e,stroke:#e8ae00
+             style E fill:#a8d6ff,stroke:#0066cc
+             style F fill:#a8d6ff,stroke:#0066cc
+         ```
+
+         Mermaid类图示例（用于展示依赖关系）：
+
+         ```mermaid
+         classDiagram
+             class 核心模块 {
+                 +依赖项1
+                 +依赖项2
+             }
+             class 子模块1
+             class 子模块2
+             class 外部依赖
+             核心模块 --> 子模块1
+             核心模块 --> 子模块2
+             子模块1 --> 外部依赖
+         ```
+
+         重要提示：
+         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
+         4. 必须包含至少两个Mermaid图表，这是强制要求！
+
+   generate_glossary:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      glossary_prompt_template: |
+         你是一个代码库术语专家。请根据以下信息生成一个全面的代码库术语表文档。
+
+         你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
+         代码库结构:
+         {code_structure}
+
+         核心模块:
+         {core_modules}
+
+         历史分析:
+         {history_analysis}
+
+         请提供以下内容:
+         1. 术语表概述
+            - 术语表的目的和使用方法
+            - 术语分类和组织方式
+         2. 项目特定术语
+            - 项目中使用的特定术语和概念
+            - 每个术语的定义和用法
+         3. 技术术语
+            - 项目中使用的技术术语
+            - 每个术语的定义和相关技术背景
+         4. 缩写和首字母缩略词
+            - 项目中使用的缩写和首字母缩略词
+            - 每个缩写的全称和含义
+         5. 术语关系
+            - 术语之间的关系和层次结构（使用Mermaid图表展示）
+            - 相关术语的交叉引用
+
+         请以 Markdown 格式输出，使用适当的标题、列表和表格。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+         术语表应按字母顺序排列，便于查找。
+
+         必须使用 Mermaid 语法创建至少一个图表，展示关键术语之间的关系或层次结构。例如：
+
+         ```mermaid
+         graph TD
+             A[核心概念] --> B[子概念1]
+             A --> C[子概念2]
+             B --> D[相关术语1]
+             C --> E[相关术语2]
+             style A fill:#f9d77e,stroke:#e8ae00
+             style B fill:#a8d6ff,stroke:#0066cc
+             style C fill:#a8d6ff,stroke:#0066cc
+         ```
+
+         或者使用思维导图形式：
+
+         ```mermaid
+         mindmap
+             root((核心概念))
+               术语分类1
+                 子术语1.1
+                 子术语1.2
+               术语分类2
+                 子术语2.1
+                 子术语2.2
+         ```
+
+         重要提示：
+         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+         3. 不要生成虚构的术语，应该使用代码库中实际存在的术语。
+         4. 必须包含至少一个Mermaid图表，这是强制要求！
+
+   generate_quick_look:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      quick_look_prompt_template: |
+         你是一个代码库分析专家。请根据以下信息生成一个简洁的代码库速览文档，让读者能在5分钟内了解这个代码库的核心内容。
+
+         你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
+
+         代码库结构:
+         {code_structure}
+
+         核心模块:
+         {core_modules}
+
+         历史分析:
+         {history_analysis}
+
+         请提供以下内容:
+         1. 项目概述 (1-2段)
+            - 项目的主要目的和功能
+            - 核心价值和应用场景
+         2. 关键特性 (5-7个要点)
+            - 最重要的功能和特性
+            - 每个特性的简短描述
+         3. 技术栈概览 (简短列表)
+            - 主要编程语言和框架
+            - 关键依赖和工具
+         4. 架构速览 (简短描述)
+            - 核心架构模式（使用Mermaid图表展示）
+            - 主要组件及其关系
+         5. 快速上手指南 (3-5个步骤)
+            - 如何快速开始使用
+            - 基本使用示例（使用代码块展示）
+
+         请以 Markdown 格式输出，使用适当的标题、列表和强调。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+         整个文档应该简洁明了，不超过500字。
+
+         必须使用 Mermaid 语法创建至少一个图表，展示项目的核心架构或主要组件关系。例如：
+
+         ```mermaid
+         graph LR
+             A[用户] --> B[API接口]
+             B --> C[核心功能]
+             C --> D[数据存储]
+             style B fill:#a8d6ff,stroke:#0066cc
+             style C fill:#f9d77e,stroke:#e8ae00
+         ```
+
+         或者使用流程图展示基本使用流程：
+
+         ```mermaid
+         flowchart TD
+             A[开始] --> B[安装]
+             B --> C[配置]
+             C --> D[使用]
+             D --> E[结束]
+             style A fill:#f9d77e
+             style E fill:#b9f5b9
+         ```
+
+         重要提示：
+         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
+         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
+         3. 不要生成虚构的功能，应该使用代码库中实际存在的功能。
+         4. 必须包含至少一个Mermaid图表，这是强制要求！
+
+   content_quality_check:
+      retry_count: 2
+      quality_threshold: 0.7
+      auto_fix: false
+      check_aspects:
+         - "completeness"
+         - "accuracy"
+         - "readability"
+         - "formatting"
+      quality_check_prompt_template: |
+         你是一个内容质量检查专家。请评估以下文档的质量，并提供改进建议。
+
+         文档内容:
+         {content}
+
+         请从以下方面评估文档质量:
+         1. 完整性: 文档是否涵盖了所有必要的信息？是否有明显的遗漏？
+         2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
+         3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
+         4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
+         5. 图表: 文档是否包含必要的图表？图表是否清晰易懂？
+
+         对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
+
+         请不要提供修复后的完整文档，只提供详细的改进建议，让生成文档的节点能够根据这些建议重新生成更好的文档。
+
+         你的评估应该包括以下内容：
+         1. 每个方面的评分和具体问题
+         2. 针对每个问题的具体改进建议
+         3. 对缺失内容的补充建议
+         4. 对图表的改进建议（如需要添加什么类型的图表，或如何改进现有图表）
+
+   generate_module_details:
+      retry_count: 3
+      quality_threshold: 0.7
+      output_format: "markdown"
+      max_modules_per_batch: 5
+      module_details_prompt_template: |
+         你是一个代码库文档专家。请为以下模块生成详细的文档。
+
+         模块信息:
+         {module_info}
+
+         代码内容:
+         {code_content}
+
+         请提供以下内容:
+         1. 模块概述
+            - 模块名称和路径
+            - 模块的主要功能和用途
+            - 模块在整个代码库中的角色
+         2. 类和函数详解
+            - 每个类的功能、属性和方法
+            - 每个函数的功能、参数和返回值
+            - 重要的代码片段解释
+         3. 使用示例
+            - 如何使用该模块的主要功能
+            - 常见用例和模式
+         4. 依赖关系
+            - 该模块依赖的其他模块
+            - 依赖该模块的其他模块
+         5. 注意事项和最佳实践
+            - 使用该模块时需要注意的事项
+            - 推荐的最佳实践
+
+         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
+         确保文档中的代码引用能够链接到源代码。
+
+   module_quality_check:
+      retry_count: 2
+      quality_threshold: 0.7
+      auto_fix: false
+      check_aspects:
+         - "completeness"
+         - "accuracy"
+         - "readability"
+         - "formatting"
+         - "visualization"
+      quality_check_prompt_template: |
+         你是一个模块文档质量检查专家。请评估以下模块文档的质量，并提供改进建议。
+
+         文档内容:
+         {content}
+
+         请从以下方面评估文档质量:
+         1. 完整性: 文档是否涵盖了模块的所有重要方面？是否有明显的遗漏？
+         2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
+         3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
+         4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
+         5. 可视化: 文档是否包含必要的图表或示意图？是否有助于理解模块结构和功能？
+
+         对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
+
+         请不要提供修复后的完整文档，只提供详细的改进建议，让生成文档的节点能够根据这些建议重新生成更好的文档。
+
+         你的评估应该包括以下内容：
+         1. 每个方面的评分和具体问题
+         2. 针对每个问题的具体改进建议
+         3. 对缺失内容的补充建议
+         4. 对可视化的改进建议（如需要添加什么类型的图表，或如何改进现有图表）
+         5. 对代码示例的改进建议（如需要添加什么类型的示例，或如何改进现有示例）
+
+   combine_content:
+      retry_count: 3
+      quality_threshold: 0.7
+      consistency_check_prompt_template: |
+         请检查以下技术文档内容的一致性问题，并提供修复建议。检查术语、格式、风格、链接和结构的一致性。
+
+         以JSON格式返回结果，格式如下：
+         ```json
+         {
+           "issues": [
+             {
+               "description": "问题描述",
+               "location": "问题位置",
+               "suggestion": "修复建议"
+             }
+           ]
+         }
+         ```
+
+         文档内容：
+         {content}
+
+   format_output:
+      output_format: "markdown"
+      add_toc: true
+      add_nav_links: true
+      add_emojis: true
+      justdoc_compatible: true
+      template: |
+         # {title}
+
+         {toc}
+
+         ## 简介
+
+         {introduction}
+
+         ## 系统架构
+
+         {architecture}
+
+         ## 核心模块
+
+         {core_modules}
+
+         ## 使用示例
+
+         {examples}
+
+         ## 常见问题
+
+         {faq}
+
+         ## 参考资料
+
+         {references}
+
+   interactive_qa:
+      retry_count: 3
+      quality_threshold: 0.7
+      max_context_chunks: 5
+      qa_prompt_template: |
+         你是一个代码库专家，熟悉这个代码库的所有细节。请根据以下信息回答用户的问题。
+
+         代码库信息:
+         {code_info}
+
+         相关上下文:
+         {context}
+
+         用户问题:
+         {question}
+
+         请提供准确、全面的回答，包括相关代码引用和解释。如果无法回答，请说明原因。
+
+   publish:
+      platforms:
+         - "github"
+      github_pages_branch: "gh-pages"
+      github_pages_dir: "docs"
+      github_pages_index: "index.md"
+      github_pages_theme: "jekyll-theme-cayman"
+      github_pages_title: "代码库文档"
+      github_pages_description: "自动生成的代码库文档"

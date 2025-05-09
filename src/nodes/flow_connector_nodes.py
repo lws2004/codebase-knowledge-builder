@@ -2,13 +2,13 @@
 
 from typing import Any, Dict
 
-from pocketflow import Node
+from pocketflow import AsyncFlow, AsyncNode
 
 
-class FlowConnectorNode(Node):
+class FlowConnectorNode(AsyncNode):
     """流程连接器节点，用于连接不同的流程"""
 
-    def __init__(self, flow):
+    def __init__(self, flow: AsyncFlow) -> None:
         """初始化流程连接器节点
 
         Args:
@@ -17,7 +17,7 @@ class FlowConnectorNode(Node):
         super().__init__()
         self.flow = flow
 
-    def prep(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+    async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段，获取共享存储
 
         Args:
@@ -28,7 +28,7 @@ class FlowConnectorNode(Node):
         """
         return shared
 
-    def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
         """执行阶段，运行流程
 
         Args:
@@ -37,9 +37,15 @@ class FlowConnectorNode(Node):
         Returns:
             执行结果
         """
-        return self.flow.run(prep_res)
+        # prep_res is the shared dictionary for the sub-flow to run with.
+        # The sub-flow (self.flow) will modify prep_res in place.
+        await self.flow.run_async(prep_res)  # Assuming self.flow is an AsyncFlow
+        # The result of an AsyncFlow's run_async is usually None or an action string,
+        # with modifications happening in the 'shared' dict (prep_res here).
+        # We need to return the modified shared state.
+        return prep_res
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    async def post_async(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，更新共享存储
 
         Args:
@@ -51,14 +57,15 @@ class FlowConnectorNode(Node):
             后续动作
         """
         # 将流程结果合并到共享存储中
-        shared.update(exec_res)
+        if isinstance(exec_res, dict):
+            shared.update(exec_res)
         return "default"
 
 
 class AnalyzeRepoConnector(FlowConnectorNode):
     """分析仓库流程连接器节点"""
 
-    def __init__(self, analyze_repo_flow):
+    def __init__(self, analyze_repo_flow: AsyncFlow) -> None:
         """初始化分析仓库流程连接器节点
 
         Args:
@@ -70,7 +77,7 @@ class AnalyzeRepoConnector(FlowConnectorNode):
 class GenerateContentConnector(FlowConnectorNode):
     """生成内容流程连接器节点"""
 
-    def __init__(self, generate_content_flow):
+    def __init__(self, generate_content_flow: AsyncFlow) -> None:
         """初始化生成内容流程连接器节点
 
         Args:

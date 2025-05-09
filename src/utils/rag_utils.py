@@ -53,7 +53,7 @@ def _smart_chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
 
     # 首先按段落分割，保持文本的自然结构
     paragraphs = text.split("\n\n")
-    current_chunk = []
+    current_chunk: List[str] = []
     current_size = 0
 
     for para in paragraphs:

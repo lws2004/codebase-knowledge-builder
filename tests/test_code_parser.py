@@ -1,4 +1,5 @@
 """测试代码解析器的脚本。"""
+
 import argparse
 import json
 import os
@@ -29,21 +30,21 @@ def main():
 
     # 设置自定义忽略模式
     code_parser.ignore_patterns = [
-        r'\.git',
-        r'\.vscode',
-        r'\.idea',
-        r'__pycache__',
-        r'node_modules',
-        r'venv',
-        r'\.env',
-        r'\.venv',
-        r'\.DS_Store',
-        r'\.pytest_cache',
-        r'\.coverage',
-        r'htmlcov',
-        r'dist',
-        r'build',
-        r'\.cache',
+        r"\.git",
+        r"\.vscode",
+        r"\.idea",
+        r"__pycache__",
+        r"node_modules",
+        r"venv",
+        r"\.env",
+        r"\.venv",
+        r"\.DS_Store",
+        r"\.pytest_cache",
+        r"\.coverage",
+        r"htmlcov",
+        r"dist",
+        r"build",
+        r"\.cache",
     ]
 
     # 解析代码库
@@ -74,7 +75,7 @@ def main():
             "directory_count": result["directory_count"],
             "language_stats": result["language_stats"],
             "file_types": {},
-            "directories": {}
+            "directories": {},
         }
 
         # 提取文件类型统计
@@ -89,12 +90,13 @@ def main():
             simplified_result["directories"][dir_path] = {
                 "type": dir_info.get("type", "directory"),
                 "files": [os.path.basename(f) for f in dir_info.get("files", [])],
-                "subdirectories": [os.path.basename(d) for d in dir_info.get("subdirectories", [])]
+                "subdirectories": [os.path.basename(d) for d in dir_info.get("subdirectories", [])],
             }
 
         json.dump(simplified_result, f, indent=2, ensure_ascii=False)
 
     print(f"\n结果已保存到: {args.output}")
+
 
 if __name__ == "__main__":
     main()

@@ -82,13 +82,16 @@ def test_serial_flow(test_shared):
     print(f"串行生成内容流程完成，耗时: {serial_time:.2f} 秒")
 
     # 验证结果
-    assert result["success"] is True
-    assert "architecture_doc" in result
-    assert "api_docs" in result
-    assert "timeline_doc" in result
-    assert "dependency_doc" in result
-    assert "glossary_doc" in result
-    assert "quick_look_doc" in result
+    if result is None:
+        assert False, "结果不应为None"
+    else:
+        assert result["success"] is True
+        assert "architecture_doc" in result
+        assert "api_docs" in result
+        assert "timeline_doc" in result
+        assert "dependency_doc" in result
+        assert "glossary_doc" in result
+        assert "quick_look_doc" in result
 
     # 存储时间供其他测试使用，但不返回
     test_serial_flow.time = serial_time
@@ -145,5 +148,6 @@ async def test_performance_comparison(test_shared):
     print(f"性能提升: {speedup:.2f}x")
 
     # 验证并行流程比串行流程快
-    # assert speedup > 1.0, f"并行流程应该比串行流程快，但实际上慢了 {1 / speedup:.2f}x" # 暂时注释掉，因为当前测试设置无法有效比较
+    # assert speedup > 1.0, f"并行流程应该比串行流程快，但实际上慢了 {1 / speedup:.2f}x"
+    # 暂时注释掉，因为当前测试设置无法有效比较
     print("注意：当前测试设置可能无法有效比较性能，已跳过速度断言。")

@@ -12,18 +12,23 @@ def log_and_notify(message: str, level: str = "info", notify: bool = False) -> N
 
     Args:
         message: 消息内容
-        level: 日志级别 (info, warning, error)
+        level: 日志级别 (debug, info, warning, error)
         notify: 是否通知用户
     """
     # 根据级别记录日志
-    if level == "warning":
+    log_level = level.lower()  # Ensure case-insensitivity
+    if log_level == "debug":
+        logger.debug(message)
+    elif log_level == "warning":
         logger.warning(message)
-    elif level == "error":
+    elif log_level == "error":
         logger.error(message)
-    else:
+    else:  # Default to info for "info" or any other unrecognized level
         logger.info(message)
 
     # 如果需要通知用户，可以在这里实现
     if notify:
         # 这里可以实现用户通知逻辑，如发送邮件、显示通知等
-        print(f"[通知] {message}")
+        # For now, just print.
+        # Consider adding level to notification print as well.
+        print(f"[通知][{log_level.upper()}] {message}")

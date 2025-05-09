@@ -1,13 +1,33 @@
 """内容质量检查节点，用于检查生成内容的质量。"""
 
+import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
 
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.llm_wrapper import LLMClient
+from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
+
+
+# Define TypedDicts for evaluation structure
+class ContentEvaluationCategory(TypedDict):  # noqa: D101
+    score: int
+    comments: str
+
+
+class ContentEvaluationResult(TypedDict):  # noqa: D101
+    clarity: ContentEvaluationCategory
+    completeness: ContentEvaluationCategory
+    accuracy: ContentEvaluationCategory
+    structure: ContentEvaluationCategory
+    readability: ContentEvaluationCategory
+    consistency: ContentEvaluationCategory
+    engagement: ContentEvaluationCategory  # Assuming engagement is always present
+    overall: int
+    needs_fix: bool
+    fix_suggestions: str
 
 
 class ContentQualityCheckNodeConfig(BaseModel):
@@ -164,14 +184,15 @@ class ContentQualityCheckNode(Node):
                 if success:
                     log_and_notify(f"成功检查内容质量 (质量分数: {quality_score['overall']})", "info")
 
-                    # 如果质量低于阈值且启用了自动修复，保存修复后的内容
-                    if quality_score["overall"] < quality_threshold and auto_fix and fixed_content:
+                    # 如果质量低于阈值，记录警告
+                    if quality_score["overall"] < quality_threshold:
                         log_and_notify(
-                            f"内容质量低于阈值 ({quality_score['overall']} < {quality_threshold})，正在修复", "warning"
+                            f"内容质量低于阈值 ({quality_score['overall']} < {quality_threshold})，需要改进", "warning"
                         )
 
-                        # 保存修复后的内容
-                        if file_path:
+                        # 如果启用了自动修复且有修复后的内容，保存修复后的内容
+                        if auto_fix and fixed_content and file_path:
+                            log_and_notify("自动修复已启用，正在保存修复后的内容", "info")
                             self._save_fixed_content(fixed_content, file_path)
                             log_and_notify(f"已保存修复后的内容到: {file_path}", "info")
 
@@ -223,23 +244,40 @@ class ContentQualityCheckNode(Node):
             "success": True,
         }
 
-        # 如果需要修复且有修复后的内容，更新原始内容
-        if exec_res.get("needs_fix", False) and exec_res.get("fixed_content"):
+        # 检查是否需要修复
+        needs_fix = exec_res.get("needs_fix", False)
+        quality_score = exec_res.get("quality_score", {}).get("overall", 0)
+
+        # 如果需要修复且启用了自动修复且有修复后的内容，更新原始内容
+        if needs_fix and self.config.auto_fix and exec_res.get("fixed_content"):
             if content_key in shared and "content" in shared[content_key]:
                 shared[content_key]["content"] = exec_res["fixed_content"]
                 log_and_notify(f"已更新 {content_key} 的内容", "info")
 
+                # 添加修复信息到共享存储
+                shared["quality_check"]["fixed"] = True
+                shared["quality_check"]["fixed_content"] = exec_res["fixed_content"]
+
         # 确定下一个动作
-        if exec_res.get("needs_fix", False) and not self.config.auto_fix:
-            log_and_notify(
-                f"内容质量检查完成，需要修复 (质量分数: {exec_res.get('quality_score', {}).get('overall', 0)})",
-                "info",
-                notify=True,
-            )
-            return "fix"
+        if needs_fix:
+            if self.config.auto_fix and exec_res.get("fixed_content"):
+                log_and_notify(
+                    f"内容质量检查完成，已自动修复 (质量分数: {quality_score})",
+                    "info",
+                    notify=True,
+                )
+                return "default"
+            else:
+                log_and_notify(
+                    f"内容质量检查完成，需要改进 (质量分数: {quality_score})",
+                    "info",
+                    notify=True,
+                )
+                # 返回需要修复的信号，让生成节点重新生成
+                return "fix"
         else:
             log_and_notify(
-                f"内容质量检查完成 (质量分数: {exec_res.get('quality_score', {}).get('overall', 0)})",
+                f"内容质量检查完成，质量良好 (质量分数: {quality_score})",
                 "info",
                 notify=True,
             )
@@ -297,7 +335,9 @@ class ContentQualityCheckNode(Node):
 
         return prompt
 
-    def _call_model(self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str) -> tuple:
+    def _call_model(
+        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
+    ) -> Tuple[ContentEvaluationResult, Optional[str], Dict[str, float], bool]:
         """调用 LLM
 
         Args:
@@ -336,16 +376,17 @@ class ContentQualityCheckNode(Node):
 
 请确保你的评估是客观的，并提供具体的改进建议。如果文档质量已经很好，可以简单说明。"""
 
-            # 调用 LLM
+            # 调用 LLM (保持同步)
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
-
-            response = llm_client.completion(messages=messages, temperature=0.3, model=model, trace_name="检查内容质量", max_input_tokens=None)
+            response = llm_client.completion(  # Keep sync call
+                messages=messages, temperature=0.3, model=model, trace_name="检查内容质量", max_input_tokens=None
+            )
 
             # 获取响应内容
             content = llm_client.get_completion_content(response)
 
             # 解析评估结果
-            evaluation = self._parse_evaluation(content)
+            evaluation: ContentEvaluationResult = self._parse_evaluation(content)
 
             # 提取修复后的内容
             fixed_content = self._extract_fixed_content(content)
@@ -364,7 +405,7 @@ class ContentQualityCheckNode(Node):
             log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
             raise
 
-    def _parse_evaluation(self, content: str) -> Dict[str, Any]:
+    def _parse_evaluation(self, content: str) -> ContentEvaluationResult:
         """解析评估结果
 
         Args:
@@ -373,59 +414,78 @@ class ContentQualityCheckNode(Node):
         Returns:
             评估结果
         """
-        evaluation = {
-            "completeness": {"score": 0, "comment": ""},
-            "accuracy": {"score": 0, "comment": ""},
-            "readability": {"score": 0, "comment": ""},
-            "formatting": {"score": 0, "comment": ""},
+        # 提取 JSON 部分
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            try:
+                parsed_json = json.loads(json_match.group(1))
+                # Basic validation/casting - might need more robust validation
+                return cast(ContentEvaluationResult, parsed_json)
+            except Exception as e:
+                log_and_notify(f"解析 JSON 失败: {str(e)}", "error")
+
+        # Fallback to manual parsing if JSON fails
+        result: ContentEvaluationResult = {
+            "clarity": {"score": 0, "comments": ""},
+            "completeness": {"score": 0, "comments": ""},
+            "accuracy": {"score": 0, "comments": ""},
+            "structure": {"score": 0, "comments": ""},
+            "readability": {"score": 0, "comments": ""},
+            "consistency": {"score": 0, "comments": ""},
+            "engagement": {"score": 0, "comments": ""},
             "overall": 0,
-            "suggestions": "",
+            "needs_fix": False,
+            "fix_suggestions": "",
         }
 
-        # 提取完整性评分
-        completeness_match = re.search(r"完整性:\s*(\d+)(?:/10)?(?:\s*分)?\s*-\s*(.+?)(?:\n|$)", content)
-        if completeness_match:
-            evaluation["completeness"]["score"] = int(completeness_match.group(1))
-            evaluation["completeness"]["comment"] = completeness_match.group(2).strip()
+        # Manual parsing logic (simplified example - might need refinement)
+        def extract_score(key: str) -> int:
+            match = re.search(rf"{key}.*?(\d+).*?[评分分数]", content, re.DOTALL | re.IGNORECASE)
+            return int(match.group(1)) if match else 0
 
-        # 提取准确性评分
-        accuracy_match = re.search(r"准确性:\s*(\d+)(?:/10)?(?:\s*分)?\s*-\s*(.+?)(?:\n|$)", content)
-        if accuracy_match:
-            evaluation["accuracy"]["score"] = int(accuracy_match.group(1))
-            evaluation["accuracy"]["comment"] = accuracy_match.group(2).strip()
+        try:
+            result["clarity"]["score"] = extract_score("清晰度|Clarity")
+            result["completeness"]["score"] = extract_score("完整性|Completeness")
+            result["accuracy"]["score"] = extract_score("准确性|Accuracy")
+            result["structure"]["score"] = extract_score("结构性|Structure")
+            result["readability"]["score"] = extract_score("可读性|Readability")
+            result["consistency"]["score"] = extract_score("一致性|Consistency")
+            result["engagement"]["score"] = extract_score("吸引力|Engagement")
 
-        # 提取可读性评分
-        readability_match = re.search(r"可读性:\s*(\d+)(?:/10)?(?:\s*分)?\s*-\s*(.+?)(?:\n|$)", content)
-        if readability_match:
-            evaluation["readability"]["score"] = int(readability_match.group(1))
-            evaluation["readability"]["comment"] = readability_match.group(2).strip()
+            overall_match = re.search(r"总体[评分分数].*?(\d+)", content, re.DOTALL | re.IGNORECASE)
+            if overall_match:
+                result["overall"] = int(overall_match.group(1))
+            else:
+                # 如果没有找到总体评分，使用其他评分的平均值
+                scores = [
+                    result["clarity"]["score"],
+                    result["completeness"]["score"],
+                    result["accuracy"]["score"],
+                    result["structure"]["score"],
+                    result["readability"]["score"],
+                    result["consistency"]["score"],
+                    result["engagement"]["score"],
+                ]
+                valid_scores = [s for s in scores if s > 0]
+                result["overall"] = int(sum(valid_scores) / len(valid_scores)) if valid_scores else 5
+        except Exception as e:
+            log_and_notify(f"解析评分时出错: {str(e)}", "warning")
+            # 设置默认评分
+            result["clarity"]["score"] = 5
+            result["completeness"]["score"] = 5
+            result["accuracy"]["score"] = 5
+            result["structure"]["score"] = 5
+            result["readability"]["score"] = 5
+            result["consistency"]["score"] = 5
+            result["engagement"]["score"] = 5
+            result["overall"] = 5
 
-        # 提取格式化评分
-        formatting_match = re.search(r"格式化:\s*(\d+)(?:/10)?(?:\s*分)?\s*-\s*(.+?)(?:\n|$)", content)
-        if formatting_match:
-            evaluation["formatting"]["score"] = int(formatting_match.group(1))
-            evaluation["formatting"]["comment"] = formatting_match.group(2).strip()
+        result["needs_fix"] = "需要修复" in content or "建议修复" in content
+        fix_match = re.search(r"修复建议[：:](.*?)(?=##|$)", content, re.DOTALL)
+        if fix_match:
+            result["fix_suggestions"] = fix_match.group(1).strip()
 
-        # 提取总体评分
-        overall_match = re.search(r"总体评分:\s*(\d+)(?:/10)?(?:\s*分)?", content)
-        if overall_match:
-            evaluation["overall"] = int(overall_match.group(1))
-        else:
-            # 如果没有明确的总体评分，计算平均分
-            scores = [
-                evaluation["completeness"]["score"],
-                evaluation["accuracy"]["score"],
-                evaluation["readability"]["score"],
-                evaluation["formatting"]["score"],
-            ]
-            evaluation["overall"] = sum(scores) / len(scores) if scores else 0
-
-        # 提取改进建议
-        suggestions_match = re.search(r"## 改进建议\s*\n(.*?)(?:\n##|$)", content, re.DOTALL)
-        if suggestions_match:
-            evaluation["suggestions"] = suggestions_match.group(1).strip()
-
-        return evaluation
+        return result
 
     def _extract_fixed_content(self, content: str) -> Optional[str]:
         """提取修复后的内容

@@ -3,8 +3,12 @@
 import logging
 
 
-def configure_logging():
-    """配置日志级别和格式"""
+def configure_logging() -> logging.Logger:
+    """配置日志级别和格式
+
+    Returns:
+        logging.Logger: 配置好的应用程序日志记录器
+    """
     # 配置根日志记录器
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 

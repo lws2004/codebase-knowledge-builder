@@ -1,6 +1,7 @@
 """测试生成文档节点的脚本。"""
 
 import argparse
+import fnmatch
 import os
 import sys
 
@@ -96,36 +97,34 @@ def main():
         return
 
     # 创建输出目录
-    output_dir = args.output_dir
-    os.makedirs(output_dir, exist_ok=True)
-    print(f"\n已创建输出目录: {output_dir}")
+    # output_dir = args.output_dir
+    # os.makedirs(output_dir, exist_ok=True)
+    # print(f"\n已创建输出目录: {output_dir}")
 
     # 创建测试文档
-    test_doc_path = os.path.join(output_dir, "test_doc.md")
-    with open(test_doc_path, "w", encoding="utf-8") as f:
-        f.write("# 测试文档\n\n这是一个测试文档，用于验证文档生成功能。\n")
+    # test_doc_path = os.path.join(output_dir, "test_doc.md")
+    # with open(test_doc_path, "w", encoding="utf-8") as f:
+    #     f.write("# 测试文档\n\n这是一个测试文档，用于验证文档生成功能。\n")
+    # print(f"\n已创建测试文档: {test_doc_path}")
 
-    print(f"\n已创建测试文档: {test_doc_path}")
+    # Comment out or remove these manual creations as the flow should handle them under repo_name subdir
+    # # 创建模块目录
+    # modules_dir = os.path.join(output_dir, "modules")
+    # os.makedirs(modules_dir, exist_ok=True)
+    #
+    # # 创建测试模块文档
+    # test_module_doc_path = os.path.join(modules_dir, "test_module.md")
+    # with open(test_module_doc_path, "w", encoding="utf-8") as f:
+    #     f.write("# 测试模块\n\n这是一个测试模块文档，用于验证模块文档生成功能。\n")
+    # print(f"\n已创建测试模块文档: {test_module_doc_path}")
+    #
+    # # 创建模块索引文档
+    # test_index_path = os.path.join(output_dir, "modules.md") # This is docs_output/modules.md
+    # with open(test_index_path, "w", encoding="utf-8") as f:
+    #     f.write("# 📚 模块详细文档\n\n## 模块列表\n\n- [测试模块](modules/test_module.md) - `src/test_module.py`\n")
+    # print(f"\n已创建模块索引文档: {test_index_path}")
 
-    # 创建模块目录
-    modules_dir = os.path.join(output_dir, "modules")
-    os.makedirs(modules_dir, exist_ok=True)
-
-    # 创建测试模块文档
-    test_module_doc_path = os.path.join(modules_dir, "test_module.md")
-    with open(test_module_doc_path, "w", encoding="utf-8") as f:
-        f.write("# 测试模块\n\n这是一个测试模块文档，用于验证模块文档生成功能。\n")
-
-    print(f"\n已创建测试模块文档: {test_module_doc_path}")
-
-    # 创建模块索引文档
-    test_index_path = os.path.join(output_dir, "modules.md")
-    with open(test_index_path, "w", encoding="utf-8") as f:
-        f.write("# 📚 模块详细文档\n\n## 模块列表\n\n- [测试模块](modules/test_module.md) - `src/test_module.py`\n")
-
-    print(f"\n已创建模块索引文档: {test_index_path}")
-
-    print("\n测试完成，文档已生成到指定目录。")
+    print("\n测试运行完毕，请检查共享对象中的输出和 'docs_output' 目录下的实际生成文件。")
 
     # 检查流程是否成功
     if "error" in shared:
@@ -183,16 +182,23 @@ def main():
     # 检查是否生成了模块详细文档
     if "module_details" in shared and shared["module_details"].get("success", False):
         print("\n成功生成模块详细文档:")
-        print(f"- 模块数量: {len(shared['module_details']['modules'])}")
-        print(f"- 索引文件: {shared['module_details']['index_path']}")
-        print(f"- 整体质量分数: {shared['module_details'].get('overall_score', 0)}")
+        if "modules" in shared["module_details"]:
+            print(f"- 模块数量: {len(shared['module_details']['modules'])}")
+        if "output_files" in shared:
+            print(f"- FormatOutputNode 生成的文件列表: {shared['output_files']}")
+            expected_modules_md_pattern = os.path.join(args.output_dir, "*", "modules.md")
+            found_modules_md = any(fnmatch.fnmatch(f, expected_modules_md_pattern) for f in shared["output_files"])
+            if found_modules_md:
+                print(f"- 主 modules.md 文件已生成 (路径模式: {expected_modules_md_pattern}) 。")
+            else:
+                print(f"- 未找到主 modules.md 文件 (路径模式: {expected_modules_md_pattern}) 。")
 
-        # 输出每个模块的信息
-        for i, module in enumerate(shared["module_details"]["modules"]):
-            print(f"\n模块 {i + 1}: {module.get('name', 'unknown')}")
-            print(f"- 文件路径: {module.get('file_path', '')}")
-            print(f"- 质量分数: {module.get('quality_score', {}).get('overall', 0)}")
-            print(f"- 是否修复: {module.get('fixed', False)}")
+        if "modules" in shared["module_details"] and isinstance(shared["module_details"]["modules"], list):
+            for i, module in enumerate(shared["module_details"]["modules"]):
+                print(f"\n模块 {i + 1}: {module.get('name', 'unknown')}")
+                print(f"- 文件路径(来自module_details): {module.get('file_path', '')}")
+                print(f"- 质量分数: {module.get('quality_score', {}).get('overall', 0)}")
+                print(f"- 是否修复: {module.get('fixed', False)}")
     else:
         print("\n未能生成模块详细文档")
 

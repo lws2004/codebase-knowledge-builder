@@ -15,12 +15,16 @@ from src.utils.llm_wrapper.llm_client import LLMClient
 @pytest.fixture
 def mock_env_vars():
     """模拟环境变量"""
-    with patch.dict(os.environ, {
-        "LLM_PROVIDER": "openai",
-        "LLM_MODEL": "gpt-4",
-        "LLM_API_KEY": "test-key",
-        "OPENAI_API_KEY": "test-key",
-    }, clear=True):
+    with patch.dict(
+        os.environ,
+        {
+            "LLM_PROVIDER": "openai",
+            "LLM_MODEL": "gpt-4",
+            "LLM_API_KEY": "test-key",
+            "OPENAI_API_KEY": "test-key",
+        },
+        clear=True,
+    ):
         yield
 
 
@@ -77,7 +81,9 @@ def llm_client():
 def mock_token_counter():
     """模拟token计数函数"""
     with patch("src.utils.llm_wrapper.token_utils.count_tokens", return_value=10) as mock_count_tokens:
-        with patch("src.utils.llm_wrapper.token_utils.count_message_tokens", return_value=15) as mock_count_message_tokens:
+        with patch(
+            "src.utils.llm_wrapper.token_utils.count_message_tokens", return_value=15
+        ) as mock_count_message_tokens:
             yield mock_count_tokens, mock_count_message_tokens
 
 
@@ -116,7 +122,7 @@ def mock_config_loader():
         "nodes": {
             "analyze_repo": {"max_files": 100},
             "analyze_history": {"max_commits": 50},
-        }
+        },
     }
     mock_loader.get.side_effect = lambda key, default=None: {
         "app.name": "codebase-knowledge-builder",

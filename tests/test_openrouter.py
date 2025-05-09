@@ -57,7 +57,7 @@ def setup_litellm() -> Tuple[str, str]:
     litellm.api_base = openrouter_url
 
     # 设置 HTTP 头信息
-    litellm.headers = {
+    litellm.headers = {  # type: ignore[assignment]
         "HTTP-Referer": "http://localhost:3000",  # 你的网站 URL
         "X-Title": "Codebase Knowledge Builder",  # 你的应用名称
     }

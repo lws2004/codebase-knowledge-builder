@@ -1,13 +1,14 @@
 """生成速览文档节点，用于生成代码库的速览文档。"""
 
+import asyncio
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
 
-from pocketflow import Node
+from pocketflow import AsyncNode
 from pydantic import BaseModel, Field
 
-from ..utils.llm_wrapper.llm_client import LLMClient
+from ..utils.llm_wrapper import LLMClient
 from ..utils.logger import log_and_notify
 
 
@@ -56,31 +57,28 @@ class GenerateQuickLookNodeConfig(BaseModel):
     )
 
 
-class GenerateQuickLookNode(Node):
-    """生成速览文档节点，用于生成代码库的速览文档"""
+class AsyncGenerateQuickLookNode(AsyncNode):
+    """生成速览文档节点（异步），用于生成代码库的速览文档"""
+
+    llm_client: Optional[LLMClient] = None
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化生成速览文档节点
+        """初始化生成速览文档节点 (异步)
 
         Args:
             config: 节点配置
         """
         super().__init__()
-
-        # 从配置文件获取默认配置
         from ..utils.env_manager import get_node_config
 
         default_config = get_node_config("generate_quick_look")
-
-        # 合并配置
         merged_config = default_config.copy()
         if config:
             merged_config.update(config)
-
         self.config = GenerateQuickLookNodeConfig(**merged_config)
-        log_and_notify("初始化生成速览文档节点", "info")
+        log_and_notify("初始化 AsyncGenerateQuickLookNode", "info")
 
-    def prep(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+    async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段，从共享存储中获取必要的数据
 
         Args:
@@ -89,48 +87,56 @@ class GenerateQuickLookNode(Node):
         Returns:
             准备结果
         """
-        # 从共享存储中获取代码结构
+        log_and_notify("AsyncGenerateQuickLookNode: 准备阶段开始", "info")
         code_structure = shared.get("code_structure")
         if not code_structure:
             error_msg = "共享存储中缺少代码结构"
             log_and_notify(error_msg, "error", notify=True)
             return {"error": error_msg}
-
-        # 从共享存储中获取核心模块
         core_modules = shared.get("core_modules")
         if not core_modules:
             log_and_notify("共享存储中缺少核心模块，将使用空数据", "warning")
             core_modules = {"modules": [], "architecture": "", "relationships": [], "success": True}
-
-        # 从共享存储中获取历史分析
         history_analysis = shared.get("history_analysis")
         if not history_analysis:
             log_and_notify("共享存储中缺少历史分析，将使用空数据", "warning")
             history_analysis = {"commit_count": 0, "contributor_count": 0, "history_summary": "", "success": True}
 
-        # 获取 LLM 配置
-        llm_config = shared.get("llm_config", {})
+        llm_config_shared = shared.get("llm_config")
+        if llm_config_shared:
+            try:
+                if not self.llm_client:
+                    self.llm_client = LLMClient(config=llm_config_shared)
+                log_and_notify("AsyncGenerateQuickLookNode: LLMClient initialized.", "info")
+            except Exception as e:
+                log_and_notify(
+                    f"AsyncGenerateQuickLookNode: LLMClient initialization failed: {e}. "
+                    f"Node will proceed without LLM if possible, or fail.",
+                    "warning",
+                )
+                self.llm_client = None
+        else:
+            log_and_notify("AsyncGenerateQuickLookNode: No LLM config found. Proceeding without LLM client.", "warning")
+            self.llm_client = None
 
-        # 获取目标语言
         target_language = shared.get("language", "zh")
-
-        # 获取输出目录
         output_dir = shared.get("output_dir", "docs")
+        repo_name = shared.get("repo_name", "default_repo")
 
         return {
             "code_structure": code_structure,
             "core_modules": core_modules,
             "history_analysis": history_analysis,
-            "llm_config": llm_config,
             "target_language": target_language,
             "output_dir": output_dir,
+            "repo_name": repo_name,
             "retry_count": self.config.retry_count,
             "quality_threshold": self.config.quality_threshold,
             "model": self.config.model,
             "output_format": self.config.output_format,
         }
 
-    def exec(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+    async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
         """执行阶段，生成速览文档
 
         Args:
@@ -139,74 +145,85 @@ class GenerateQuickLookNode(Node):
         Returns:
             执行结果
         """
-        # 检查准备阶段是否有错误
+        log_and_notify("AsyncGenerateQuickLookNode: 执行阶段开始", "info")
         if "error" in prep_res:
             return {"success": False, "error": prep_res["error"]}
 
-        # 获取必要的数据
         code_structure = prep_res["code_structure"]
         core_modules = prep_res["core_modules"]
         history_analysis = prep_res["history_analysis"]
-        llm_config = prep_res["llm_config"]
         target_language = prep_res["target_language"]
         output_dir = prep_res["output_dir"]
         retry_count = prep_res["retry_count"]
         quality_threshold = prep_res["quality_threshold"]
-        model = prep_res["model"]
+        model_name = prep_res["model"]
         output_format = prep_res["output_format"]
+        repo_name = prep_res["repo_name"]
 
-        # 准备提示
-        prompt = self._create_prompt(code_structure, core_modules, history_analysis)
+        if not self.llm_client:
+            error_msg = "AsyncGenerateQuickLookNode: LLMClient 未初始化，无法生成速览文档。"
+            log_and_notify(error_msg, "error", notify=True)
+            return {"error": error_msg, "success": False}
 
-        # 尝试调用 LLM
+        prompt_str = self._create_prompt(code_structure, core_modules, history_analysis)
+
         for attempt in range(retry_count):
             try:
-                log_and_notify(f"尝试生成速览文档 (尝试 {attempt + 1}/{retry_count})", "info")
-
-                # 调用 LLM
-                content, quality_score, success = self._call_model(llm_config, prompt, target_language, model)
-
+                log_and_notify(
+                    f"AsyncGenerateQuickLookNode: 尝试生成速览文档 (尝试 {attempt + 1}/{retry_count})", "info"
+                )
+                content, quality_score, success = await self._call_model(prompt_str, target_language, model_name)
                 if success and quality_score["overall"] >= quality_threshold:
-                    log_and_notify(f"成功生成速览文档 (质量分数: {quality_score['overall']})", "info")
-
-                    # 保存文档
-                    file_path = self._save_document(content, output_dir, output_format)
-
+                    log_and_notify(
+                        f"AsyncGenerateQuickLookNode: 成功生成速览文档 (质量分数: {quality_score['overall']})", "info"
+                    )
+                    file_path = await asyncio.to_thread(
+                        self._save_document, content, output_dir, output_format, repo_name
+                    )
                     return {"content": content, "file_path": file_path, "quality_score": quality_score, "success": True}
                 elif success:
-                    log_and_notify(f"生成质量不佳 (分数: {quality_score['overall']}), 重试中...", "warning")
+                    log_and_notify(
+                        f"AsyncGenerateQuickLookNode: 生成质量不佳 (分数: {quality_score['overall']}), 重试中...",
+                        "warning",
+                    )
+                else:
+                    log_and_notify("AsyncGenerateQuickLookNode: _call_model 指示失败, 重试中...", "warning")
             except Exception as e:
-                log_and_notify(f"LLM 调用失败: {str(e)}, 重试中...", "warning")
+                log_and_notify(f"AsyncGenerateQuickLookNode: LLM 调用或处理失败: {str(e)}, 重试中...", "warning")
+            if attempt < retry_count - 1:
+                await asyncio.sleep(2**attempt)
 
-        # 所有重试都失败
-        error_msg = f"无法生成高质量的速览文档，已尝试 {retry_count} 次"
+        error_msg = f"AsyncGenerateQuickLookNode: 无法生成高质量的速览文档，已尝试 {retry_count} 次"
         log_and_notify(error_msg, "error", notify=True)
         return {"success": False, "error": error_msg}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    async def post_async(self, shared: Dict[str, Any], _: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将速览文档存储到共享存储中
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的结果
+            _: 准备阶段的结果（未使用）
             exec_res: 执行阶段的结果
 
         Returns:
             下一个节点的动作
         """
+        log_and_notify("AsyncGenerateQuickLookNode: 后处理阶段开始", "info")
         if not exec_res.get("success", False):
-            shared["error"] = exec_res.get("error", "生成速览文档失败")
+            error_msg = exec_res.get("error", "AsyncGenerateQuickLookNode: 生成速览文档失败")
+            shared["error"] = error_msg
+            shared["quick_look_doc"] = {
+                "error": error_msg,
+                "success": False,
+            }  # Ensure specific doc key is updated on error
             return "error"
-
-        # 将速览文档存储到共享存储中
         shared["quick_look_doc"] = {
-            "content": exec_res["content"],
-            "file_path": exec_res["file_path"],
-            "quality_score": exec_res["quality_score"],
+            "content": exec_res.get("content", ""),
+            "file_path": exec_res.get("file_path", ""),
+            "quality_score": exec_res.get("quality_score", {}),
             "success": True,
         }
-
-        log_and_notify("速览文档已存储到共享存储中", "info")
+        log_and_notify("AsyncGenerateQuickLookNode: 速览文档已存储到共享存储中", "info")
         return "default"
 
     def _create_prompt(
@@ -244,55 +261,53 @@ class GenerateQuickLookNode(Node):
             "history_summary": history_analysis.get("history_summary", ""),
         }
 
+        # 获取仓库名称
+        repo_name = code_structure.get("repo_name", "requests")
+
         # 格式化提示
         return self.config.quick_look_prompt_template.format(
+            repo_name=repo_name,
             code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
             core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
             history_analysis=json.dumps(simplified_history, indent=2, ensure_ascii=False),
         )
 
-    def _call_model(
-        self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
+    async def _call_model(
+        self, prompt_str: str, target_language: str, model_name: str
     ) -> Tuple[str, Dict[str, float], bool]:
-        """调用 LLM
+        """调用 LLM 生成速览文档 (异步)
 
         Args:
-            llm_config: LLM 配置
-            prompt: 提示
+            prompt_str: 主提示内容
             target_language: 目标语言
-            model: 模型
+            model_name: 要使用的模型名称
 
         Returns:
-            生成内容、质量分数和成功标志
+            (生成的文档内容, 质量评估分数, 是否成功)
         """
+        assert self.llm_client is not None, "LLMClient has not been initialized!"
+        system_prompt_content = (
+            f"你是一个代码库分析专家，请按照用户要求生成简洁的速览文档。目标语言: {target_language}。"
+            f"确保内容简明扼要，适合快速阅读。"
+        )
+        messages = [
+            {"role": "system", "content": system_prompt_content},
+            {"role": "user", "content": prompt_str},
+        ]
         try:
-            # 创建 LLM 客户端
-            llm_client = LLMClient(llm_config)
-
-            # 准备系统提示
-            system_prompt = f"""你是一个代码库分析专家，擅长分析代码库并生成简洁的速览文档。
-请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
-你的回答应该是格式良好的 Markdown，使用适当的标题、列表和简短段落。
-使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-整个文档应该简短精炼，让读者能在5分钟内阅读完毕。"""
-
-            # 调用 LLM
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
-
-            response = llm_client.completion(
-                messages=messages, temperature=0.3, model=model, trace_name="生成速览文档", max_input_tokens=None
-            )
-
-            # 获取响应内容
-            content = llm_client.get_completion_content(response)
-
-            # 评估质量
+            raw_response = await self.llm_client.acompletion(messages=messages, model=model_name)
+            if not raw_response:
+                log_and_notify("AsyncGenerateQuickLookNode: LLM 返回空响应", "error")
+                return "", {}, False
+            content = self.llm_client.get_completion_content(raw_response)
+            if not content:
+                log_and_notify("AsyncGenerateQuickLookNode: 从 LLM 响应中提取内容失败", "error")
+                return "", {}, False
             quality_score = self._evaluate_quality(content)
-
             return content, quality_score, True
         except Exception as e:
-            log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
-            raise
+            log_and_notify(f"AsyncGenerateQuickLookNode: _call_model 异常: {str(e)}", "error")
+            return "", {}, False
 
     def _evaluate_quality(self, content: str) -> Dict[str, float]:
         """评估内容质量
@@ -303,81 +318,57 @@ class GenerateQuickLookNode(Node):
         Returns:
             质量分数
         """
-        scores = {"completeness": 0.0, "structure": 0.0, "conciseness": 0.0, "overall": 0.0}
+        score = {"overall": 0.0, "completeness": 0.0, "relevance": 0.0}
+        if not content or not content.strip():
+            log_and_notify("内容为空，质量评分为0", "warning")
+            return score
+        expected_keywords = ["项目概述", "关键特性", "技术栈", "架构速览", "快速上手"]
+        found_keywords = sum(1 for kw in expected_keywords if kw in content)
+        score["completeness"] = min(1.0, found_keywords / len(expected_keywords) * 1.5)
+        # Quick look should be concise
+        if 100 < len(content) < 2000:  # Arbitrary length check for quick look
+            score["relevance"] = 1.0
+        elif len(content) <= 100:
+            score["relevance"] = 0.2
+        else:  # Too long
+            score["relevance"] = 0.5
 
-        # 检查完整性
-        required_sections = ["概述", "特性", "技术栈", "架构", "上手"]
+        score["overall"] = min(1.0, (score["completeness"] + score["relevance"]) / 2)
+        score["overall"] = min(1.0, score["overall"])
+        log_and_notify(f"速览文档质量评估完成: {score}", "debug")
+        return score
 
-        found_sections = 0
-        for section in required_sections:
-            if section in content:
-                found_sections += 1
-
-        scores["completeness"] = found_sections / len(required_sections)
-
-        # 检查结构
-        structure_score = 0.0
-        if "# " in content or "## " in content:
-            structure_score += 0.5
-        if "- " in content or "* " in content:
-            structure_score += 0.3
-        if "1. " in content or "2. " in content:
-            structure_score += 0.2
-
-        scores["structure"] = structure_score
-
-        # 检查简洁性
-        lines = content.split("\n")
-        word_count = sum(len(line.split()) for line in lines)
-
-        # 理想的速览文档应该在500-800字之间
-        if word_count < 500:
-            conciseness_score = 0.7  # 可能太简短
-        elif word_count <= 800:
-            conciseness_score = 1.0  # 理想长度
-        elif word_count <= 1000:
-            conciseness_score = 0.8  # 稍长
-        elif word_count <= 1200:
-            conciseness_score = 0.6  # 较长
-        else:
-            conciseness_score = 0.4  # 太长
-
-        scores["conciseness"] = conciseness_score
-
-        # 计算总体分数
-        scores["overall"] = scores["completeness"] * 0.4 + scores["structure"] * 0.3 + scores["conciseness"] * 0.3
-
-        return scores
-
-    def _save_document(self, content: str, output_dir: str, output_format: str) -> str:
+    def _save_document(self, content: str, output_dir: str, output_format: str, repo_name: str) -> str:
         """保存文档
 
         Args:
             content: 文档内容
             output_dir: 输出目录
             output_format: 输出格式
+            repo_name: 仓库名称 (用于创建子目录)
 
         Returns:
             文件路径
         """
-        # 创建输出目录
-        os.makedirs(output_dir, exist_ok=True)
+        # Ensure repo-specific directory exists
+        repo_specific_dir = os.path.join(output_dir, repo_name or "default_repo")
+        try:
+            os.makedirs(repo_specific_dir, exist_ok=True)
+        except OSError as e:
+            log_and_notify(f"创建目录失败 {repo_specific_dir}: {e}", "error")
+            raise
 
-        # 从共享存储中获取仓库名称
-        repo_name = "requests"  # 默认使用 requests 作为仓库名称
+        # 确保使用.md扩展名
+        file_ext = ".md"
+        file_name = f"quick_look{file_ext}"
+        file_path = os.path.join(repo_specific_dir, file_name)
 
-        # 确保仓库目录存在
-        os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
-
-        # 确定文件名
-        file_name = "quick-look"
-        file_ext = ".md" if output_format == "markdown" else f".{output_format}"
-        file_path = os.path.join(output_dir, repo_name, file_name + file_ext)
-
-        # 保存文档
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        log_and_notify(f"速览文档已保存到: {file_path}", "info")
-
-        return file_path
+        try:
+            # This part runs in a thread via asyncio.to_thread
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            log_and_notify(f"速览文档已保存到: {file_path}", "info")
+            return file_path
+        except IOError as e:
+            log_and_notify(f"保存速览文档失败: {str(e)}", "error", notify=True)
+            raise

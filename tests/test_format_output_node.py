@@ -15,7 +15,7 @@ class TestFormatOutputNode(unittest.TestCase):
         """设置测试环境"""
         self.node = FormatOutputNode()
         self.shared = {
-            "translated_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
+            "combined_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
             "file_structure": {
                 "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
                 "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},
@@ -42,7 +42,7 @@ class TestFormatOutputNode(unittest.TestCase):
         prep_res = self.node.prep(self.shared)
 
         # 验证结果
-        self.assertEqual(prep_res["translated_content"], self.shared["translated_content"])
+        self.assertEqual(prep_res["combined_content"], self.shared["combined_content"])
         self.assertEqual(prep_res["file_structure"], self.shared["file_structure"])
         self.assertEqual(prep_res["output_dir"], "test_output")
         self.assertEqual(prep_res["target_language"], "zh")
@@ -61,7 +61,7 @@ class TestFormatOutputNode(unittest.TestCase):
 
         # 准备测试数据
         prep_res = {
-            "translated_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
+            "combined_content": "# 测试文档\n\n## 简介\n\n这是一个测试文档。\n\n## 架构\n\n这是架构部分。",
             "file_structure": {
                 "README.md": {"title": "项目概览", "sections": ["introduction", "quick_look"]},
                 "docs/index.md": {"title": "文档首页", "sections": ["introduction", "navigation"]},

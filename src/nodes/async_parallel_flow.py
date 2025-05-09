@@ -39,14 +39,14 @@ class AsyncParallelFlow(AsyncNode):
         """
 
         class SyncNodeWrapper(AsyncNode):
-            def __init__(self, sync_node):
+            def __init__(self, sync_node: Union[Node, Flow]):
                 super().__init__()
                 self.sync_node = sync_node
 
-            async def prep_async(self, shared):
+            async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
                 return shared
 
-            async def exec_async(self, prep_res):
+            async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
                 # 在异步环境中执行同步节点
                 if isinstance(self.sync_node, Flow):
                     # 如果是流程，执行整个流程
@@ -55,10 +55,14 @@ class AsyncParallelFlow(AsyncNode):
                     return result_shared
                 else:
                     # 如果是节点，执行节点的run方法
-                    self.sync_node.run(prep_res)
+                    # Node.run can return Optional[str], but here we are interested in side effects on prep_res
+                    # and returning the (potentially modified) prep_res.
+                    self.sync_node.run(prep_res)  # Assuming prep_res is modified in place or result is not used
                     return prep_res
 
-            async def post_async(self, shared, prep_res, exec_res):
+            async def post_async(
+                self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]
+            ) -> str:
                 # 合并执行结果到共享存储
                 if isinstance(exec_res, dict):
                     shared.update(exec_res)
@@ -76,6 +80,10 @@ class AsyncParallelFlow(AsyncNode):
             准备结果
         """
         log_and_notify("AsyncParallelFlow: 准备阶段开始", "info")
+        if shared.get("error"):
+            error_msg = f"AsyncParallelFlow: Error already in shared state: {shared['error']}. Aborting prep."
+            log_and_notify(error_msg, "warning")
+            return {"error": error_msg, "_async_parallel_flow_prep_failed": True}
         return shared
 
     async def exec_async(self, prep_res: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -87,6 +95,14 @@ class AsyncParallelFlow(AsyncNode):
         Returns:
             执行结果列表
         """
+        if prep_res.get("_async_parallel_flow_prep_failed"):
+            error_msg = prep_res.get("error", "AsyncParallelFlow: prep_async indicated failure.")
+            log_and_notify(f"AsyncParallelFlow: exec_async skipped due to error from prep_async: {error_msg}", "error")
+            # Return a list of dicts, each indicating the error, to match post_async's expected exec_res format.
+            # This helps post_async correctly set shared['error'] for the entire stage.
+            # If there are no nodes (e.g. self.async_nodes is empty), return a single error dict.
+            return [{"error": error_msg} for _ in self.async_nodes] if self.async_nodes else [{"error": error_msg}]
+
         log_and_notify(f"AsyncParallelFlow: 开始并行执行 {len(self.async_nodes)} 个节点", "info")
 
         # 创建每个节点的共享存储副本
@@ -134,23 +150,31 @@ class AsyncParallelFlow(AsyncNode):
         Args:
             shared: 共享存储
             prep_res: 准备阶段的结果
-            exec_res_list: 执行结果列表
+            exec_res: 所有并行节点执行结果的列表
 
         Returns:
-            后续动作
+            下一个节点的动作 ("default" 或 "error")
         """
         log_and_notify("AsyncParallelFlow: 后处理阶段开始", "info")
 
         # 检查是否有节点执行出错
         errors = []
-        for i, node_shared in enumerate(exec_res):
-            if "error" in node_shared:
-                errors.append(f"节点 {i} 执行出错: {node_shared['error']}")
+        # If exec_res itself is a single dict with an error (from prep failure propagation), handle it.
+        # However, current exec_async modification ensures exec_res is a list of error dicts.
+        for i, node_shared_result in enumerate(exec_res):
+            if isinstance(node_shared_result, dict) and "error" in node_shared_result:
+                node_identifier = f"节点 {self.nodes[i].__class__.__name__ if i < len(self.nodes) else i}"
+                errors.append(f"{node_identifier} 执行出错: {node_shared_result['error']}")
 
         if errors:
             error_msg = "; ".join(errors)
-            log_and_notify(f"AsyncParallelFlow: 部分节点执行出错: {error_msg}", "error")
-            shared["error"] = error_msg
+            log_and_notify(f"AsyncParallelFlow: 部分或全部并行节点执行出错: {error_msg}", "error")
+            # Append to existing shared error if any, to avoid overwriting upstream errors
+            existing_error = shared.get("error")
+            if existing_error:
+                shared["error"] = f"{existing_error}; AsyncParallelFlow errors: {error_msg}"
+            else:
+                shared["error"] = f"AsyncParallelFlow errors: {error_msg}"
             return "error"
 
         # 合并所有节点的结果到共享存储
@@ -196,22 +220,25 @@ class AsyncParallelBatchFlow(AsyncNode):
 
         # 创建一个包装节点
         class SyncFlowWrapper(AsyncNode):
-            def __init__(self, sync_flow):
+            def __init__(self, sync_flow: Flow):
                 super().__init__()
                 self.sync_flow = sync_flow
 
-            async def prep_async(self, shared):
+            async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
                 return shared
 
-            async def exec_async(self, prep_res):
+            async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
                 # 在异步环境中执行同步流程
                 result_shared = prep_res.copy()
                 self.sync_flow.run(result_shared)
                 return result_shared
 
-            async def post_async(self, shared, prep_res, exec_res):
+            async def post_async(
+                self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]
+            ) -> str:
                 # 合并执行结果到共享存储
-                shared.update(exec_res)
+                if isinstance(exec_res, dict):
+                    shared.update(exec_res)
                 return "default"
 
         # 创建一个AsyncFlow，使用包装节点作为启动节点
@@ -232,72 +259,88 @@ class AsyncParallelBatchFlow(AsyncNode):
         # 默认实现，子类应该重写此方法
         return [shared.copy()]
 
-    async def exec_async(self, prep_res: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """执行阶段，并行执行流程
+    async def exec_async(self, prep_res: List[Dict[str, Any]]) -> List[Union[Dict[str, Any], BaseException]]:
+        """执行阶段，并行执行所有批处理任务
 
         Args:
-            prep_res: 准备阶段返回的参数字典列表
+            prep_res: 批处理参数列表
 
         Returns:
-            执行结果列表
+            执行结果列表，包含成功的结果或异常对象
         """
+        if not prep_res:
+            log_and_notify("AsyncParallelBatchFlow: 没有批处理任务可执行", "info")
+            return []
+
         log_and_notify(f"AsyncParallelBatchFlow: 开始并行执行 {len(prep_res)} 个批处理任务", "info")
 
         # 创建信号量控制并发数
         if self.max_concurrency:
             semaphore = asyncio.Semaphore(self.max_concurrency)
         else:
-            # 创建一个永远可用的信号量
-            semaphore = asyncio.Semaphore(len(prep_res))
+            semaphore_value = len(prep_res) if prep_res else 1
+            semaphore = asyncio.Semaphore(semaphore_value)
 
-        async def run_flow_with_params(params):
+        async def run_flow_with_params(params: Dict[str, Any]) -> Dict[str, Any]:
             async with semaphore:
-                # 创建共享存储副本
                 flow_shared = params.copy()
-                # 运行流程
-                await self.async_flow.run_async(flow_shared)
-                return flow_shared
+                try:
+                    await self.async_flow.run_async(flow_shared)  # Assuming run_async returns the modified shared
+                    return flow_shared
+                except Exception as e:
+                    log_and_notify(f"AsyncParallelBatchFlow: 子流程执行出错: {e} with params {params}", "error")
+                    # Return a dict with error, or re-raise to be caught by gather
+                    # For simplicity with gather(return_exceptions=True), we can let it be caught
+                    raise  # This will make asyncio.gather return the exception object
 
-        # 创建所有任务
         tasks = [run_flow_with_params(params) for params in prep_res]
 
-        # 并行执行所有任务
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Store results or exceptions
+        results_with_errors: List[Union[Dict[str, Any], BaseException]] = []  # Modified type
 
-        # 处理异常
-        processed_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                log_and_notify(f"AsyncParallelBatchFlow: 任务 {i} 执行出错: {str(result)}", "error")
-                # 创建一个包含错误信息的结果
-                error_result = prep_res[i].copy()
-                error_result["error"] = str(result)
-                processed_results.append(error_result)
+        # 并行执行所有任务，并收集结果或异常
+        # return_exceptions=True 会让gather在任务抛出异常时不打断其他任务，而是将异常作为结果返回
+        gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result_or_error in gathered_results:
+            if isinstance(result_or_error, BaseException):
+                log_and_notify(f"AsyncParallelBatchFlow: 批处理任务执行出错: {result_or_error}", "error")
+                results_with_errors.append(result_or_error)
+            elif isinstance(result_or_error, dict):
+                results_with_errors.append(result_or_error)
             else:
-                processed_results.append(result)
+                # This case should ideally not happen if run_flow_with_params always returns a dict or raises
+                log_and_notify(f"AsyncParallelBatchFlow: 批处理任务返回了意外类型: {type(result_or_error)}", "error")
+                # Append an error dict to maintain structure for post_async if it expects dicts or exceptions
+                results_with_errors.append(
+                    {"error": "Unexpected result type from batch task", "type": str(type(result_or_error))}
+                )
 
-        return processed_results
+        return results_with_errors
 
     async def post_async(
-        self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res: List[Dict[str, Any]]
+        self,
+        shared: Dict[str, Any],
+        prep_res: List[Dict[str, Any]],
+        exec_res: List[Union[Dict[str, Any], BaseException]],  # Modified exec_res type
     ) -> str:
-        """后处理阶段，处理执行结果
+        """后处理阶段，合并所有批处理任务的结果
 
         Args:
             shared: 共享存储
-            prep_res: 准备阶段的参数列表
-            exec_res: 执行结果列表
+            prep_res: 准备阶段的结果
+            exec_res: 所有批处理任务执行结果（或异常）的列表
 
         Returns:
-            后续动作
+            下一个节点的动作 ("default" 或 "error")
         """
         log_and_notify("AsyncParallelBatchFlow: 后处理阶段开始", "info")
 
         # 检查是否有任务执行出错
         errors = []
         for i, result in enumerate(exec_res):
-            if "error" in result:
-                errors.append(f"任务 {i} 执行出错: {result['error']}")
+            if isinstance(result, BaseException):
+                errors.append(f"任务 {i} 执行出错: {result}")
 
         if errors:
             error_msg = "; ".join(errors)

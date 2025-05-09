@@ -11,7 +11,10 @@ import tempfile
 
 import requests
 
-from src.nodes import AnalyzeHistoryNode
+from src.nodes import (
+    AsyncAnalyzeHistoryNode,
+    # ... other necessary imports ...
+)
 from src.utils.env_manager import get_llm_config, load_env_vars
 
 
@@ -99,7 +102,7 @@ def run_node(repo_path):
     node_config = {"max_commits": 20, "include_file_history": True, "analyze_contributors": True}
 
     # 创建节点
-    node = AnalyzeHistoryNode(config=node_config)
+    node = AsyncAnalyzeHistoryNode(config=node_config)
 
     # 运行节点
     print(f"开始分析仓库: {repo_path}")

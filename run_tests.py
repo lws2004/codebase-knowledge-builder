@@ -8,7 +8,7 @@ import sys
 from dotenv import load_dotenv
 
 
-def run_test(test_name):
+def run_test(test_name: str) -> bool:
     """运行指定的测试
 
     Args:
@@ -48,7 +48,7 @@ def run_test(test_name):
         return False
 
 
-def main():
+def main() -> None:
     """主函数"""
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="运行测试")

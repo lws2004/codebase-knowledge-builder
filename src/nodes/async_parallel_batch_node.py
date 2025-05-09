@@ -104,7 +104,7 @@ class AsyncParallelBatchNode(AsyncNode):
             # 创建一个永远可用的信号量
             semaphore = asyncio.Semaphore(len(item_list))
 
-        async def process_item(item, index):
+        async def process_item(item: Any, index: int) -> Any:
             async with semaphore:
                 try:
                     return await self.exec_async(item)

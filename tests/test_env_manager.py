@@ -46,7 +46,11 @@ class TestEnvManager(unittest.TestCase):
         # 验证base_url不在配置中
         self.assertNotIn("base_url", config)
 
-    @patch.dict(os.environ, {"OPENAI_BASE_URL": "https://custom-openai-api.com/v1", "LLM_MODEL": "openai/gpt-4", "LLM_API_KEY": "test-key"}, clear=True)  # noqa: E501
+    @patch.dict(
+        os.environ,
+        {"OPENAI_BASE_URL": "https://custom-openai-api.com/v1", "LLM_MODEL": "openai/gpt-4", "LLM_API_KEY": "test-key"},
+        clear=True,
+    )  # noqa: E501
     def test_base_url_set_when_env_var_exists(self):
         """测试当环境变量存在时设置base_url"""
         # 加载环境变量

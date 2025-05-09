@@ -1,16 +1,19 @@
 """LLM 客户端，提供统一的 LLM 调用接口。"""
 
-import json
-import os
-import re
-import time
-from typing import Any, Dict, List, Optional, Tuple
+import os  # For __main__ example
+from typing import Any, Dict, List, Optional, cast
 
-import litellm
-from langfuse.client import Langfuse
+from .llm_client_async import LLMClientAsync
+from .llm_client_base import LLMClientBase
+from .llm_client_langfuse import LLMClientLangfuse
+from .llm_client_sync import LLMClientSync
+from .llm_client_utils import LLMClientUtils
 
-from ..logger import log_and_notify
-from .token_utils import count_message_tokens, count_tokens, truncate_messages_if_needed
+# Attempt to import for __main__ block. This might require path adjustments or a mock.
+# If this util is run standalone, relative imports for logger/config might fail.
+# We will use a simple print logger in __main__ to avoid this complexity for demonstration.
+# from ...utils.logger import log_and_notify
+# from ...utils.env_manager import get_llm_config
 
 
 class LLMClient:
@@ -22,479 +25,36 @@ class LLMClient:
         Args:
             config: LLM 配置
         """
-        self.config = config
-        self.model = config.get("model", "")
+        # 初始化各个组件
+        self.base = LLMClientBase(config)
+        self.utils = LLMClientUtils(self.base)
+        self.langfuse = LLMClientLangfuse(self.base, self.utils)
+        self.sync = LLMClientSync(self.base, self.utils, self.langfuse)
+        self.async_client = LLMClientAsync(self.base, self.utils, self.langfuse)
 
-        if not self.model:
-            # 如果没有提供模型，记录警告
-            log_and_notify("未提供模型配置，请确保在环境变量或配置文件中设置LLM_MODEL", "warning")
-            # 尝试从环境变量获取
-            self.model = os.getenv("LLM_MODEL", "")
-
-        # 从模型字符串中提取提供商信息
-        if self.model and "/" in self.model:
-            self.provider = self.model.split("/")[0]
-        else:
-            self.provider = config.get("provider", "")
-
-        self.api_key = config.get("api_key", "")
-        self.base_url = config.get("base_url", "")
-        self.max_tokens = config.get("max_tokens", 4000)
-        # 只有当配置中明确设置了max_input_tokens时才使用，否则不设置限制
-        # 使用None作为默认值，表示不限制输入token数
-        self.max_input_tokens = config.get("max_input_tokens") if "max_input_tokens" in config else None
-        self.temperature = config.get("temperature", 0.7)
-
-        # 初始化 Langfuse
-        self._init_langfuse()
-
-        # 配置 LiteLLM
-        self._configure_litellm()
-
-        log_and_notify(f"初始化 LLM 客户端: {self.model}", "info")
-
-    def _init_langfuse(self) -> None:
-        """初始化 Langfuse"""
-        self.langfuse_config = self.config.get("langfuse", {})
-        self.langfuse_enabled = self.langfuse_config.get("enabled", False)
-        self.langfuse = None
-
-        if not (
-            self.langfuse_enabled and self.langfuse_config.get("public_key") and self.langfuse_config.get("secret_key")
-        ):
-            return
-
-        try:
-            self._create_langfuse_client()
-            log_and_notify("Langfuse 初始化成功", "info")
-        except Exception as e:
-            log_and_notify(f"Langfuse 初始化失败: {str(e)}", "error")
-            self.langfuse_enabled = False
-
-    def _create_langfuse_client(self) -> None:
-        """创建 Langfuse 客户端"""
-        # 创建 Langfuse 客户端
-        self.langfuse = Langfuse(
-            public_key=self.langfuse_config.get("public_key", ""),
-            secret_key=self.langfuse_config.get("secret_key", ""),
-            host=self.langfuse_config.get("host", "https://cloud.langfuse.com"),
-        )
-
-    def _configure_litellm(self) -> None:
-        """配置 LiteLLM"""
-        # 设置 API 密钥
-        if not self.provider:
-            log_and_notify("未提供有效的提供商信息，无法设置API密钥", "warning")
-            return
-
-        provider_env = f"{self.provider.upper()}_API_KEY"
-        api_key = self.api_key or os.getenv(provider_env) or os.getenv("LLM_API_KEY")
-
-        if not api_key:
-            log_and_notify(
-                f"未找到{self.provider}的API密钥，请确保设置了{provider_env}或LLM_API_KEY环境变量", "warning"
-            )
-
-        litellm.api_key = api_key
-
-        # 设置基础 URL
-        if self.base_url:
-            litellm.api_base = self.base_url
-
-        # 设置通用头信息
-        headers = {}
-
-        # 添加可能的引用URL和应用名称
-        if self.config.get("site_url"):
-            headers["HTTP-Referer"] = self.config.get("site_url")
-        if self.config.get("app_name"):
-            headers["X-Title"] = self.config.get("app_name")
-
-        # 如果有头信息，设置到litellm
-        if headers:
-            litellm.headers = headers
-
-        # 配置缓存
-        cache_config = self.config.get("cache", {})
-        if cache_config.get("enabled", False):
-            try:
-                # 获取缓存目录
-                cache_dir = cache_config.get("dir", ".cache/llm")
-
-                # 确保缓存目录存在
-                os.makedirs(cache_dir, exist_ok=True)
-
-                # 设置缓存环境变量
-                os.environ["LITELLM_CACHE"] = "true"
-                os.environ["LITELLM_CACHE_TYPE"] = "redis"
-                os.environ["LITELLM_CACHE_HOST"] = "memory"
-                os.environ["LITELLM_CACHE_PORT"] = "6379"
-                os.environ["LITELLM_CACHE_TTL"] = str(cache_config.get("ttl", 86400))
-
-                log_and_notify(f"LiteLLM 缓存已启用，TTL: {cache_config.get('ttl', 86400)}秒", "info")
-            except Exception as e:
-                log_and_notify(f"配置 LiteLLM 缓存失败: {str(e)}", "error")
-
+    # 代理方法 - 基础功能
     def _get_model_string(self) -> str:
-        """获取模型字符串，使用 LiteLLM 的模型解析格式
+        """获取模型字符串"""
+        return self.base._get_model_string()
 
-        LiteLLM 支持以下格式：
-        - 'openai/gpt-3.5-turbo'
-        - 'anthropic/claude-3-opus'
-        - 'openrouter/anthropic/claude-3-opus'
-
-        详见: https://docs.litellm.ai/docs/providers
-
-        Returns:
-            模型字符串
-        """
-        # 如果没有设置模型，尝试从环境变量获取
-        if not self.model:
-            self.model = os.getenv("LLM_MODEL", "")
-            if not self.model:
-                log_and_notify("未设置模型，请确保在环境变量或配置中设置LLM_MODEL", "error")
-                return ""
-
-        # 处理环境变量替换格式 ${VAR:-default}
-        if (
-            isinstance(self.model, str)
-            and self.model.startswith("${")
-            and ":-" in self.model
-            and self.model.endswith("}")
-        ):
-            # 解析环境变量名称和默认值
-            env_part = self.model[2:-1]  # 去掉 ${ 和 }
-            env_name, default_value = env_part.split(":-", 1)
-            # 获取环境变量值，如果不存在则使用默认值
-            self.model = os.getenv(env_name, default_value)
-
-        # 记录当前的模型
-        log_and_notify(f"处理模型字符串: model={self.model}", "debug")
-
-        # 确保模型字符串包含提供商前缀
-        if self.model and "/" not in self.model and self.provider:
-            # 对于 OpenAI 的 gpt 模型，不添加前缀
-            if self.provider == "openai" and self.model.startswith("gpt-"):
-                log_and_notify(f"OpenAI gpt 模型不添加前缀: model={self.model}", "debug")
-            else:
-                self.model = f"{self.provider}/{self.model}"
-                log_and_notify(f"添加提供商前缀: model={self.model}", "debug")
-
-        # 直接返回模型字符串，假设它已经是完整的格式
-        # 例如: "openai/gpt-4" 或 "openrouter/qwen/qwen3-30b-a3b:free"
-        log_and_notify(f"最终模型字符串: {self.model}", "debug")
-        return self.model
-
+    # 代理方法 - 工具功能
     def count_tokens(self, text: str) -> int:
-        """计算文本的token数量
-
-        使用token_utils.count_tokens函数计算token数量。
-
-        Args:
-            text: 要计算的文本
-
-        Returns:
-            token数量
-        """
-        model = self._get_model_string()
-        return count_tokens(text, model)
+        """计算文本的token数量"""
+        return self.utils.count_tokens(text)
 
     def count_message_tokens(self, messages: List[Dict[str, str]]) -> int:
-        """计算消息列表的token数量
-
-        使用token_utils.count_message_tokens函数计算token数量。
-
-        Args:
-            messages: 消息列表
-
-        Returns:
-            token数量
-        """
-        model = self._get_model_string()
-        return count_message_tokens(messages, model)
+        """计算消息列表的token数量"""
+        return self.utils.count_message_tokens(messages)
 
     def split_text_to_chunks(self, text: str, max_tokens: int) -> List[str]:
-        """将文本分割成不超过最大token数的块
+        """将文本分割成不超过最大token数的块"""
+        return self.utils.split_text_to_chunks(text, max_tokens)
 
-        使用token感知的分块策略，调用rag_utils.chunk_text进行实际分块。
+    def get_completion_content(self, response: Any) -> str:
+        """从 LLM 响应中获取内容"""
+        return self.utils.get_completion_content(response)
 
-        Args:
-            text: 要分割的文本
-            max_tokens: 每个块的最大token数
-
-        Returns:
-            文本块列表
-        """
-        try:
-            from ..rag_utils import chunk_text
-
-            # 如果文本为空，直接返回空列表
-            if not text:
-                return []
-
-            # 如果整个文本的token数小于max_tokens，直接返回
-            total_tokens = self.count_tokens(text)
-            if total_tokens <= max_tokens:
-                return [text]
-
-            # 估算字符数与token数的比例
-            char_per_token = len(text) / total_tokens if total_tokens > 0 else 4
-
-            # 将token数转换为近似字符数
-            approx_chars = int(max_tokens * char_per_token)
-
-            # 使用rag_utils.chunk_text进行分块，启用智能分块
-            char_chunks = chunk_text(text, chunk_size=approx_chars, overlap=approx_chars // 5, smart_chunking=True)
-
-            # 检查每个块的token数，如果超过限制则进一步分割
-            token_chunks = []
-            for chunk in char_chunks:
-                chunk_tokens = self.count_tokens(chunk)
-                if chunk_tokens <= max_tokens:
-                    token_chunks.append(chunk)
-                else:
-                    # 如果单个块超过token限制，递归分割
-                    sub_chunks = self.split_text_to_chunks(chunk, max_tokens)
-                    token_chunks.extend(sub_chunks)
-
-            return token_chunks
-        except Exception as e:
-            log_and_notify(f"文本分块失败: {str(e)}", "error")
-            # 如果分块失败，至少返回原始文本的一部分
-            return [text[: len(text) // 2]]
-
-    def _create_langfuse_trace(self, trace_id: Optional[str], trace_name: Optional[str]) -> Tuple[Any, Any]:
-        """创建 Langfuse 跟踪
-
-        Args:
-            trace_id: 跟踪 ID
-            trace_name: 跟踪名称
-
-        Returns:
-            跟踪对象和生成对象
-        """
-        if not (self.langfuse_enabled and self.langfuse):
-            return None, None
-
-        # 创建跟踪
-        if trace_id:
-            trace = self.langfuse.trace(id=trace_id, name=trace_name or "LLM 调用")
-        else:
-            trace = self.langfuse.trace(name=trace_name or "LLM 调用")
-
-        return trace, None
-
-    def _create_langfuse_generation(
-        self, trace: Any, model: str, messages: List[Dict[str, str]], temp: float, tokens: int
-    ) -> Any:
-        """创建 Langfuse 生成
-
-        Args:
-            trace: 跟踪对象
-            model: 模型名称
-            messages: 消息列表
-            temp: 温度
-            tokens: 最大 token 数
-
-        Returns:
-            生成对象
-        """
-        if not trace:
-            return None
-
-        return trace.generation(
-            name="LLM 请求", model=model, input=messages, metadata={"temperature": temp, "max_tokens": tokens}
-        )
-
-    def _record_langfuse_result(self, trace: Any, generation: Any, response: Any) -> None:
-        """记录 Langfuse 结果
-
-        Args:
-            trace: 跟踪对象
-            generation: 生成对象
-            response: LLM 响应
-        """
-        if not (trace and generation and self.langfuse_enabled):
-            return
-
-        generation.end(
-            output=self._get_content_from_response(response),
-            metadata={
-                "finish_reason": self._get_finish_reason(response),
-                "usage": getattr(response, "usage", response.get("usage", {})),
-            },
-        )
-
-    def _get_content_from_response(self, response: Any) -> str:
-        """从响应中获取内容
-
-        Args:
-            response: LLM 响应
-
-        Returns:
-            内容字符串
-        """
-        # 处理字典类型的响应
-        if isinstance(response, dict):
-            choices = response.get("choices", [{}])
-            if not choices:
-                return ""
-            return choices[0].get("message", {}).get("content", "")
-
-        # 处理 LiteLLM 的 ModelResponse 类型
-        try:
-            # 尝试访问 choices 属性
-            choices = getattr(response, "choices", [{}])
-            if not choices:
-                return ""
-            message = getattr(choices[0], "message", {})
-            return getattr(message, "content", "")
-        except (AttributeError, IndexError):
-            # 如果无法获取内容，返回空字符串
-            return ""
-
-    def _get_finish_reason(self, response: Any) -> str:
-        """从响应中获取完成原因
-
-        Args:
-            response: LLM 响应
-
-        Returns:
-            完成原因
-        """
-        # 处理字典类型的响应
-        if isinstance(response, dict):
-            choices = response.get("choices", [{}])
-            if not choices:
-                return ""
-            return choices[0].get("finish_reason", "")
-
-        # 处理 LiteLLM 的 ModelResponse 类型
-        try:
-            # 尝试访问 choices 属性
-            choices = getattr(response, "choices", [{}])
-            if not choices:
-                return ""
-            return getattr(choices[0], "finish_reason", "")
-        except (AttributeError, IndexError):
-            # 如果无法获取完成原因，返回空字符串
-            return ""
-
-    def _record_langfuse_error(self, trace: Any, generation: Any, error: str) -> None:
-        """记录 Langfuse 错误
-
-        Args:
-            trace: 跟踪对象
-            generation: 生成对象
-            error: 错误信息
-        """
-        if not (trace and generation and self.langfuse_enabled):
-            return
-
-        generation.end(error=error)
-
-    def _truncate_messages_if_needed(
-        self, messages: List[Dict[str, str]], max_input_tokens: Optional[int] = None
-    ) -> List[Dict[str, str]]:
-        """如果需要，截断消息以适应最大输入token限制
-
-        使用token_utils.truncate_messages_if_needed函数截断消息。
-        如果max_input_tokens为None，则不进行截断。
-
-        Args:
-            messages: 消息列表
-            max_input_tokens: 最大输入token数，如果为None则不进行截断
-
-        Returns:
-            可能被截断的消息列表
-        """
-        # 如果没有设置最大输入token数，直接返回原始消息
-        if max_input_tokens is None:
-            return messages
-
-        model = self._get_model_string()
-        return truncate_messages_if_needed(messages, max_input_tokens, model, self.split_text_to_chunks)
-
-    async def acompletion(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        trace_id: Optional[str] = None,
-        trace_name: Optional[str] = None,
-        model: Optional[str] = None,
-        max_input_tokens: Optional[int] = None,
-    ) -> Any:
-        """异步调用 LLM 完成请求
-
-        Args:
-            messages: 消息列表
-            temperature: 温度参数，如果为 None 则使用默认值
-            max_tokens: 最大 token 数，如果为 None 则使用默认值
-            trace_id: Langfuse 跟踪 ID
-            trace_name: Langfuse 跟踪名称
-            model: 模型名称，如果为 None 则使用默认值
-            max_input_tokens: 最大输入token数，如果为 None 则使用默认值
-
-        Returns:
-            LLM 响应
-        """
-        model_name = model or self._get_model_string()
-        if not model_name:
-            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
-            log_and_notify(error_msg, "error")
-            return {"error": error_msg, "choices": [{"message": {"content": f"Error: {error_msg}"}}]}
-
-        temp = temperature if temperature is not None else self.temperature
-        tokens = max_tokens if max_tokens is not None else self.max_tokens
-        input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
-
-        # 构建日志消息，如果input_tokens为None则不显示最大输入token信息
-        if input_tokens is not None:
-            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
-        else:
-            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}"
-        log_and_notify(log_msg, "info")
-
-        # 检查并可能截断输入消息
-        truncated_messages = self._truncate_messages_if_needed(messages, input_tokens)
-        if len(truncated_messages) != len(messages):
-            log_and_notify(f"消息已截断: 原始消息数={len(messages)}, 截断后消息数={len(truncated_messages)}", "warning")
-
-        start_time = time.time()
-        trace, generation = self._create_langfuse_trace(trace_id, trace_name)
-
-        try:
-            # 创建 Langfuse 生成
-            generation = self._create_langfuse_generation(trace, model_name, truncated_messages, temp, tokens)
-
-            # 调用 LLM
-            response = await litellm.acompletion(
-                model=model_name, messages=truncated_messages, temperature=temp, max_tokens=tokens
-            )
-
-            # 记录 Langfuse 结果
-            self._record_langfuse_result(trace, generation, response)
-
-            elapsed_time = time.time() - start_time
-            log_and_notify(f"LLM 调用完成，耗时: {elapsed_time:.2f}s", "info")
-
-            return response
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            error_msg = f"LLM 调用失败: {str(e)}, 耗时: {elapsed_time:.2f}s"
-            log_and_notify(error_msg, "error")
-
-            # 记录 Langfuse 错误
-            if trace and generation:
-                try:
-                    self._record_langfuse_error(trace, generation, str(e))
-                except Exception as langfuse_error:
-                    log_and_notify(f"记录 Langfuse 错误失败: {str(langfuse_error)}", "error")
-
-            # 返回错误响应
-            return {"error": str(e), "choices": [{"message": {"content": f"Error: {str(e)}"}}]}
-
+    # 代理方法 - 同步调用
     def completion(
         self,
         messages: List[Dict[str, str]],
@@ -505,97 +65,8 @@ class LLMClient:
         model: Optional[str] = None,
         max_input_tokens: Optional[int] = None,
     ) -> Any:
-        """同步调用 LLM 完成请求
-
-        Args:
-            messages: 消息列表
-            temperature: 温度参数，如果为 None 则使用默认值
-            max_tokens: 最大 token 数，如果为 None 则使用默认值
-            trace_id: Langfuse 跟踪 ID
-            trace_name: Langfuse 跟踪名称
-            model: 模型名称，如果为 None 则使用默认值
-            max_input_tokens: 最大输入token数，如果为 None 则使用默认值
-
-        Returns:
-            LLM 响应
-        """
-        model_name = model or self._get_model_string()
-        if not model_name:
-            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
-            log_and_notify(error_msg, "error")
-            return {"error": error_msg, "choices": [{"message": {"content": f"Error: {error_msg}"}}]}
-
-        temp = temperature if temperature is not None else self.temperature
-        tokens = max_tokens if max_tokens is not None else self.max_tokens
-        input_tokens = max_input_tokens if max_input_tokens is not None else self.max_input_tokens
-
-        # 构建日志消息，如果input_tokens为None则不显示最大输入token信息
-        if input_tokens is not None:
-            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}, 最大输入token: {input_tokens}"
-        else:
-            log_msg = f"调用 LLM: {model_name}, 温度: {temp}, 最大输出token: {tokens}"
-        log_and_notify(log_msg, "info")
-
-        # 检查并可能截断输入消息
-        truncated_messages = self._truncate_messages_if_needed(messages, input_tokens)
-        if len(truncated_messages) != len(messages):
-            log_and_notify(f"消息已截断: 原始消息数={len(messages)}, 截断后消息数={len(truncated_messages)}", "warning")
-
-        start_time = time.time()
-        trace, generation = self._create_langfuse_trace(trace_id, trace_name)
-
-        try:
-            # 创建 Langfuse 生成
-            generation = self._create_langfuse_generation(trace, model_name, truncated_messages, temp, tokens)
-
-            # 调用 LLM
-            response = litellm.completion(
-                model=model_name, messages=truncated_messages, temperature=temp, max_tokens=tokens
-            )
-
-            # 记录 Langfuse 结果
-            self._record_langfuse_result(trace, generation, response)
-
-            elapsed_time = time.time() - start_time
-            log_and_notify(f"LLM 调用完成，耗时: {elapsed_time:.2f}s", "info")
-
-            return response
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            error_msg = f"LLM 调用失败: {str(e)}, 耗时: {elapsed_time:.2f}s"
-            log_and_notify(error_msg, "error")
-
-            # 记录 Langfuse 错误
-            if trace and generation:
-                try:
-                    self._record_langfuse_error(trace, generation, str(e))
-                except Exception as langfuse_error:
-                    log_and_notify(f"记录 Langfuse 错误失败: {str(langfuse_error)}", "error")
-
-            # 返回错误响应
-            return {"error": str(e), "choices": [{"message": {"content": f"Error: {str(e)}"}}]}
-
-    def get_completion_content(self, response: Any) -> str:
-        """从 LLM 响应中获取内容
-
-        Args:
-            response: LLM 响应
-
-        Returns:
-            内容字符串
-        """
-        # 处理字典类型的响应
-        if isinstance(response, dict) and "error" in response:
-            return f"Error: {response['error']}"
-
-        # 处理 LiteLLM 的 ModelResponse 类型
-        try:
-            if hasattr(response, "error"):
-                return f"Error: {getattr(response, 'error', '')}"
-        except AttributeError:
-            pass
-
-        return self._get_content_from_response(response)
+        """同步调用 LLM 完成请求"""
+        return self.sync.completion(messages, temperature, max_tokens, trace_id, trace_name, model, max_input_tokens)
 
     def generate_text(
         self,
@@ -606,137 +77,109 @@ class LLMClient:
         trace_name: Optional[str] = None,
         model: Optional[str] = None,
     ) -> str:
-        """简化的文本生成方法，适用于简单的文本生成任务
-
-        Args:
-            prompt: 用户提示
-            system_prompt: 系统提示，如果为None则不使用系统提示
-            temperature: 温度参数，如果为None则使用默认值
-            max_tokens: 最大token数，如果为None则使用默认值
-            trace_name: Langfuse跟踪名称
-            model: 模型名称，如果为None则使用默认值
-
-        Returns:
-            生成的文本
-        """
-        # 准备消息
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        # 调用LLM，明确设置max_input_tokens=None
-        response = self.completion(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            trace_name=trace_name,
-            model=model,
-            max_input_tokens=None,
-        )
-
-        # 获取响应内容
-        return self.get_completion_content(response)
+        """简化的文本生成方法，适用于简单的文本生成任务"""
+        return self.sync.generate_text(prompt, system_prompt, temperature, max_tokens, trace_name, model)
 
     def generate_json(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: Optional[float] = 0.1,  # 默认使用较低的温度以获得更确定性的输出
+        temperature: Optional[float] = 0.1,
         max_tokens: Optional[int] = None,
         trace_name: Optional[str] = None,
         model: Optional[str] = None,
-        schema: Optional[Dict[str, Any]] = None,  # 可选的JSON schema
+        schema: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """生成JSON格式的响应
+        """生成JSON格式的响应"""
+        return self.sync.generate_json(prompt, system_prompt, temperature, max_tokens, trace_name, model, schema)
 
-        使用litellm的JSON模式功能，确保生成的JSON符合预期格式。
+    # 代理方法 - 异步调用
+    async def acompletion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        trace_id: Optional[str] = None,
+        trace_name: Optional[str] = None,
+        model: Optional[str] = None,
+        max_input_tokens: Optional[int] = None,
+    ) -> Any:
+        """异步调用 LLM 完成请求"""
+        return await self.async_client.acompletion(
+            messages, temperature, max_tokens, trace_id, trace_name, model, max_input_tokens
+        )
 
-        Args:
-            prompt: 用户提示
-            system_prompt: 系统提示，如果为None则使用默认系统提示
-            temperature: 温度参数，默认为0.1以获得更确定性的输出
-            max_tokens: 最大token数，如果为None则使用默认值
-            trace_name: Langfuse跟踪名称
-            model: 模型名称，如果为None则使用默认值
-            schema: JSON schema，用于验证生成的JSON
 
-        Returns:
-            解析后的JSON对象
-        """
-        # 如果没有提供系统提示，使用默认的JSON生成提示
-        if not system_prompt:
-            system_prompt = """你是一个JSON生成专家。你的任务是生成有效的JSON格式数据。
-请确保你的响应是有效的JSON格式，不要包含任何其他文本或解释。
-不要使用Markdown代码块，直接输出JSON。"""
+if __name__ == "__main__":
+    import asyncio
+    import os  # For __main__ example
 
-        # 准备消息
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    # --- Mock/Simplified Dependencies for standalone testing ---
+    # This avoids needing the full project structure (config files, .env, actual logger)
+    # when just demonstrating LLMClient.
 
-        model_name = model or self._get_model_string()
-        if not model_name:
-            error_msg = "未提供有效的模型配置，请确保在环境变量或配置中设置LLM_MODEL"
-            log_and_notify(error_msg, "error")
-            return {"error": error_msg}
+    # Simplified logger for this test
+    def test_logger(message: str, level: str = "info", notify: bool = False) -> None:
+        """测试用的简单日志打印函数。"""
+        print(f"[LLMClientTest][{level.upper()}] {message}")
 
-        temp = temperature if temperature is not None else self.temperature
-        tokens = max_tokens if max_tokens is not None else self.max_tokens
+    # Mock LLM Configuration (replace with actual get_llm_config for integration test)
+    mock_llm_config = {
+        "provider": os.getenv("TEST_LLM_PROVIDER", "openai"),  # Default to openai for mock
+        "model": os.getenv("TEST_LLM_MODEL", "gpt-3.5-turbo"),
+        "api_key": os.getenv("TEST_OPENAI_API_KEY", "sk-testkeyLLMClientMain"),  # Use a distinct test key
+        "temperature": 0.7,
+        "max_tokens": 150,
+        "max_input_tokens": 2000,
+        "cache": {"enabled": False, "ttl": 3600, "dir": ".cache/test_llm_client"},
+        "langfuse": {"enabled": False},
+        "logger_instance": test_logger,
+    }
 
+    print("--- LLMClient Test --- CWD:", os.getcwd())
+    print(f"Using mock LLM config: {mock_llm_config['provider']}/{mock_llm_config['model']}")
+
+    # Ensure a directory for cache if any sub-component tries to create it, even if disabled
+    cache_config = cast(Dict[str, Any], mock_llm_config.get("cache", {}))
+    cache_dir = cast(str, cache_config.get("dir", ".cache/test_llm_client"))
+    os.makedirs(cache_dir, exist_ok=True)
+
+    try:
+        llm_client = LLMClient(config=mock_llm_config)
+        test_logger("LLMClient initialized.", "info")
+
+        # 1. Test count_tokens
+        text_to_count = "Hello world, this is a test."
+        token_count = llm_client.count_tokens(text_to_count)
+        test_logger(f"Token count for '{text_to_count}': {token_count}", "info")
+        assert token_count > 0, "Token count should be positive"
+
+        # 2. Test generate_text (sync)
+        test_logger("Attempting generate_text (sync)...", "info")
         try:
-            # 如果提供了schema，使用litellm的response_format参数
-            if schema:
-                # 使用litellm的JSON模式功能，不限制输入token数
-                response = litellm.completion(
-                    model=model_name,
-                    messages=messages,
-                    temperature=temp,
-                    max_tokens=tokens,
-                    response_format={"type": "json_object", "schema": schema},
-                )
-                content = self.get_completion_content(response)
-                return json.loads(content)
-            else:
-                # 没有提供schema，使用普通的文本生成然后解析
-                response_text = self.generate_text(
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    trace_name=trace_name or "生成JSON",
-                    model=model,
-                )
-
-                # 尝试解析JSON
-                # 首先尝试直接解析
-                try:
-                    return json.loads(response_text)
-                except json.JSONDecodeError:
-                    # 如果直接解析失败，尝试从可能的Markdown代码块中提取JSON
-                    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_text)
-                    if json_match:
-                        json_str = json_match.group(1)
-                    else:
-                        json_str = response_text
-
-                    # 清理可能的前缀和后缀
-                    json_str = re.sub(r"^[\s\S]*?(\{|\[)", r"\1", json_str)
-                    json_str = re.sub(r"(\}|\])[\s\S]*$", r"\1", json_str)
-
-                    # 解析JSON
-                    try:
-                        return json.loads(json_str)
-                    except json.JSONDecodeError:
-                        # 如果仍然无法解析，返回错误信息
-                        response_text = json_str  # 确保response_text被定义
-                        raise
+            response_text = llm_client.generate_text("What is the capital of France?", trace_name="test.generate_text")
+            test_logger(f"generate_text response: {response_text}", "info")
         except Exception as e:
-            log_and_notify(f"解析JSON失败: {str(e)}", "error")
-            # 返回原始文本作为错误信息
-            error_text = str(e)
-            return {
-                "error": f"解析JSON失败: {error_text}",
-                "raw_text": error_text,
-            }
+            test_logger(f"generate_text call failed as expected without real API/mock: {e}", "warning")
+
+        # 3. Test acompletion (async)
+        async def run_acompletion_test() -> None:
+            """运行异步补全测试的辅助函数。"""
+            test_logger("Attempting acompletion (async)...", "info")
+            messages = [{"role": "user", "content": "Briefly, what is a large language model?"}]
+            try:
+                response_async = await llm_client.acompletion(messages, trace_name="test.acompletion")
+                content = llm_client.get_completion_content(response_async)
+                test_logger(f"acompletion response content: {content}", "info")
+            except Exception as e:
+                test_logger(f"acompletion call failed as expected without real API/mock: {e}", "warning")
+
+        asyncio.run(run_acompletion_test())
+
+    except Exception as e:
+        test_logger(f"Error during LLMClient test setup or basic calls: {e}", "error")
+        import traceback
+
+        traceback.print_exc()
+
+    print("--- LLMClient Test End ---")
