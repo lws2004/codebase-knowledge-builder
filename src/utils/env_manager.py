@@ -311,10 +311,11 @@ if __name__ == "__main__":
 
     # Ensure the global config_loader_instance has some mock data for testing
     # This is a bit hacky for a simple __main__ test; proper mocks are better.
-    class MockConfigLoader(ConfigLoader):  # Inherit from ConfigLoader
+    class MockConfigLoader(ConfigLoader):
         """用于测试 env_manager 的 Mock 配置加载器。"""
 
-        def __init__(self):  # Retain this __init__ and ensure proper indentation for the block below
+        def __init__(self) -> None:
+            """初始化 MockConfigLoader。"""
             super().__init__(config_dir="mock_config")  # Call super with a dummy dir
             self.mock_data = {
                 LLM_MODEL_CONFIG: "openai/gpt-3.5-turbo-default",

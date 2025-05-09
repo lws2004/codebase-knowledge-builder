@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import os
 import sys
+from typing import Any, Dict
 
 # 添加项目根目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +24,13 @@ from src.nodes.flow_connector_nodes import AnalyzeRepoConnector, GenerateContent
 from src.utils.config_loader import ConfigLoader
 
 
-async def generate_docs(repo_url, language="zh", output_dir="docs_output", env="default", branch="main"):
+async def generate_docs(
+    repo_url: str,
+    language: str = "zh",
+    output_dir: str = "docs_output",
+    env: str = "default",
+    branch: str = "main",
+) -> Dict[str, Any]:
     """
     生成代码库文档
 
@@ -43,7 +50,7 @@ async def generate_docs(repo_url, language="zh", output_dir="docs_output", env="
     # 创建节点
     input_node = InputNode(config_loader.get_node_config("input"))
     prepare_repo_node = PrepareRepoNode(config_loader.get_node_config("prepare_repo"))
-    analyze_repo_flow = AnalyzeRepoFlow(config_loader)
+    analyze_repo_flow = AnalyzeRepoFlow(config_loader.get_config())
     generate_content_flow = GenerateContentFlow(
         {
             "generate_overall_architecture": config_loader.get_node_config("generate_overall_architecture"),
@@ -85,12 +92,12 @@ async def generate_docs(repo_url, language="zh", output_dir="docs_output", env="
     }
 
     # 运行流程
-    result = await flow.run_async(shared)
+    await flow.run_async(shared)
 
-    return result
+    return shared
 
 
-def main():
+def main() -> None:
     """主函数"""
     parser = argparse.ArgumentParser(description="生成代码库文档")
     parser.add_argument("--repo-url", required=True, help="代码库 URL")

@@ -7,7 +7,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from pocketflow import Node
 from pydantic import BaseModel, Field
@@ -449,7 +449,15 @@ class CombineContentNode(Node):
         cached_result = self._load_from_cache(cache_key)
         if cached_result is not None:
             log_and_notify("使用缓存的一致性检查结果", "info")
-            return cached_result
+            # 确保缓存结果符合预期的类型
+            if isinstance(cached_result, list):
+                # 进一步检查列表元素是否为字典，如果需要更严格的类型检查
+                # 这里我们假设如果它是列表，它就是我们期望的 List[Dict[str, Any]]
+                return cast(List[Dict[str, Any]], cached_result)
+            else:
+                # 如果缓存类型不匹配，记录警告并继续执行（不使用缓存）
+                log_and_notify(f"缓存结果类型不匹配: 期望 list，得到 {type(cached_result)}", "warning")
+                # 不返回，让函数继续执行下面的逻辑
 
         try:
             # 创建 LLM 客户端
@@ -485,42 +493,57 @@ class CombineContentNode(Node):
             response_content = llm_client.get_completion_content(response)
 
             # 解析 JSON 响应 - 简化解析逻辑
+            parsed_issues: List[Dict[str, Any]] = []  # 初始化为正确类型的空列表
             try:
                 # 提取 JSON 部分 - 使用更健壮的正则表达式
-                json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_content)
+                json_match = re.search(r"```(?:json)?\s*([^\s]*?)\s*```", response_content)
+                json_str_to_parse = ""
                 if json_match:
-                    json_str = json_match.group(1).strip()
+                    json_str_to_parse = json_match.group(1).strip()
                 else:
                     # 尝试直接解析整个响应
-                    json_str = response_content.strip()
+                    json_str_to_parse = response_content.strip()
 
-                # 解析 JSON - 添加错误处理
+                raw_loaded_issues: Any = None
                 try:
-                    issues = json.loads(json_str)
+                    raw_loaded_issues = json.loads(json_str_to_parse)
                 except json.JSONDecodeError:
                     # 如果解析失败，尝试修复常见的 JSON 格式问题
-                    fixed_json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)  # 将单引号替换为双引号
-                    issues = json.loads(fixed_json_str)
+                    fixed_json_str = re.sub(r"'([^']*)':", r'"\\1":', json_str_to_parse)
+                    try:
+                        raw_loaded_issues = json.loads(fixed_json_str)
+                    except json.JSONDecodeError as e_fix:
+                        log_and_notify(f"修复JSON后仍解析失败: {fixed_json_str}, Error: {e_fix}", "warning")
+                        # 保持 parsed_issues 为空
 
-                # 确保返回的是列表
-                result = []
-                if isinstance(issues, dict) and "issues" in issues:
-                    result = issues["issues"]
-                elif isinstance(issues, list):
-                    result = issues
-                else:
-                    log_and_notify("一致性检查返回的结果格式不正确", "warning")
+                if raw_loaded_issues:
+                    temp_list_from_json: List[Any] = []
+                    if (
+                        isinstance(raw_loaded_issues, dict)
+                        and "issues" in raw_loaded_issues
+                        and isinstance(raw_loaded_issues["issues"], list)
+                    ):
+                        temp_list_from_json = raw_loaded_issues["issues"]
+                    elif isinstance(raw_loaded_issues, list):
+                        temp_list_from_json = raw_loaded_issues
 
-                # 保存结果到缓存
-                self._save_to_cache(cache_key, result)
+                    for item in temp_list_from_json:
+                        if isinstance(item, dict):
+                            parsed_issues.append(cast(Dict[str, Any], item))
+                        else:
+                            log_and_notify(f"一致性检查结果中的项不是字典: {item}", "warning")
 
-                return result
-            except Exception as e:
-                log_and_notify(f"解析一致性检查结果失败: {str(e)}", "warning")
-                return []
+            except Exception as e:  # 更广泛的异常捕获，以防 json_str_to_parse 为空等边缘情况
+                log_and_notify(f"解析一致性检查结果时发生意外错误: {str(e)}", "warning")
+                # 保持 parsed_issues 为空
+
+            # 保存结果到缓存
+            self._save_to_cache(cache_key, parsed_issues)
+            return cast(List[Dict[str, Any]], parsed_issues)
+
         except Exception as e:
             log_and_notify(f"检查内容一致性失败: {str(e)}", "warning")
-            return []
+            return []  # 返回符合类型的空列表
 
     def _fix_consistency_issues(self, content: str, issues: List[Dict[str, Any]]) -> str:
         """修复一致性问题

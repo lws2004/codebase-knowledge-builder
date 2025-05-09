@@ -8,11 +8,15 @@ from ..utils.logger import log_and_notify
 
 
 class EvaluationCategory(TypedDict):
+    """评估类别，包含分数和评论。"""
+
     score: int
     comments: str
 
 
 class EvaluationResult(TypedDict):
+    """模块质量评估的完整结果。"""
+
     completeness: EvaluationCategory
     accuracy: EvaluationCategory
     readability: EvaluationCategory

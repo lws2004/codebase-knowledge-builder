@@ -228,7 +228,8 @@ class ModuleQualityCheckNode(Node):
                 shared["modules_need_regeneration"] = modules_need_regeneration
 
                 log_and_notify(
-                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，已记录改进建议 (整体分数: {exec_res['overall_score']})",
+                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，"
+                    f"已记录改进建议 (整体分数: {exec_res['overall_score']})",
                     "info",
                     notify=True,
                 )
@@ -243,7 +244,8 @@ class ModuleQualityCheckNode(Node):
                 return "default"
             else:
                 log_and_notify(
-                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，但自动修复未启用 (整体分数: {exec_res['overall_score']})",
+                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，"
+                    f"但自动修复未启用 (整体分数: {exec_res['overall_score']})",
                     "warning",
                     notify=True,
                 )
@@ -322,8 +324,9 @@ class ModuleQualityCheckNode(Node):
             log_and_notify(
                 f"评估结果: 总体分数={quality_score['overall']}, 需要修复={evaluation.get('needs_fix', False)}", "debug"
             )
-            if evaluation.get("fix_suggestions"):
-                log_and_notify(f"改进建议: {evaluation.get('fix_suggestions')[:100]}...", "debug")
+            fix_suggestions_text = evaluation.get("fix_suggestions")
+            if fix_suggestions_text and isinstance(fix_suggestions_text, str):
+                log_and_notify(f"改进建议: {fix_suggestions_text[:100]}...", "debug")
 
             return evaluation, None, quality_score, True
         except Exception as e:

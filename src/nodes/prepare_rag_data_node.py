@@ -241,7 +241,7 @@ class AsyncPrepareRAGDataNode(AsyncNode):
         """
         file_contents = {}
 
-        async def read_single_file(file_path):
+        async def read_single_file(file_path: str) -> None:
             full_path = os.path.join(repo_path, file_path)
             try:
                 # Use asyncio.to_thread to run the synchronous file read in a separate thread

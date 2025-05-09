@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from pocketflow import AsyncNode
 from pydantic import BaseModel, Field
@@ -156,7 +157,6 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
         module_path_in_repo = module_info.get("path", "")
         repo_name = prep_data["repo_name"]
         output_dir = prep_data["output_dir"]
-        output_format = prep_data["output_format"]
         target_language = prep_data["target_language"]
         model = prep_data["model"]
         retry_count = prep_data["retry_count"]
@@ -384,20 +384,20 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
     def _get_module_code(
         self, module_path_in_repo: str, rag_data: Dict[str, Any], code_structure: Dict[str, Any], repo_path: str
     ) -> str:
-        """获取模块代码内容
+        """获取模块的代码内容。
 
         优先从 RAG 数据的 file_contents 中获取。
         如果找不到，则尝试从本地文件系统中读取。
         如果仍然找不到，尝试智能匹配模块名称。
 
         Args:
-            module_path_in_repo: 模块在仓库中的相对路径
-            rag_data: RAG 数据
-            code_structure: 代码结构
-            repo_path: 本地仓库的绝对路径
+            module_path_in_repo (str): 模块在仓库中的相对路径。
+            rag_data (Dict[str, Any]): RAG 数据。
+            code_structure (Dict[str, Any]): 代码结构。
+            repo_path (str): 本地仓库的绝对路径。
 
         Returns:
-            模块代码内容，如果找不到则返回错误信息字符串
+            str: 模块代码内容，如果找不到则返回错误信息字符串。
         """
         # 处理模块路径
         # 如果模块路径是一个模块名而不是文件路径，尝试转换为文件路径
@@ -411,17 +411,17 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
         # Try to get from rag_data first - 尝试精确匹配
         if module_path_in_repo in rag_data.get("file_contents", {}):
             log_and_notify(f"在RAG数据中找到精确匹配的模块: {module_path_in_repo}", "info")
-            return rag_data["file_contents"][module_path_in_repo]
+            return cast(str, rag_data["file_contents"][module_path_in_repo])
 
         # 尝试在RAG数据中查找部分匹配
         module_name = os.path.basename(module_path_in_repo)
         module_name = os.path.splitext(module_name)[0]  # 移除扩展名
 
         # 尝试在RAG数据中查找包含模块名的文件
-        for file_path, content in rag_data.get("file_contents", {}).items():
+        for file_path, content_from_rag in rag_data.get("file_contents", {}).items():
             if module_name in file_path:
                 log_and_notify(f"在RAG数据中找到部分匹配的模块: {file_path}", "info")
-                return content
+                return cast(str, content_from_rag)  # 确保返回 str
 
         # Fallback to reading from file system - 尝试精确匹配
         full_module_path = os.path.join(repo_path, module_path_in_repo)
@@ -527,6 +527,70 @@ if __name__ == "__main__":
 
         return template
 
+    def _prepare_module_document(
+        self,
+        module_path_in_repo: str,
+        rag_data: Dict[str, Any],
+        code_structure: Dict[str, Any],
+        repo_path: str,
+        prep_data: Dict[str, Any],
+    ) -> str:
+        """准备模块文档内容
+
+        Args:
+            module_path_in_repo: 模块路径
+            rag_data: RAG数据
+            code_structure: 代码结构
+            repo_path: 仓库路径
+            prep_data: 准备阶段数据
+
+        Returns:
+            模块文档内容
+        """
+        # repo_name = prep_data["repo_name"] # 未使用
+        # output_dir = prep_data["output_dir"] # 未使用
+        # target_language = prep_data["target_language"] # 未使用
+        # model = prep_data["model"] # 未使用
+
+        # 获取模块名称
+        module_name = Path(module_path_in_repo).stem
+
+        # 获取模块代码
+        module_code = self._get_module_code(module_path_in_repo, rag_data, code_structure, repo_path)
+
+        # 构建文档内容
+        content_parts = []
+        content_parts.append(f"# 📦 {module_name} 模块")
+
+        # 分析模块内容
+        content_parts.append("## 🧠 分析结果")
+        content_parts.append(f"- **模块名称**: {module_name}")
+        content_parts.append(f"- **文件路径**: {module_path_in_repo}")
+        content_parts.append(f"- **代码行数**: {len(module_code.splitlines())}")
+
+        # 添加模块分析
+        if "module_analysis" in rag_data:
+            content_parts.append("\n## 📊 模块分析")
+            content_parts.append(rag_data["module_analysis"])
+
+        # 添加使用示例
+        if "examples" in rag_data:
+            content_parts.append("\n## 💡 使用示例")
+            content_parts.append(rag_data["examples"])
+
+        # 添加最佳实践
+        if "best_practices" in rag_data:
+            content_parts.append("\n## ✅ 最佳实践")
+            content_parts.append(rag_data["best_practices"])
+
+        # 添加注意事项
+        if "notes" in rag_data:
+            content_parts.append("\n## ⚠️ 注意事项")
+            content_parts.append(rag_data["notes"])
+
+        # 构建完整内容
+        return "\n".join(content_parts)
+
     async def _call_model_async(
         self, prompt: str, target_language: str, model: str
     ) -> Tuple[str, Dict[str, float], bool]:
@@ -570,13 +634,13 @@ if __name__ == "__main__":
             return "", {}, False
 
     def _evaluate_quality(self, content: str) -> Dict[str, float]:
-        """评估内容质量
+        """评估生成内容的质量。
 
         Args:
-            content: 生成内容
+            content (str): 生成的内容。
 
         Returns:
-            质量分数
+            Dict[str, float]: 包含整体、完整性、相关性和结构分数的字典。
         """
         score = {"overall": 0.0, "completeness": 0.0, "relevance": 0.0, "structure": 0.0}
         if not content or not content.strip():
@@ -620,13 +684,13 @@ if __name__ == "__main__":
         return score
 
     def _get_module_file_name(self, module: Dict[str, Any]) -> str:
-        """获取模块文档的文件名 (不含扩展名)
+        """获取模块文档的文件名 (不含扩展名)。
 
         Args:
-            module: 模块信息字典
+            module (Dict[str, Any]): 模块信息字典。
 
         Returns:
-            文件名字符串
+            str: 文件名字符串。
         """
         module_name = module.get("name", "unknown_module")
         # Sanitize module name for use as a filename
@@ -640,12 +704,12 @@ if __name__ == "__main__":
         """为生成的模块文档创建索引文件内容。
 
         Args:
-            module_docs: 成功生成的模块文档列表。
-                          每个字典应包含 "name", "path", "file_path"。
-            target_language: 目标语言 (当前未使用，但可以用于本地化标题)。
+            module_docs (List[Dict[str, Any]]): 成功生成的模块文档列表。
+                                              每个字典应包含 "name", "path", "file_path"。
+            target_language (str): 目标语言 (当前未使用，但可以用于本地化标题)。
 
         Returns:
-            Markdown 格式的索引内容。
+            str: Markdown 格式的索引内容。
         """
         if not module_docs:
             return "模块文档为空。\n"
@@ -683,23 +747,28 @@ if __name__ == "__main__":
         return "\n".join(lines)
 
     def _process_module_content(self, content: str, module_name: str, repo_name: str) -> str:
-        """处理模块内容，确保内容完整
+        """处理模块内容，确保内容完整。
 
         Args:
-            content: LLM生成的原始内容
-            module_name: 模块名称
-            repo_name: 仓库名称
+            content (str): LLM生成的原始内容。
+            module_name (str): 模块名称。
+            repo_name (str): 仓库名称。
 
         Returns:
-            处理后的内容
+            str: 处理后的内容。
         """
+        # repo_name = prep_data["repo_name"] # 未使用
+        # output_dir = prep_data["output_dir"] # 未使用
+        # target_language = prep_data["target_language"] # 未使用
+        # model = prep_data["model"] # 未使用
+
         # 检查内容是否包含必要的部分
         has_title = bool(re.search(r"^#\s+.*", content, re.MULTILINE))
         has_overview = "概述" in content or "模块概述" in content
         has_api = "API" in content or "函数" in content or "类" in content
         has_examples = "示例" in content or "使用示例" in content
-        has_dependencies = "依赖" in content or "依赖关系" in content
-        has_best_practices = "最佳实践" in content or "注意事项" in content
+        # has_dependencies = "依赖" in content or "依赖关系" in content # 未使用
+        # has_best_practices = "最佳实践" in content or "注意事项" in content # 未使用
 
         # 构建完整内容
         result_parts = []
@@ -869,7 +938,12 @@ if __name__ == "__main__":
         return "".join(result_parts)
 
     def _save_module_file(self, file_path: str, content: str) -> None:
-        """Saves content to a file (designed to be run in a thread)."""
+        """將內容保存到文件（設計為在線程中運行）。
+
+        Args:
+            file_path (str): 要保存到的文件路徑。
+            content (str): 要保存的內容。
+        """
         try:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -880,7 +954,12 @@ if __name__ == "__main__":
             # Consider how to propagate this specific file save error if needed.
 
     def _save_index_file(self, file_path: str, content: str) -> None:
-        """Saves index content to a file (designed to be run in a thread)."""
+        """將索引內容保存到文件（設計為在線程中運行）。
+
+        Args:
+            file_path (str): 要保存到的文件路徑。
+            content (str): 要保存的索引內容。
+        """
         try:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)

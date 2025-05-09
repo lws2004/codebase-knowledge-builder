@@ -388,11 +388,14 @@ class ContentQualityCheckNode(Node):
 
             # 计算质量分数
             quality_score = {
-                "completeness": evaluation.get("completeness", {}).get("score", 0) / 10,
-                "accuracy": evaluation.get("accuracy", {}).get("score", 0) / 10,
-                "readability": evaluation.get("readability", {}).get("score", 0) / 10,
-                "formatting": evaluation.get("formatting", {}).get("score", 0) / 10,
-                "overall": evaluation.get("overall", 0) / 10,
+                "clarity": evaluation["clarity"]["score"] / 10.0,
+                "completeness": evaluation["completeness"]["score"] / 10.0,
+                "accuracy": evaluation["accuracy"]["score"] / 10.0,
+                "structure": evaluation["structure"]["score"] / 10.0,
+                "readability": evaluation["readability"]["score"] / 10.0,
+                "consistency": evaluation["consistency"]["score"] / 10.0,
+                "engagement": evaluation["engagement"]["score"] / 10.0,
+                "overall": evaluation["overall"] / 10.0,  # overall 是 int，确保结果是 float
             }
 
             return evaluation, fixed_content, quality_score, True
