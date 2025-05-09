@@ -17,6 +17,7 @@ class EvaluationResult(TypedDict):
     accuracy: EvaluationCategory
     readability: EvaluationCategory
     formatting: EvaluationCategory
+    visualization: EvaluationCategory
     overall: int
     needs_fix: bool
     fix_suggestions: str
@@ -53,6 +54,7 @@ class ModuleQualityCheckEvaluator:
             "accuracy": {"score": 0, "comments": ""},
             "readability": {"score": 0, "comments": ""},
             "formatting": {"score": 0, "comments": ""},
+            "visualization": {"score": 0, "comments": ""},
             "overall": 0,
             "needs_fix": False,
             "fix_suggestions": "",
@@ -77,6 +79,11 @@ class ModuleQualityCheckEvaluator:
         formatting_match = re.search(r"格式化.*?(\d+).*?[评分分数]", content, re.DOTALL)
         if formatting_match:
             result["formatting"]["score"] = int(formatting_match.group(1))
+
+        # 提取可视化评分
+        visualization_match = re.search(r"可视化.*?(\d+).*?[评分分数]", content, re.DOTALL)
+        if visualization_match:
+            result["visualization"]["score"] = int(visualization_match.group(1))
 
         # 提取总体评分
         overall_match = re.search(r"总体[评分分数].*?(\d+)", content, re.DOTALL)
@@ -133,5 +140,6 @@ class ModuleQualityCheckEvaluator:
             "accuracy": evaluation["accuracy"]["score"] / 10,
             "readability": evaluation["readability"]["score"] / 10,
             "formatting": evaluation["formatting"]["score"] / 10,
+            "visualization": evaluation["visualization"]["score"] / 10,
             "overall": evaluation["overall"] / 10,
         }

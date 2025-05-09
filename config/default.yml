@@ -4,7 +4,7 @@
 app:
    name: "Codebase Knowledge Builder"
    version: "0.1.0"
-   debug: false
+   debug: false # 设置为true可以启用调试模式，显示更详细的日志信息
 
 # LLM 配置
 llm:
@@ -143,11 +143,14 @@ nodes:
          - "bin"
          - "dat"
 
+   # AI理解核心模块节点配置
+   # 该节点负责分析代码库结构，识别核心模块和它们之间的关系
    ai_understand_core_modules:
-      retry_count: 3
-      quality_threshold: 0.7
-      language_detection: true
-      terminology_extraction: true
+      retry_count: 3 # 重试次数
+      quality_threshold: 0.7 # 质量阈值，低于此值的结果将被标记为需要改进
+      language_detection: true # 是否检测语言
+      terminology_extraction: true # 是否提取术语
+      # 提示模板 - 用于指导LLM分析代码库结构并识别核心模块
       core_modules_prompt_template: |
          你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
 
@@ -209,10 +212,13 @@ nodes:
          - "yaml"
          - "toml"
 
+   # API文档生成节点配置
+   # 该节点负责生成代码库的API文档
    generate_api_docs:
-      retry_count: 3
-      quality_threshold: 0.7
-      output_format: "markdown"
+      retry_count: 3 # 重试次数
+      quality_threshold: 0.7 # 质量阈值，低于此值的结果将被标记为需要改进
+      output_format: "markdown" # 输出格式
+      # 提示模板 - 用于指导LLM生成API文档
       api_docs_prompt_template: |
          你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
 
@@ -301,10 +307,6 @@ nodes:
              A --> C[模块C]
              B --> D[模块D]
              C --> D
-             style A fill:#f9d77e,stroke:#e8ae00
-             style B fill:#a8d6ff,stroke:#0066cc
-             style C fill:#a8d6ff,stroke:#0066cc
-             style D fill:#b9f5b9,stroke:#00a300
          ```
 
          ```mermaid
@@ -413,8 +415,6 @@ nodes:
              C --> E[性能优化]
              D --> E
              E --> F[当前版本]
-             style A fill:#f9d77e
-             style F fill:#b9f5b9
          ```
 
          重要提示：必须包含至少两个Mermaid图表，这是强制要求！
@@ -468,9 +468,6 @@ nodes:
              C --> D
              A --> E[外部依赖1]
              B --> F[外部依赖2]
-             style A fill:#f9d77e,stroke:#e8ae00
-             style E fill:#a8d6ff,stroke:#0066cc
-             style F fill:#a8d6ff,stroke:#0066cc
          ```
 
          Mermaid类图示例（用于展示依赖关系）：
@@ -542,9 +539,6 @@ nodes:
              A --> C[子概念2]
              B --> D[相关术语1]
              C --> E[相关术语2]
-             style A fill:#f9d77e,stroke:#e8ae00
-             style B fill:#a8d6ff,stroke:#0066cc
-             style C fill:#a8d6ff,stroke:#0066cc
          ```
 
          或者使用思维导图形式：
@@ -612,8 +606,6 @@ nodes:
              A[用户] --> B[API接口]
              B --> C[核心功能]
              C --> D[数据存储]
-             style B fill:#a8d6ff,stroke:#0066cc
-             style C fill:#f9d77e,stroke:#e8ae00
          ```
 
          或者使用流程图展示基本使用流程：
@@ -624,8 +616,6 @@ nodes:
              B --> C[配置]
              C --> D[使用]
              D --> E[结束]
-             style A fill:#f9d77e
-             style E fill:#b9f5b9
          ```
 
          重要提示：
@@ -634,15 +624,20 @@ nodes:
          3. 不要生成虚构的功能，应该使用代码库中实际存在的功能。
          4. 必须包含至少一个Mermaid图表，这是强制要求！
 
+   # 内容质量检查节点配置
+   # 该节点负责检查生成的文档内容质量，并提供改进建议
+   # 注意：该节点不会直接修复文档，而是提供改进建议，由内容生成节点根据建议重新生成
    content_quality_check:
-      retry_count: 2
-      quality_threshold: 0.7
-      auto_fix: false
-      check_aspects:
-         - "completeness"
-         - "accuracy"
-         - "readability"
-         - "formatting"
+      retry_count: 2 # 重试次数
+      quality_threshold: 0.7 # 质量阈值，低于此值的文档将被标记为需要改进
+      auto_fix: true # 是否启用自动修复（通过传递改进建议给内容生成节点）
+      check_aspects: # 检查方面
+         - "completeness" # 完整性：文档是否涵盖了所有必要的信息
+         - "accuracy" # 准确性：文档中的信息是否准确
+         - "readability" # 可读性：文档是否易于阅读和理解
+         - "formatting" # 格式化：文档的格式是否一致和专业
+         - "visualization" # 可视化：文档是否包含必要的图表
+      # 提示模板 - 注意：该模板应只提供改进建议，不提供修复后的完整内容
       quality_check_prompt_template: |
          你是一个内容质量检查专家。请评估以下文档的质量，并提供改进建议。
 
@@ -703,16 +698,20 @@ nodes:
          使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
          确保文档中的代码引用能够链接到源代码。
 
+   # 模块质量检查节点配置
+   # 该节点负责检查生成的模块文档质量，并提供改进建议
+   # 注意：该节点不会直接修复文档，而是提供改进建议，由内容生成节点根据建议重新生成
    module_quality_check:
-      retry_count: 2
-      quality_threshold: 0.7
-      auto_fix: false
-      check_aspects:
-         - "completeness"
-         - "accuracy"
-         - "readability"
-         - "formatting"
-         - "visualization"
+      retry_count: 2 # 重试次数
+      quality_threshold: 0.7 # 质量阈值，低于此值的文档将被标记为需要改进
+      auto_fix: true # 是否启用自动修复（通过传递改进建议给内容生成节点）
+      check_aspects: # 检查方面
+         - "completeness" # 完整性：文档是否涵盖了模块的所有重要方面
+         - "accuracy" # 准确性：文档中的信息是否准确
+         - "readability" # 可读性：文档是否易于阅读和理解
+         - "formatting" # 格式化：文档的格式是否一致和专业
+         - "visualization" # 可视化：文档是否包含必要的图表或示意图
+      # 提示模板 - 注意：该模板应只提供改进建议，不提供修复后的完整内容
       quality_check_prompt_template: |
          你是一个模块文档质量检查专家。请评估以下模块文档的质量，并提供改进建议。
 

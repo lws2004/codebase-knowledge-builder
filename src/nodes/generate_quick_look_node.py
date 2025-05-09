@@ -264,13 +264,17 @@ class AsyncGenerateQuickLookNode(AsyncNode):
         # 获取仓库名称
         repo_name = code_structure.get("repo_name", "requests")
 
-        # 格式化提示
-        return self.config.quick_look_prompt_template.format(
-            repo_name=repo_name,
-            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
-            core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
-            history_analysis=json.dumps(simplified_history, indent=2, ensure_ascii=False),
-        )
+        # 获取模板
+        template = self.config.quick_look_prompt_template
+
+        # 替换模板中的变量，同时保留Mermaid图表中的大括号
+        # 使用安全的方式替换变量，避免格式化字符串中的问题
+        template = template.replace("{repo_name}", repo_name)
+        template = template.replace("{code_structure}", json.dumps(simplified_structure, indent=2, ensure_ascii=False))
+        template = template.replace("{core_modules}", json.dumps(simplified_modules, indent=2, ensure_ascii=False))
+        template = template.replace("{history_analysis}", json.dumps(simplified_history, indent=2, ensure_ascii=False))
+
+        return template
 
     async def _call_model(
         self, prompt_str: str, target_language: str, model_name: str

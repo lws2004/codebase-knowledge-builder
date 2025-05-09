@@ -245,9 +245,15 @@ class AsyncGenerateTimelineNode(AsyncNode):  # Renamed class and changed base cl
         # 获取仓库名称
         repo_name = history_analysis.get("repo_name", "requests")
 
-        return self.config.timeline_prompt_template.format(
-            repo_name=repo_name, history_analysis=json.dumps(simplified_history, indent=2, ensure_ascii=False)
-        )
+        # 获取模板
+        template = self.config.timeline_prompt_template
+
+        # 替换模板中的变量，同时保留Mermaid图表中的大括号
+        # 使用安全的方式替换变量，避免格式化字符串中的问题
+        template = template.replace("{repo_name}", repo_name)
+        template = template.replace("{history_analysis}", json.dumps(simplified_history, indent=2, ensure_ascii=False))
+
+        return template
 
     async def _call_model_async(  # Renamed for consistency
         self, prompt_str: str, target_language: str, model_name: str

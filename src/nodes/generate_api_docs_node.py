@@ -20,49 +20,8 @@ class GenerateApiDocsNodeConfig(BaseModel):
     model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     output_format: str = Field("markdown", description="输出格式")
     api_docs_prompt_template: str = Field(
-        """
-        你是一个代码库API文档专家。请根据以下信息生成一个全面的代码库API文档。
-
-        你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
-
-        代码库结构:
-        {code_structure}
-
-        核心模块:
-        {core_modules}
-
-        请提供以下内容:
-        1. API概述
-           - 主要API接口和功能
-           - API设计原则和约定
-        2. 核心API详解
-           - 每个核心API的功能和用法
-           - 参数说明和返回值
-           - 使用示例（基于实际的{repo_name}用法）
-        3. API分类
-           - 按功能分类的API列表
-           - 每类API的主要用途
-        4. 错误处理
-           - 常见错误码和含义
-           - 错误处理最佳实践
-        5. 版本兼容性（如果适用）
-           - 版本间的API变化
-           - 向后兼容性考虑
-
-        请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
-        使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-        确保文档中的代码引用能够链接到源代码。
-
-        重要提示：
-        1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
-        2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
-        3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
-        4. 不要生成虚构的API，应该使用代码库中实际存在的API。
-        5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
-        6. 请使用{repo_name}的实际API和模块名称，例如，如果是requests库，应该使用requests.get(),
-           requests.post()等实际存在的API。
-        """,
-        description="API文档提示模板",
+        "{code_structure}\n{core_modules}\n{repo_name}",  # 简单的占位符，实际模板将从配置文件中加载
+        description="API文档提示模板，从配置文件中加载",
     )
 
 
@@ -88,6 +47,10 @@ class AsyncGenerateApiDocsNode(AsyncNode):
         merged_config = default_config.copy()
         if config:
             merged_config.update(config)
+
+        # 记录配置加载信息
+        log_and_notify("从配置文件加载API文档生成节点配置", "debug")
+        log_and_notify(f"提示模板长度: {len(merged_config.get('api_docs_prompt_template', ''))}", "debug")
 
         self.config = GenerateApiDocsNodeConfig(**merged_config)
         log_and_notify("初始化 AsyncGenerateApiDocsNode", "info")
@@ -255,11 +218,17 @@ class AsyncGenerateApiDocsNode(AsyncNode):
             "architecture": core_modules.get("architecture", ""),
             "relationships": core_modules.get("relationships", []),
         }
-        return self.config.api_docs_prompt_template.format(
-            repo_name=repo_name,
-            code_structure=json.dumps(simplified_structure, indent=2, ensure_ascii=False),
-            core_modules=json.dumps(simplified_modules, indent=2, ensure_ascii=False),
-        )
+
+        # 获取模板
+        template = self.config.api_docs_prompt_template
+
+        # 替换模板中的变量，同时保留Mermaid图表中的大括号
+        # 使用安全的方式替换变量，避免格式化字符串中的问题
+        template = template.replace("{repo_name}", repo_name)
+        template = template.replace("{code_structure}", json.dumps(simplified_structure, indent=2, ensure_ascii=False))
+        template = template.replace("{core_modules}", json.dumps(simplified_modules, indent=2, ensure_ascii=False))
+
+        return template
 
     async def _call_model(
         self, prompt_str: str, target_language: str, model_name: str, repo_name: str
@@ -353,7 +322,7 @@ class AsyncGenerateApiDocsNode(AsyncNode):
 
         return scores
 
-    def _save_document(self, content: str, output_dir: str, output_format: str, repo_name: str) -> str:
+    def _save_document(self, content: str, output_dir: str, _: str, repo_name: str) -> str:
         """保存文档
 
         Args:

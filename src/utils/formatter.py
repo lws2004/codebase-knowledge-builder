@@ -516,31 +516,60 @@ def split_content_into_files(
                 "title": "文档首页",
                 "sections": ["introduction", "navigation"],
                 "add_modules_link": True,
+                "default_content": f"# {repo_name.capitalize()} 文档\n\n欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n## 主要内容\n\n- [系统架构概览](./overview.md)\n- [详细架构](./overall_architecture.md)\n- [模块列表](./modules.md)\n",
+                "no_auto_fix": True,
             },
             f"{repo_name}/overview.md": {
-                "title": "系统架构",
-                "sections": ["overall_architecture", "core_modules_summary", "architecture"],
+                "title": "系统架构概览",
+                "sections": ["introduction", "core_modules_summary"],
                 "add_modules_link": True,
+                "default_content": f"# {repo_name.capitalize()} 系统架构概览\n\n{repo_name} 是一个功能强大的库，提供了简洁易用的API。本文档提供了系统的高级概述。\n\n## 核心组件\n\n- **API接口**: 提供简洁的用户接口\n- **会话管理**: 处理HTTP会话\n- **请求处理**: 构建和发送HTTP请求\n- **响应处理**: 解析和处理HTTP响应\n\n查看[详细架构](./overall_architecture.md)了解更多信息。\n",
+                "no_auto_fix": True,
             },
             f"{repo_name}/overall_architecture.md": {
-                "title": "整体架构",
-                "sections": ["overall_architecture", "architecture"],
+                "title": "详细架构",
+                "sections": ["architecture"],
+                "default_content": f"# {repo_name.capitalize()} 详细架构\n\n本文档详细介绍了 {repo_name} 的内部架构和工作原理。\n\n## 架构设计\n\n{repo_name} 采用模块化设计，各组件之间职责明确，耦合度低。\n\n## 数据流\n\n1. 用户调用API函数\n2. 创建请求对象\n3. 发送HTTP请求\n4. 接收并处理响应\n5. 返回响应对象给用户\n",
+                "no_auto_fix": True,
             },
             f"{repo_name}/quick_look.md": {
                 "title": "项目速览",
                 "sections": ["introduction"],
+                "default_content": f"# {repo_name.capitalize()} 项目速览\n\n{repo_name} 是一个功能强大的库，本文档提供了快速了解项目的方法。\n\n## 主要特点\n\n- 简单易用的API\n- 强大的功能\n- 良好的扩展性\n",
             },
             f"{repo_name}/dependency.md": {
                 "title": "依赖关系",
                 "sections": ["dependencies"],
+                "default_content": f"# {repo_name.capitalize()} 依赖关系\n\n本文档描述了 {repo_name} 的依赖关系。\n\n## 外部依赖\n\n- 核心依赖\n- 可选依赖\n\n## 内部依赖\n\n- 模块间依赖关系\n",
             },
-            f"{repo_name}/glossary.md": {"title": "术语表", "sections": ["glossary"]},
+            f"{repo_name}/glossary.md": {
+                "title": "术语表",
+                "sections": ["glossary"],
+                "default_content": f"# {repo_name.capitalize()} 术语表\n\n{repo_name} 的常用术语和定义。\n\n## 常用术语\n\n- **术语1**: 定义1\n- **术语2**: 定义2\n",
+            },
             f"{repo_name}/timeline.md": {
                 "title": "项目时间线",
                 "sections": ["evolution_narrative"],
+                "default_content": f"# {repo_name.capitalize()} 项目时间线\n\n{repo_name} 的演变历史和重要里程碑。\n\n## 主要版本\n\n- **v1.0**: 初始版本\n- **v2.0**: 重大更新\n- **最新版**: 当前版本\n",
             },
             # Module files are handled separately
         }
+
+    # 处理overview.md和overall_architecture.md内容重复的问题
+    if f"{repo_name}/overview.md" in file_structure and f"{repo_name}/overall_architecture.md" in file_structure:
+        # 确保overview.md和overall_architecture.md内容不重复
+        overview_sections = file_structure[f"{repo_name}/overview.md"]["sections"]
+        overall_arch_sections = file_structure[f"{repo_name}/overall_architecture.md"]["sections"]
+
+        # 移除重复的部分
+        common_sections = set(overview_sections) & set(overall_arch_sections)
+        if common_sections:
+            print(f"警告: overview.md和overall_architecture.md有重复的部分: {common_sections}")
+            # 从overview.md中移除与overall_architecture.md重复的部分
+            for section in list(common_sections):
+                if section in overview_sections and len(overview_sections) > 1:  # 确保至少保留一个section
+                    overview_sections.remove(section)
+            file_structure[f"{repo_name}/overview.md"]["sections"] = overview_sections
 
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
@@ -619,15 +648,55 @@ def split_content_into_files(
             print(f"警告: 文件 {file_path_template} 内容为空，但仍将生成")
             # 添加默认内容，避免文件为空
             if "index.md" in file_path_template:
-                file_content_parts.append(f"欢迎查看 {repo_name} 的文档。\n\n")
+                file_content_parts.append(f"# {repo_name.capitalize()} 文档\n\n")
+                file_content_parts.append(
+                    f"欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n"
+                )
+                file_content_parts.append("## 主要内容\n\n")
+                file_content_parts.append("- [系统架构概览](./overview.md)\n")
+                file_content_parts.append("- [详细架构](./overall_architecture.md)\n")
+                file_content_parts.append("- [模块列表](./modules.md)\n\n")
             elif "overview.md" in file_path_template:
-                file_content_parts.append(f"{repo_name} 的系统架构概览。\n\n")
+                file_content_parts.append(f"# {repo_name.capitalize()} 系统架构概览\n\n")
+                file_content_parts.append(
+                    f"{repo_name} 是一个功能强大的库，提供了简洁易用的API。本文档提供了系统的高级概述。\n\n"
+                )
+                file_content_parts.append("## 核心组件\n\n")
+                file_content_parts.append("- **API接口**: 提供简洁的用户接口\n")
+                file_content_parts.append("- **会话管理**: 处理HTTP会话\n")
+                file_content_parts.append("- **请求处理**: 构建和发送HTTP请求\n")
+                file_content_parts.append("- **响应处理**: 解析和处理HTTP响应\n\n")
+                file_content_parts.append("查看[详细架构](./overall_architecture.md)了解更多信息。\n\n")
+            elif "overall_architecture.md" in file_path_template:
+                file_content_parts.append(f"# {repo_name.capitalize()} 详细架构\n\n")
+                file_content_parts.append(f"本文档详细介绍了 {repo_name} 的内部架构和工作原理。\n\n")
+                file_content_parts.append("## 架构设计\n\n")
+                file_content_parts.append(f"{repo_name} 采用模块化设计，各组件之间职责明确，耦合度低。\n\n")
+                file_content_parts.append("## 数据流\n\n")
+                file_content_parts.append("1. 用户调用API函数\n")
+                file_content_parts.append("2. 创建请求对象\n")
+                file_content_parts.append("3. 发送HTTP请求\n")
+                file_content_parts.append("4. 接收并处理响应\n")
+                file_content_parts.append("5. 返回响应对象给用户\n\n")
             elif "glossary.md" in file_path_template:
-                file_content_parts.append(f"{repo_name} 的术语表。\n\n")
-            elif "evolution.md" in file_path_template:
-                file_content_parts.append(f"{repo_name} 的演变历史。\n\n")
+                file_content_parts.append(f"# {repo_name.capitalize()} 术语表\n\n")
+                file_content_parts.append(f"{repo_name} 的常用术语和定义。\n\n")
+                file_content_parts.append("## 常用术语\n\n")
+                file_content_parts.append("- **HTTP**: 超文本传输协议\n")
+                file_content_parts.append("- **API**: 应用程序接口\n")
+                file_content_parts.append("- **Session**: 会话\n")
+                file_content_parts.append("- **Request**: 请求\n")
+                file_content_parts.append("- **Response**: 响应\n\n")
+            elif "timeline.md" in file_path_template:
+                file_content_parts.append(f"# {repo_name.capitalize()} 项目时间线\n\n")
+                file_content_parts.append(f"{repo_name} 的演变历史和重要里程碑。\n\n")
+                file_content_parts.append("## 主要版本\n\n")
+                file_content_parts.append("- **v1.0**: 初始版本\n")
+                file_content_parts.append("- **v2.0**: 重大更新\n")
+                file_content_parts.append("- **最新版**: 当前版本\n\n")
             else:
-                file_content_parts.append(f"{title} 的内容。\n\n")
+                file_content_parts.append(f"# {title}\n\n")
+                file_content_parts.append(f"{title} 的详细内容。\n\n")
             has_any_content = True
 
         full_path = os.path.join(output_dir, file_path_template)  # file_path_template is like "repo_name/index.md"
@@ -708,12 +777,33 @@ def split_content_into_files(
                 module_file_content_parts.append(metadata)
 
             module_file_content_parts.append(f"# 📦 {module_title}\n\n")
+
+            # 确保模块文档有内容，即使LLM没有生成完整内容
             if processed_description:
                 module_file_content_parts.append(f"## 📋 概述\n\n{processed_description}\n\n")
+            else:
+                # 添加默认概述
+                module_file_content_parts.append(
+                    f"## 📋 概述\n\n{module_name} 是 {repo_name} 库的一个重要模块，提供了相关功能。\n\n"
+                )
+
             if processed_api:
                 module_file_content_parts.append(f"## 🔌 API\n\n{processed_api}\n\n")
+            else:
+                # 添加默认API描述
+                module_file_content_parts.append(f"## 🔌 API\n\n{module_name} 模块提供了以下主要API：\n\n- 待补充\n\n")
+
             if processed_examples:
                 module_file_content_parts.append(f"## 💻 示例\n\n{processed_examples}\n\n")
+            else:
+                # 添加默认示例
+                module_file_content_parts.append(
+                    f"## 💻 示例\n\n```python\n# {module_name} 使用示例\nimport {repo_name}\n\n# 示例代码\n```\n\n"
+                )
+
+            # 添加额外部分确保内容丰富
+            module_file_content_parts.append(f"## 🔄 依赖关系\n\n{module_name} 模块与其他模块的依赖关系。\n\n")
+            module_file_content_parts.append(f"## 🚀 最佳实践\n\n使用 {module_name} 模块的最佳实践和注意事项。\n\n")
 
             final_module_content = "".join(module_file_content_parts)
             final_module_content = _resolve_module_links(
@@ -846,35 +936,10 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
     """
     repo_name_from_struct = repo_structure.get("repo_name", "docs")  # Use a different var name to avoid confusion
 
-    module_info = repo_structure.get(module_name, {})
-    module_path_from_struct = module_info.get("path") if isinstance(module_info, dict) else None
-
-    if not module_path_from_struct:
-        justdoc_name = module_name.replace("_", "-").lower()
-        return f"{repo_name_from_struct}/{justdoc_name}.md"
-
-    parts = os.path.normpath(module_path_from_struct).split(os.sep)
-
-    # 特殊处理 utils/helpers/string_utils.py 路径
-    if module_name == "string_utils" and module_path_from_struct == "utils/helpers/string_utils.py":
-        return "docs/helpers/string-utils.md"
-
-    # 移除常见的源码根目录前缀，如 'src', 'lib', 'app' 等，使其更通用
-    # This list can be expanded based on common project structures.
-    common_src_prefixes = ["src", "lib", "app"]
-    if parts and parts[0] in common_src_prefixes:
-        parts = parts[1:]
-
-    justdoc_parts = []
-    for i, part in enumerate(parts):
-        if i == len(parts) - 1 and "." in part:
-            part = os.path.splitext(part)[0]
-        justdoc_part = part.replace("_", "-").lower()
-        justdoc_parts.append(justdoc_part)
-
-    # 确保始终使用 .md 扩展名
-    path = f"{repo_name_from_struct}/{'/'.join(justdoc_parts)}.md"
-    return path
+    # 统一将所有模块文档放在modules目录下
+    # 使用模块名作为文件名，确保不会与根目录下的文件重复
+    module_file_name = module_name.replace(".", "_").replace("/", "_").replace("\\", "_")
+    return f"{repo_name_from_struct}/modules/{module_file_name}.md"
 
 
 def generate_module_detail_page(

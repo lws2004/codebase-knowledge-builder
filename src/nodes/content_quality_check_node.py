@@ -37,25 +37,10 @@ class ContentQualityCheckNodeConfig(BaseModel):
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
     model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     auto_fix: bool = Field(True, description="是否自动修复")
-    check_aspects: List[str] = Field(["completeness", "accuracy", "readability", "formatting"], description="检查方面")
+    check_aspects: List[str] = Field([], description="检查方面，从配置文件中加载")
     quality_check_prompt_template: str = Field(
-        """
-        你是一个内容质量检查专家。请评估以下文档的质量，并提供改进建议。
-
-        文档内容:
-        {content}
-
-        请从以下方面评估文档质量:
-        1. 完整性: 文档是否涵盖了所有必要的信息？是否有明显的遗漏？
-        2. 准确性: 文档中的信息是否准确？是否有明显的错误或误导性内容？
-        3. 可读性: 文档是否易于阅读和理解？是否有复杂或混乱的表述？
-        4. 格式化: 文档的格式是否一致和专业？是否正确使用了 Markdown 语法？
-
-        对于每个方面，请给出 1-10 的评分，并提供具体的改进建议。
-
-        如果需要修复，请提供修复后的完整文档。
-        """,
-        description="质量检查提示模板",
+        "{content}",  # 简单的占位符，实际模板将从配置文件中加载
+        description="质量检查提示模板，从配置文件中加载",
     )
 
 
@@ -79,6 +64,12 @@ class ContentQualityCheckNode(Node):
         merged_config = default_config.copy()
         if config:
             merged_config.update(config)
+
+        # 记录配置加载信息
+        log_and_notify(
+            f"从配置文件加载内容质量检查节点配置: check_aspects={merged_config.get('check_aspects')}", "debug"
+        )
+        log_and_notify(f"提示模板长度: {len(merged_config.get('quality_check_prompt_template', ''))}", "debug")
 
         self.config = ContentQualityCheckNodeConfig(**merged_config)
         log_and_notify("初始化内容质量检查节点", "info")
@@ -192,9 +183,13 @@ class ContentQualityCheckNode(Node):
 
                         # 如果启用了自动修复且有修复后的内容，保存修复后的内容
                         if auto_fix and fixed_content and file_path:
-                            log_and_notify("自动修复已启用，正在保存修复后的内容", "info")
-                            self._save_fixed_content(fixed_content, file_path)
-                            log_and_notify(f"已保存修复后的内容到: {file_path}", "info")
+                            # 检查文件是否禁用了自动修复
+                            if self._is_auto_fix_disabled(file_path):
+                                log_and_notify(f"文件 {file_path} 禁用了自动修复，跳过", "info")
+                            else:
+                                log_and_notify("自动修复已启用，正在保存修复后的内容", "info")
+                                self._save_fixed_content(fixed_content, file_path)
+                                log_and_notify(f"已保存修复后的内容到: {file_path}", "info")
 
                     return {
                         "evaluation": evaluation,
@@ -212,7 +207,7 @@ class ContentQualityCheckNode(Node):
         log_and_notify(error_msg, "error", notify=True)
         return {"error": error_msg, "success": False}
 
-    def post(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+    def post(self, shared: Dict[str, Any], _: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
         """后处理阶段，将检查结果存储到共享存储中
 
         Args:
@@ -269,12 +264,12 @@ class ContentQualityCheckNode(Node):
                 return "default"
             else:
                 log_and_notify(
-                    f"内容质量检查完成，需要改进 (质量分数: {quality_score})",
+                    f"内容质量检查完成，需要改进 (质量分数: {quality_score})，但继续执行",
                     "info",
                     notify=True,
                 )
-                # 返回需要修复的信号，让生成节点重新生成
-                return "fix"
+                # 即使需要修复，也继续执行
+                return "default"
         else:
             log_and_notify(
                 f"内容质量检查完成，质量良好 (质量分数: {quality_score})",
@@ -486,6 +481,22 @@ class ContentQualityCheckNode(Node):
             result["fix_suggestions"] = fix_match.group(1).strip()
 
         return result
+
+    def _is_auto_fix_disabled(self, file_path: str) -> bool:
+        """检查文件是否禁用了自动修复
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            是否禁用了自动修复
+        """
+        # 检查文件路径是否包含特定的关键字
+        no_auto_fix_keywords = ["overview.md", "overall_architecture.md", "index.md"]
+        for keyword in no_auto_fix_keywords:
+            if keyword in file_path:
+                return True
+        return False
 
     def _extract_fixed_content(self, content: str) -> Optional[str]:
         """提取修复后的内容

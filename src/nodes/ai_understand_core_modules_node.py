@@ -22,37 +22,8 @@ class AIUnderstandCoreModulesNodeConfig(BaseModel):
     language_detection: bool = Field(True, description="是否检测语言")
     terminology_extraction: bool = Field(True, description="是否提取术语")
     core_modules_prompt_template: str = Field(
-        """
-        你是一个代码库分析专家。请分析以下代码库结构，并识别核心模块和它们之间的关系。
-
-        你正在分析的是{repo_name}代码库。请确保你的分析基于实际的{repo_name}代码，而不是生成通用示例项目。
-
-        代码库结构:
-        {code_structure}
-
-        依赖关系:
-        {dependencies}
-
-        请提供以下内容:
-        1. 核心模块列表，每个模块包括:
-           - 模块名称（使用{repo_name}的实际模块名）
-           - 模块路径（使用{repo_name}的实际文件路径）
-           - 模块功能描述（基于{repo_name}的实际功能）
-           - 模块重要性评分 (1-10)
-           - 模块依赖关系（基于{repo_name}的实际依赖关系）
-        2. 整体架构概述（描述{repo_name}的实际架构）
-        3. 模块之间的关系（描述{repo_name}模块间的实际关系）
-
-        重要提示：
-        1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
-        2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
-        3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
-        4. 不要生成虚构的API，应该使用代码库中实际存在的API。
-        5. 如果你不确定某个信息，请基于提供的代码库结构进行合理推断，而不是编造。
-        6. 请使用{repo_name}的实际模块名称和文件路径，例如，如果是requests库，应该使用requests.api,
-           requests.sessions等实际存在的模块。
-        """,
-        description="核心模块提示模板",
+        "{code_structure}\n{dependencies}\n{repo_name}",  # 简单的占位符，实际模板将从配置文件中加载
+        description="核心模块提示模板，从配置文件中加载",
     )
 
 
@@ -74,6 +45,11 @@ class AsyncAIUnderstandCoreModulesNode(AsyncNode):
         merged_config = default_config.copy()
         if config:
             merged_config.update(config)
+
+        # 记录配置加载信息
+        log_and_notify("从配置文件加载AI理解核心模块节点配置", "debug")
+        log_and_notify(f"提示模板长度: {len(merged_config.get('core_modules_prompt_template', ''))}", "debug")
+
         self.config = AIUnderstandCoreModulesNodeConfig(**merged_config)
         log_and_notify("初始化 AsyncAIUnderstandCoreModulesNode", "info")
 

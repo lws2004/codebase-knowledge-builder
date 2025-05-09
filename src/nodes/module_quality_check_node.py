@@ -31,6 +31,12 @@ class ModuleQualityCheckNode(Node):
         if config:
             merged_config.update(config)
 
+        # 记录配置加载信息
+        log_and_notify(
+            f"从配置文件加载模块质量检查节点配置: check_aspects={merged_config.get('check_aspects')}", "debug"
+        )
+        log_and_notify(f"提示模板长度: {len(merged_config.get('quality_check_prompt_template', ''))}", "debug")
+
         self.config = ModuleQualityCheckNodeConfig(**merged_config)
         log_and_notify("初始化模块质量检查节点", "info")
 
@@ -117,7 +123,7 @@ class ModuleQualityCheckNode(Node):
                         log_and_notify(f"尝试检查模块质量 (尝试 {attempt + 1}/{retry_count})", "info")
 
                         # 调用 LLM
-                        evaluation, fixed_content, quality_score, success = self._call_model(
+                        evaluation, _, quality_score, success = self._call_model(
                             llm_config, prompt, target_language, model
                         )
 
@@ -135,19 +141,26 @@ class ModuleQualityCheckNode(Node):
                             module["evaluation"] = evaluation
                             module["needs_fix"] = needs_fix
 
-                            # 如果需要修复且启用了自动修复且有修复后的内容
-                            if needs_fix and auto_fix and fixed_content:
-                                log_and_notify("自动修复模块内容", "info")
-                                module["content"] = fixed_content
-                                module["fixed"] = True
+                            # 如果需要修复，记录改进建议
+                            if needs_fix:
+                                # 不再尝试直接修复内容，而是保存改进建议
+                                module["improvement_suggestions"] = evaluation.get("fix_suggestions", "")
+
+                                if auto_fix:
+                                    log_and_notify(
+                                        f"模块 {module.get('name', 'unknown')} 需要改进，已记录改进建议", "info"
+                                    )
+                                    # 标记为需要由内容生成节点重新生成
+                                    module["needs_regeneration"] = True
+                                    module["fixed"] = False
+                                else:
+                                    log_and_notify(
+                                        f"模块 {module.get('name', 'unknown')} 需要改进，但自动修复未启用", "warning"
+                                    )
+                                    module["fixed"] = False
                             else:
                                 module["fixed"] = False
-
-                            # 如果需要修复但没有启用自动修复，记录警告
-                            if needs_fix and not auto_fix:
-                                log_and_notify(
-                                    f"模块 {module.get('name', 'unknown')} 需要改进，但自动修复未启用", "warning"
-                                )
+                                module["needs_regeneration"] = False
 
                             checked_modules.append(module)
                             break
@@ -208,31 +221,34 @@ class ModuleQualityCheckNode(Node):
         # 确定下一个动作
         if modules_need_fix:
             if self.config.auto_fix:
-                # 如果启用了自动修复，检查是否有模块被修复
-                modules_fixed = [m for m in modules_need_fix if m.get("fixed", False)]
-                if len(modules_fixed) == len(modules_need_fix):
-                    log_and_notify(
-                        f"模块质量检查完成，已自动修复 {len(modules_fixed)} 个模块 (整体分数: {exec_res['overall_score']})",
-                        "info",
-                        notify=True,
-                    )
-                    return "default"
-                else:
-                    log_and_notify(
-                        f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，但只有 {len(modules_fixed)} 个被自动修复 (整体分数: {exec_res['overall_score']})",
-                        "warning",
-                        notify=True,
-                    )
-                    # 返回需要修复的信号，让生成节点重新生成
-                    return "fix"
+                # 如果启用了自动修复，检查需要重新生成的模块
+                modules_need_regeneration = [m for m in modules_need_fix if m.get("needs_regeneration", False)]
+
+                # 将需要重新生成的模块信息添加到共享存储中，供内容生成节点使用
+                shared["modules_need_regeneration"] = modules_need_regeneration
+
+                log_and_notify(
+                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，已记录改进建议 (整体分数: {exec_res['overall_score']})",
+                    "info",
+                    notify=True,
+                )
+
+                # 添加更详细的日志，帮助调试
+                for module in modules_need_regeneration:
+                    module_name = module.get("name", "unknown")
+                    suggestions = module.get("improvement_suggestions", "")
+                    if suggestions:
+                        log_and_notify(f"模块 {module_name} 的改进建议: {suggestions[:100]}...", "debug")
+
+                return "default"
             else:
                 log_and_notify(
-                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进 (整体分数: {exec_res['overall_score']})",
+                    f"模块质量检查完成，{len(modules_need_fix)} 个模块需要改进，但自动修复未启用 (整体分数: {exec_res['overall_score']})",
                     "warning",
                     notify=True,
                 )
-                # 返回需要修复的信号，让生成节点重新生成
-                return "fix"
+                # 即使需要修复，也继续执行
+                return "default"
         else:
             log_and_notify(
                 f"模块质量检查完成，所有模块质量良好 (整体分数: {exec_res['overall_score']})",
@@ -250,12 +266,21 @@ class ModuleQualityCheckNode(Node):
         Returns:
             提示
         """
+        # 记录提示模板信息
+        template = self.config.quality_check_prompt_template
+        log_and_notify(f"使用提示模板，长度: {len(template)}", "debug")
+
         # 格式化提示
-        return self.config.quality_check_prompt_template.format(content=content)
+        prompt = template.format(content=content)
+
+        # 记录最终提示信息（仅显示前100个字符）
+        log_and_notify(f"生成的提示（前100个字符）: {prompt[:100]}...", "debug")
+
+        return prompt
 
     def _call_model(
         self, llm_config: Dict[str, Any], prompt: str, target_language: str, model: str
-    ) -> Tuple[EvaluationResult, Optional[str], Dict[str, float], bool]:
+    ) -> Tuple[EvaluationResult, None, Dict[str, float], bool]:
         """调用 LLM
 
         Args:
@@ -265,7 +290,7 @@ class ModuleQualityCheckNode(Node):
             model: 模型
 
         Returns:
-            评估结果、修复后的内容、质量分数和成功标志
+            评估结果、None（不再提供修复后的内容）、质量分数和成功标志
         """
         try:
             # 创建 LLM 客户端
@@ -274,8 +299,8 @@ class ModuleQualityCheckNode(Node):
             # 准备系统提示
             system_prompt = f"""你是一个文档质量评估专家，擅长评估文档质量并提供改进建议。
 请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
-你的评估应该客观公正，基于文档的完整性、准确性、可读性和格式化。
-如果文档需要修复，请提供修复后的完整内容。"""
+你的评估应该客观公正，基于文档的完整性、准确性、可读性、格式化和可视化。
+请不要提供修复后的完整文档，只提供详细的改进建议，让生成文档的节点能够根据这些建议重新生成更好的文档。"""
 
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
@@ -290,10 +315,17 @@ class ModuleQualityCheckNode(Node):
             # 使用评估器解析结果
             evaluator = ModuleQualityCheckEvaluator()
             evaluation: EvaluationResult = evaluator.parse_evaluation(content)
-            fixed_content = evaluator.extract_fixed_content(content)
+            # 不再提取修复后的内容
             quality_score = evaluator.calculate_quality_score(evaluation)
 
-            return evaluation, fixed_content, quality_score, True
+            # 记录详细的评估信息，帮助调试
+            log_and_notify(
+                f"评估结果: 总体分数={quality_score['overall']}, 需要修复={evaluation.get('needs_fix', False)}", "debug"
+            )
+            if evaluation.get("fix_suggestions"):
+                log_and_notify(f"改进建议: {evaluation.get('fix_suggestions')[:100]}...", "debug")
+
+            return evaluation, None, quality_score, True
         except Exception as e:
             log_and_notify(f"调用 LLM 失败: {str(e)}", "error")
             default_eval: EvaluationResult = {
@@ -301,6 +333,7 @@ class ModuleQualityCheckNode(Node):
                 "accuracy": {"score": 0, "comments": ""},
                 "readability": {"score": 0, "comments": ""},
                 "formatting": {"score": 0, "comments": ""},
+                "visualization": {"score": 0, "comments": ""},
                 "overall": 0,
                 "needs_fix": False,
                 "fix_suggestions": "",
