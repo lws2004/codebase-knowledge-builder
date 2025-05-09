@@ -1,4 +1,4 @@
-"""代码库知识构建器的主入口点。"""
+"""代码库知识构建器的主入口点"""
 
 import argparse
 import asyncio
@@ -25,7 +25,7 @@ from src.utils.logger import log_and_notify
 
 
 def create_flow() -> AsyncFlow:
-    """创建流程
+    """创建流程。.
 
     Returns:
         流程
@@ -64,7 +64,7 @@ def create_flow() -> AsyncFlow:
 
 
 def parse_arguments() -> argparse.Namespace:
-    """解析命令行参数
+    """解析命令行参数。.
 
     Returns:
         解析后的参数
@@ -84,7 +84,7 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def load_configuration(args: argparse.Namespace) -> ConfigLoader:
-    """加载环境变量和配置
+    """加载环境变量和配置。.
 
     Args:
         args: 命令行参数
@@ -110,7 +110,7 @@ def load_configuration(args: argparse.Namespace) -> ConfigLoader:
 
 
 def extract_repo_name(repo_url: Optional[str], local_path: Optional[str]) -> str:
-    """从仓库URL或本地路径中提取仓库名称
+    """从仓库URL或本地路径中提取仓库名称。.
 
     Args:
         repo_url: 仓库URL
@@ -143,7 +143,7 @@ def create_shared_storage(
     repo_name: str,
     llm_config: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """创建共享存储
+    """创建共享存储。.
 
     Args:
         args: 命令行参数
@@ -175,7 +175,7 @@ def create_shared_storage(
 
 
 def print_results(shared: Dict[str, Any]) -> None:
-    """打印处理结果
+    """打印处理结果。.
 
     Args:
         shared: 共享存储
@@ -208,11 +208,14 @@ def print_results(shared: Dict[str, Any]) -> None:
         print(f"\n处理失败: {shared['error']}")
     elif "output_files" not in shared or not shared["output_files"]:
         # This is a valid outcome, not necessarily an error.
-        print("\n处理完成，但没有生成文档文件")
+        print("\n处理完成,但没有生成文档文件.")
 
 
 async def main() -> None:
-    """主函数"""
+    """主函数。.
+
+    执行代码库知识构建器的主要流程。
+    """
     # 解析命令行参数
     args = parse_arguments()
 
