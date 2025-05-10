@@ -20,7 +20,7 @@ class GenerateModuleDetailsNodeConfig(BaseModel):
     retry_count: int = Field(3, ge=1, le=10, description="重试次数")
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
     model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
-    output_format: str = Field("markdown", description="输出格式")
+    output_format: str = Field("``", description="输出格式")
     max_modules_per_batch: int = Field(5, description="每批最大模块数")
     module_details_prompt_template: str = Field(
         """
@@ -51,7 +51,7 @@ class GenerateModuleDetailsNodeConfig(BaseModel):
            - 使用该模块时需要注意的事项
            - 推荐的最佳实践
 
-        请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
+        请以 ```` 格式输出，使用适当的标题、列表、表格和代码块。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
         确保文档中的代码引用能够链接到源代码。
         """,
@@ -747,195 +747,98 @@ if __name__ == "__main__":
         return "\n".join(lines)
 
     def _process_module_content(self, content: str, module_name: str, repo_name: str) -> str:
-        """处理模块内容，确保内容完整。
-
-        Args:
-            content (str): LLM生成的原始内容。
-            module_name (str): 模块名称。
-            repo_name (str): 仓库名称。
-
-        Returns:
-            str: 处理后的内容。
-        """
-        # repo_name = prep_data["repo_name"] # 未使用
-        # output_dir = prep_data["output_dir"] # 未使用
-        # target_language = prep_data["target_language"] # 未使用
-        # model = prep_data["model"] # 未使用
-
         # 检查内容是否包含必要的部分
         has_title = bool(re.search(r"^#\s+.*", content, re.MULTILINE))
         has_overview = "概述" in content or "模块概述" in content
         has_api = "API" in content or "函数" in content or "类" in content
         has_examples = "示例" in content or "使用示例" in content
-        # has_dependencies = "依赖" in content or "依赖关系" in content # 未使用
-        # has_best_practices = "最佳实践" in content or "注意事项" in content # 未使用
 
-        # 构建完整内容
         result_parts = []
 
-        # 添加元数据
-        result_parts.append(f"---\ntitle: {module_name.replace('_', '.').title()}\ncategory: Modules\n---\n\n")
+        # 添加元数据和标题
+        result_parts.extend(self._prepare_metadata_and_title(content, module_name))
+        content = re.sub(r"^#\s+.*\n", "", content, 1, re.MULTILINE) if has_title else content
 
-        # 添加标题
-        if has_title:
-            # 保留原有标题
-            title_match = re.search(r"^#\s+(.*)", content, re.MULTILINE)
-            if title_match:
-                title = title_match.group(1)
-                result_parts.append(f"# 📦 {title}\n\n")
-                # 移除原标题，避免重复
-                content = re.sub(r"^#\s+.*\n", "", content, 1, re.MULTILINE)
-            else:
-                result_parts.append(f"# 📦 {module_name.replace('_', '.').title()}\n\n")
-        else:
-            result_parts.append(f"# 📦 {module_name.replace('_', '.').title()}\n\n")
-
-        # 如果内容不为空，且包含必要部分，则使用原内容
+        # 保留原内容或生成默认内容
         if content.strip() and (has_overview or has_api or has_examples):
             result_parts.append(content)
         else:
-            # 添加默认内容
-            # 添加概述部分
-            result_parts.append("## 📋 模块概述\n\n")
-            result_parts.append("### 📝 模块名称和路径\n")
-            result_parts.append(f"- **模块名称**: `{module_name}`\n")
-            result_parts.append(f"- **模块路径**: 在{repo_name}代码库中\n\n")
+            result_parts.extend(self._generate_default_content(module_name, repo_name))
 
-            if module_name == "requests.api":
-                result_parts.append("### 🎯 模块的主要功能和用途\n")
-                result_parts.append(f"{module_name} 是 {repo_name} 库的核心API模块，提供了简洁易用的HTTP请求接口。\n\n")
-                result_parts.append("### 🔗 模块在整个代码库中的角色\n")
-                result_parts.append("该模块是用户与requests库交互的主要入口点，提供了常用的HTTP方法函数。\n\n")
+        return ''.join(result_parts)
 
-                # 添加API部分
-                result_parts.append("## 🔧 类和函数详解\n\n")
-                result_parts.append("### 📦 主要函数\n\n")
-                result_parts.append("- `request(method, url, **kwargs)`: 构造并发送请求\n")
-                result_parts.append("- `get(url, params=None, **kwargs)`: 发送GET请求\n")
-                result_parts.append("- `post(url, data=None, json=None, **kwargs)`: 发送POST请求\n")
-                result_parts.append("- `put(url, data=None, **kwargs)`: 发送PUT请求\n")
-                result_parts.append("- `delete(url, **kwargs)`: 发送DELETE请求\n")
-                result_parts.append("- `head(url, **kwargs)`: 发送HEAD请求\n")
-                result_parts.append("- `options(url, **kwargs)`: 发送OPTIONS请求\n\n")
+    def _prepare_metadata_and_title(self, content: str, module_name: str) -> List[str]:
+        """准备元数据和标题部分"""
+        parts = []
+        # 添加元数据
+        parts.append(f"---\ntitle: {module_name.replace('_', '.').title()}\ncategory: Modules\n---\n\n")
+        # 添加标题
+        title_match = re.search(r"^#\s+(.*)", content, re.MULTILINE)
+        if title_match:
+            parts.append(f"# 📦 {title_match.group(1)}\n\n")
+        else:
+            parts.append(f"# 📦 {module_name.replace('_', '.').title()}\n\n")
+        return parts
 
-                # 添加示例部分
-                result_parts.append("## 💻 使用示例\n\n")
-                result_parts.append("```python\n")
-                result_parts.append("# requests.api 使用示例\n")
-                result_parts.append("import requests\n\n")
-                result_parts.append("# 发送GET请求\n")
-                result_parts.append("response = requests.get('https://api.github.com')\n")
-                result_parts.append("print(response.status_code)  # 200\n\n")
-                result_parts.append("# 发送POST请求\n")
-                result_parts.append("response = requests.post('https://httpbin.org/post', data={'key': 'value'})\n")
-                result_parts.append("print(response.json())\n")
-                result_parts.append("```\n\n")
+    def _generate_default_content(self, module_name: str, repo_name: str) -> List[str]:
+        """生成默认内容部分"""
+        parts = []
+        parts.extend(self._generate_default_overview(module_name, repo_name))
+        parts.extend(self._generate_default_api(module_name))
+        parts.extend(self._generate_default_examples(module_name))
+        parts.extend(self._generate_default_dependencies(module_name, repo_name))
+        parts.extend(self._generate_best_practices(module_name))
+        return parts
 
-            elif module_name == "requests.sessions":
-                result_parts.append("### 🎯 模块的主要功能和用途\n")
-                result_parts.append(
-                    f"{module_name} 模块提供了会话功能，允许跨请求保持某些参数，如cookies、headers等。\n\n"
-                )
-                result_parts.append("### 🔗 模块在整个代码库中的角色\n")
-                result_parts.append(
-                    "该模块是requests库的核心组件，处理会话状态管理，并作为API层与适配器层之间的桥梁。\n\n"
-                )
+    def _generate_default_overview(self, module_name: str, repo_name: str) -> List[str]:
+        """生成默认的模块概述"""
+        return [
+            "## 📋 模块概述\n\n",
+            "### 📝 模块名称和路径\n",
+            f"- **模块名称**: `{module_name}`\n",
+            f"- **模块路径**: 在{repo_name}代码库中\n\n"
+        ]
 
-                # 添加API部分
-                result_parts.append("## 🔧 类和函数详解\n\n")
-                result_parts.append("### 📦 主要类\n\n")
-                result_parts.append("- `Session`: 会话类，用于跨请求保持参数\n\n")
-                result_parts.append("### 📦 主要方法\n\n")
-                result_parts.append("- `Session.request(method, url, **kwargs)`: 构造并发送请求\n")
-                result_parts.append("- `Session.get(url, **kwargs)`: 发送GET请求\n")
-                result_parts.append("- `Session.post(url, data=None, json=None, **kwargs)`: 发送POST请求\n")
-                result_parts.append("- `Session.put(url, data=None, **kwargs)`: 发送PUT请求\n")
-                result_parts.append("- `Session.delete(url, **kwargs)`: 发送DELETE请求\n\n")
+    def _generate_default_api(self, module_name: str) -> List[str]:
+        """生成默认的API部分"""
+        return [
+            "## 🔧 类和函数详解\n\n",
+            "### 📦 主要类\n\n",
+            f"- `{module_name.split('.')[-1].capitalize()}`: 主要类\n\n",
+            "### 📦 主要函数\n\n",
+            "- `main()`: 主要函数\n\n"
+        ]
 
-                # 添加示例部分
-                result_parts.append("## 💻 使用示例\n\n")
-                result_parts.append("```python\n")
-                result_parts.append("# requests.sessions 使用示例\n")
-                result_parts.append("import requests\n\n")
-                result_parts.append("# 创建会话\n")
-                result_parts.append("session = requests.Session()\n")
-                result_parts.append("# 设置会话级别的参数\n")
-                result_parts.append("session.headers.update({'User-Agent': 'my-app/1.0'})\n\n")
-                result_parts.append("# 使用会话发送请求\n")
-                result_parts.append("response = session.get('https://httpbin.org/headers')\n")
-                result_parts.append("print(response.json())\n")
-                result_parts.append("```\n\n")
+    def _generate_default_examples(self, module_name: str) -> List[str]:
+        """生成默认的使用示例"""
+        return [
+            "## 💻 使用示例\n\n",
+            "``python\n",
+            f"# {module_name} 使用示例\n",
+            f"import {module_name.split('.')[0]}\n\n",
+            "# 示例代码\n",
+            "```\n\n"
+        ]
 
-            else:
-                result_parts.append("### 🎯 模块的主要功能和用途\n")
-                result_parts.append(f"{module_name} 是 {repo_name} 库的一个重要组件，提供了相关功能。\n\n")
-                result_parts.append("### 🔗 模块在整个代码库中的角色\n")
-                result_parts.append(f"该模块与其他模块协同工作，在{repo_name}库中扮演重要角色。\n\n")
+    def _generate_default_dependencies(self, module_name: str, repo_name: str) -> List[str]:
+        """生成默认的依赖关系"""
+        return [
+            "## 🔄 依赖关系\n\n",
+            "### 📌 该模块依赖的其他模块\n\n",
+            f"- 其他{repo_name}模块\n\n",
+            "### 📌 依赖该模块的其他模块\n\n",
+            f"- 其他{repo_name}模块\n\n"
+        ]
 
-                # 添加API部分
-                result_parts.append("## 🔧 类和函数详解\n\n")
-                result_parts.append("### 📦 主要类\n\n")
-                result_parts.append(f"- `{module_name.split('.')[-1].capitalize()}`: 主要类\n\n")
-                result_parts.append("### 📦 主要函数\n\n")
-                result_parts.append("- `main()`: 主要函数\n\n")
-
-                # 添加示例部分
-                result_parts.append("## 💻 使用示例\n\n")
-                result_parts.append("```python\n")
-                result_parts.append(f"# {module_name} 使用示例\n")
-                result_parts.append(f"import {module_name.split('.')[0]}\n\n")
-                result_parts.append("# 示例代码\n")
-                result_parts.append("```\n\n")
-
-            # 添加依赖关系部分
-            result_parts.append("## 🔄 依赖关系\n\n")
-            result_parts.append("### 📌 该模块依赖的其他模块\n\n")
-
-            if module_name == "requests.api":
-                result_parts.append("- requests.sessions: 用于创建会话对象\n")
-                result_parts.append("- requests.models: 用于处理请求和响应模型\n\n")
-            elif module_name == "requests.sessions":
-                result_parts.append("- requests.adapters: 用于处理HTTP请求\n")
-                result_parts.append("- requests.models: 用于处理请求和响应模型\n")
-                result_parts.append("- requests.cookies: 用于管理cookies\n")
-                result_parts.append("- requests.utils: 用于提供工具函数\n\n")
-            else:
-                result_parts.append(f"- 其他{repo_name}模块\n\n")
-
-            result_parts.append("### 📌 依赖该模块的其他模块\n\n")
-
-            if module_name == "requests.api":
-                result_parts.append("- 用户代码: 直接调用API函数\n\n")
-            elif module_name == "requests.sessions":
-                result_parts.append("- requests.api: 使用Session类处理请求\n\n")
-            else:
-                result_parts.append(f"- 其他{repo_name}模块\n\n")
-
-            # 添加最佳实践部分
-            result_parts.append("## 🚀 注意事项和最佳实践\n\n")
-            result_parts.append("### 🚩 注意事项\n\n")
-
-            if module_name == "requests.api":
-                result_parts.append("- 每个请求都会创建新的连接，对于多次请求同一服务器，建议使用Session对象\n")
-                result_parts.append("- 默认不会验证HTTPS证书，可以通过verify参数控制\n\n")
-            elif module_name == "requests.sessions":
-                result_parts.append("- Session对象不是线程安全的，不要在多线程环境中共享\n")
-                result_parts.append("- 使用完Session后应调用close()方法释放资源\n\n")
-            else:
-                result_parts.append(f"使用{module_name}模块时的注意事项。\n\n")
-
-            result_parts.append("### 🌟 最佳实践\n\n")
-
-            if module_name == "requests.api":
-                result_parts.append("- 使用with语句处理响应对象，确保资源正确释放\n")
-                result_parts.append("- 对于需要保持会话的场景，使用Session对象而非直接调用API函数\n\n")
-            elif module_name == "requests.sessions":
-                result_parts.append("- 使用with语句管理Session生命周期\n")
-                result_parts.append("- 为每个线程创建独立的Session对象\n\n")
-            else:
-                result_parts.append(f"使用{module_name}模块的最佳实践。\n\n")
-
-        return "".join(result_parts)
+    def _generate_best_practices(self, module_name: str) -> List[str]:
+        """生成注意事项和最佳实践"""
+        return [
+            "## 🚀 注意事项和最佳实践\n\n",
+            "### 🚩 注意事项\n\n",
+            f"使用{module_name}模块时的注意事项。\n\n",
+            "### 🌟 最佳实践\n\n",
+            f"使用{module_name}模块的最佳实践。\n\n"
+        ]
 
     def _save_module_file(self, file_path: str, content: str) -> None:
         """將內容保存到文件（設計為在線程中運行）。
