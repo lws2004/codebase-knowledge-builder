@@ -1,3 +1,8 @@
+"""测试模块详情生成节点的功能。
+
+此模块包含对AsyncGenerateModuleDetailsNode类的测试，验证其处理模块内容的能力。
+"""
+
 import pytest
 
 from src.nodes.generate_module_details_node import AsyncGenerateModuleDetailsNode

@@ -96,7 +96,7 @@ class AsyncGenerateApiDocsNode(AsyncNode):
 
         target_language = shared.get("language", "zh")
         output_dir = shared.get("output_dir", "docs")
-        repo_name = shared.get("repo_name", "requests")  # Default to 'requests' if not found?
+        repo_name = shared.get("repo_name", "docs")  # 使用通用默认值，不硬编码特定仓库
         log_and_notify(f"AsyncGenerateApiDocsNode.prep_async: 使用仓库名称 {repo_name}", "info")
 
         # Ensure repo_name consistency if code_structure is dict
@@ -131,15 +131,12 @@ class AsyncGenerateApiDocsNode(AsyncNode):
         log_and_notify("AsyncGenerateApiDocsNode: 执行阶段开始", "info")
         if "error" in prep_res:
             return {"success": False, "error": prep_res["error"]}
-        code_structure = prep_res["code_structure"]
-        core_modules = prep_res["core_modules"]
-        target_language = prep_res["target_language"]
-        output_dir = prep_res["output_dir"]
-        retry_count = prep_res["retry_count"]
-        quality_threshold = prep_res["quality_threshold"]
-        model_name = prep_res["model"]
-        output_format = prep_res["output_format"]
-        repo_name = prep_res.get("repo_name", "requests")
+        # 使用解构赋值简化代码
+        code_structure, core_modules = prep_res["code_structure"], prep_res["core_modules"]
+        target_language, output_dir = prep_res["target_language"], prep_res["output_dir"]
+        retry_count, quality_threshold = prep_res["retry_count"], prep_res["quality_threshold"]
+        model_name, output_format = prep_res["model"], prep_res["output_format"]
+        repo_name = prep_res.get("repo_name", "docs")
         log_and_notify(f"AsyncGenerateApiDocsNode.exec_async: 使用仓库名称 {repo_name}", "info")
         prompt_str = self._create_prompt(code_structure, core_modules, repo_name)
         for attempt in range(retry_count):

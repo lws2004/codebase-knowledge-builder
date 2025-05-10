@@ -178,7 +178,7 @@ class AsyncGenerateOverallArchitectureNode(AsyncNode):  # Renamed class and chan
         output_dir = shared.get("output_dir", "docs")
 
         # 获取仓库名称
-        repo_name = shared.get("repo_name", "requests")
+        repo_name = shared.get("repo_name", "docs")
         log_and_notify(
             f"AsyncGenerateOverallArchitectureNode.prep: 从共享存储中获取仓库名称 {repo_name}", "info"
         )  # Updated
@@ -215,19 +215,19 @@ class AsyncGenerateOverallArchitectureNode(AsyncNode):  # Renamed class and chan
         if "error" in prep_res:
             return {"error": prep_res["error"], "success": False}
 
-        code_structure = prep_res["code_structure"]
-        core_modules = prep_res["core_modules"]
-        history_analysis = prep_res["history_analysis"]
-        target_language = prep_res["target_language"]
-        output_dir = prep_res["output_dir"]
-        retry_count = prep_res["retry_count"]
-        quality_threshold = prep_res["quality_threshold"]
-        model = prep_res["model"]
-        output_format = prep_res["output_format"]
+        # 使用解构赋值简化代码
+        code_structure, core_modules, history_analysis = (
+            prep_res["code_structure"],
+            prep_res["core_modules"],
+            prep_res["history_analysis"],
+        )
+        target_language, output_dir = prep_res["target_language"], prep_res["output_dir"]
+        retry_count, quality_threshold = prep_res["retry_count"], prep_res["quality_threshold"]
+        model, output_format = prep_res["model"], prep_res["output_format"]
 
         # 获取仓库名称，这个应该从prep_res中获取
         # 在prep方法中，我们已经从shared中获取了这个值并添加到prep_res中
-        repo_name = prep_res.get("repo_name", "requests")
+        repo_name = prep_res.get("repo_name", "docs")
 
         # 打印仓库名称，用于调试
         log_and_notify(f"AsyncGenerateOverallArchitectureNode: 使用仓库名称 {repo_name}", "info")  # Updated

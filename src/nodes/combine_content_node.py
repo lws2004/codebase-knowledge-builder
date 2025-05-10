@@ -448,94 +448,14 @@ class CombineContentNode(Node):
         # 尝试从缓存加载
         cached_result = self._load_from_cache(cache_key)
         if cached_result is not None:
-            log_and_notify("使用缓存的一致性检查结果", "info")
-            # 确保缓存结果符合预期的类型
-            if isinstance(cached_result, list):
-                # 进一步检查列表元素是否为字典，如果需要更严格的类型检查
-                # 这里我们假设如果它是列表，它就是我们期望的 List[Dict[str, Any]]
-                return cast(List[Dict[str, Any]], cached_result)
-            else:
-                # 如果缓存类型不匹配，记录警告并继续执行（不使用缓存）
-                log_and_notify(f"缓存结果类型不匹配: 期望 list，得到 {type(cached_result)}", "warning")
-                # 不返回，让函数继续执行下面的逻辑
+            return self._process_cached_result(cached_result)
 
         try:
-            # 创建 LLM 客户端
-            llm_client = LLMClient(llm_config)
+            # 调用LLM获取一致性检查结果
+            response_content = self._call_llm_for_consistency_check(content, llm_config, model)
 
-            # 准备系统提示 - 简化系统提示，减少 token 使用量
-            system_prompt = "你是一个技术文档质量检查专家。检查文档一致性问题并以JSON格式返回结果。"
-
-            # 准备用户提示 - 使用配置中的提示模板
-            # 限制内容长度，只检查前 10000 个字符，减少 token 使用量
-            content_sample = content[:10000] + ("..." if len(content) > 10000 else "")
-            user_prompt = self.config.consistency_check_prompt_template.format(content=content_sample)
-
-            # 调用 LLM - 使用较低的温度值以获得更一致的结果
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-
-            # 添加性能监控 - 记录开始时间
-            start_time = time.time()
-
-            response = llm_client.completion(
-                messages=messages,
-                temperature=0.2,  # 降低温度值，提高一致性
-                model=model,
-                trace_name="检查内容一致性",
-                max_input_tokens=4000,  # 限制输入 token 数量
-            )
-
-            # 记录结束时间和耗时
-            end_time = time.time()
-            log_and_notify(f"一致性检查耗时: {end_time - start_time:.2f}秒", "info")
-
-            # 获取响应内容
-            response_content = llm_client.get_completion_content(response)
-
-            # 解析 JSON 响应 - 简化解析逻辑
-            parsed_issues: List[Dict[str, Any]] = []  # 初始化为正确类型的空列表
-            try:
-                # 提取 JSON 部分 - 使用更健壮的正则表达式
-                json_match = re.search(r"```(?:json)?\s*([^\s]*?)\s*```", response_content)
-                json_str_to_parse = ""
-                if json_match:
-                    json_str_to_parse = json_match.group(1).strip()
-                else:
-                    # 尝试直接解析整个响应
-                    json_str_to_parse = response_content.strip()
-
-                raw_loaded_issues: Any = None
-                try:
-                    raw_loaded_issues = json.loads(json_str_to_parse)
-                except json.JSONDecodeError:
-                    # 如果解析失败，尝试修复常见的 JSON 格式问题
-                    fixed_json_str = re.sub(r"'([^']*)':", r'"\\1":', json_str_to_parse)
-                    try:
-                        raw_loaded_issues = json.loads(fixed_json_str)
-                    except json.JSONDecodeError as e_fix:
-                        log_and_notify(f"修复JSON后仍解析失败: {fixed_json_str}, Error: {e_fix}", "warning")
-                        # 保持 parsed_issues 为空
-
-                if raw_loaded_issues:
-                    temp_list_from_json: List[Any] = []
-                    if (
-                        isinstance(raw_loaded_issues, dict)
-                        and "issues" in raw_loaded_issues
-                        and isinstance(raw_loaded_issues["issues"], list)
-                    ):
-                        temp_list_from_json = raw_loaded_issues["issues"]
-                    elif isinstance(raw_loaded_issues, list):
-                        temp_list_from_json = raw_loaded_issues
-
-                    for item in temp_list_from_json:
-                        if isinstance(item, dict):
-                            parsed_issues.append(cast(Dict[str, Any], item))
-                        else:
-                            log_and_notify(f"一致性检查结果中的项不是字典: {item}", "warning")
-
-            except Exception as e:  # 更广泛的异常捕获，以防 json_str_to_parse 为空等边缘情况
-                log_and_notify(f"解析一致性检查结果时发生意外错误: {str(e)}", "warning")
-                # 保持 parsed_issues 为空
+            # 解析LLM响应
+            parsed_issues = self._parse_consistency_response(response_content)
 
             # 保存结果到缓存
             self._save_to_cache(cache_key, parsed_issues)
@@ -544,6 +464,161 @@ class CombineContentNode(Node):
         except Exception as e:
             log_and_notify(f"检查内容一致性失败: {str(e)}", "warning")
             return []  # 返回符合类型的空列表
+
+    def _process_cached_result(self, cached_result: Any) -> List[Dict[str, Any]]:
+        """处理缓存的一致性检查结果
+
+        Args:
+            cached_result: 缓存的结果
+
+        Returns:
+            处理后的一致性问题列表
+        """
+        log_and_notify("使用缓存的一致性检查结果", "info")
+        # 确保缓存结果符合预期的类型
+        if isinstance(cached_result, list):
+            # 进一步检查列表元素是否为字典，如果需要更严格的类型检查
+            # 这里我们假设如果它是列表，它就是我们期望的 List[Dict[str, Any]]
+            return cast(List[Dict[str, Any]], cached_result)
+        else:
+            # 如果缓存类型不匹配，记录警告并返回空列表
+            log_and_notify(f"缓存结果类型不匹配: 期望 list，得到 {type(cached_result)}", "warning")
+            return []
+
+    def _call_llm_for_consistency_check(self, content: str, llm_config: Dict[str, Any], model: str) -> str:
+        """调用LLM进行一致性检查
+
+        Args:
+            content: 内容
+            llm_config: LLM配置
+            model: 模型名称
+
+        Returns:
+            LLM响应内容
+        """
+        # 创建 LLM 客户端
+        llm_client = LLMClient(llm_config)
+
+        # 准备系统提示 - 简化系统提示，减少 token 使用量
+        system_prompt = "你是一个技术文档质量检查专家。检查文档一致性问题并以JSON格式返回结果。"
+
+        # 准备用户提示 - 使用配置中的提示模板
+        # 限制内容长度，只检查前 10000 个字符，减少 token 使用量
+        content_sample = content[:10000] + ("..." if len(content) > 10000 else "")
+        user_prompt = self.config.consistency_check_prompt_template.format(content=content_sample)
+
+        # 调用 LLM - 使用较低的温度值以获得更一致的结果
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+
+        # 添加性能监控 - 记录开始时间
+        start_time = time.time()
+
+        response = llm_client.completion(
+            messages=messages,
+            temperature=0.2,  # 降低温度值，提高一致性
+            model=model,
+            trace_name="检查内容一致性",
+            max_input_tokens=4000,  # 限制输入 token 数量
+        )
+
+        # 记录结束时间和耗时
+        end_time = time.time()
+        log_and_notify(f"一致性检查耗时: {end_time - start_time:.2f}秒", "info")
+
+        # 获取响应内容
+        return llm_client.get_completion_content(response)
+
+    def _parse_consistency_response(self, response_content: str) -> List[Dict[str, Any]]:
+        """解析一致性检查响应
+
+        Args:
+            response_content: LLM响应内容
+
+        Returns:
+            解析后的一致性问题列表
+        """
+        parsed_issues: List[Dict[str, Any]] = []  # 初始化为正确类型的空列表
+        try:
+            # 提取 JSON 部分 - 使用更健壮的正则表达式
+            json_str_to_parse = self._extract_json_from_response(response_content)
+
+            # 解析JSON
+            raw_loaded_issues = self._parse_json_string(json_str_to_parse)
+
+            # 处理解析结果
+            if raw_loaded_issues:
+                parsed_issues = self._convert_raw_issues_to_list(raw_loaded_issues)
+
+        except Exception as e:  # 更广泛的异常捕获，以防 json_str_to_parse 为空等边缘情况
+            log_and_notify(f"解析一致性检查结果时发生意外错误: {str(e)}", "warning")
+            # 保持 parsed_issues 为空
+
+        return parsed_issues
+
+    def _extract_json_from_response(self, response_content: str) -> str:
+        """从响应中提取JSON字符串
+
+        Args:
+            response_content: LLM响应内容
+
+        Returns:
+            提取的JSON字符串
+        """
+        json_match = re.search(r"```(?:json)?\s*([^\s]*?)\s*```", response_content)
+        if json_match:
+            return json_match.group(1).strip()
+        else:
+            # 尝试直接解析整个响应
+            return response_content.strip()
+
+    def _parse_json_string(self, json_str: str) -> Any:
+        """解析JSON字符串
+
+        Args:
+            json_str: JSON字符串
+
+        Returns:
+            解析后的JSON对象，失败则返回None
+        """
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # 如果解析失败，尝试修复常见的 JSON 格式问题
+            fixed_json_str = re.sub(r"'([^']*)':", r'"\\1":', json_str)
+            try:
+                return json.loads(fixed_json_str)
+            except json.JSONDecodeError as e_fix:
+                log_and_notify(f"修复JSON后仍解析失败: {fixed_json_str}, Error: {e_fix}", "warning")
+                return None
+
+    def _convert_raw_issues_to_list(self, raw_loaded_issues: Any) -> List[Dict[str, Any]]:
+        """将原始问题转换为标准列表格式
+
+        Args:
+            raw_loaded_issues: 原始解析的JSON对象
+
+        Returns:
+            标准格式的问题列表
+        """
+        result: List[Dict[str, Any]] = []
+        temp_list_from_json: List[Any] = []
+
+        if (
+            isinstance(raw_loaded_issues, dict)
+            and "issues" in raw_loaded_issues
+            and isinstance(raw_loaded_issues["issues"], list)
+        ):
+            temp_list_from_json = raw_loaded_issues["issues"]
+        elif isinstance(raw_loaded_issues, list):
+            temp_list_from_json = raw_loaded_issues
+
+        for item in temp_list_from_json:
+            if isinstance(item, dict):
+                result.append(cast(Dict[str, Any], item))
+            else:
+                log_and_notify(f"一致性检查结果中的项不是字典: {item}", "warning")
+
+        return result
 
     def _fix_consistency_issues(self, content: str, issues: List[Dict[str, Any]]) -> str:
         """修复一致性问题

@@ -95,7 +95,7 @@ class AsyncAIUnderstandCoreModulesNode(AsyncNode):
             )
             self.llm_client = None
 
-        repo_name = shared.get("repo_name", "unknown")
+        repo_name = shared.get("repo_name", "docs")
         log_and_notify(f"AsyncAIUnderstandCoreModulesNode.prep_async: 从共享存储中获取仓库名称 {repo_name}", "info")
 
         if isinstance(code_structure, dict) and "repo_name" not in code_structure:
@@ -124,12 +124,11 @@ class AsyncAIUnderstandCoreModulesNode(AsyncNode):
         if "error" in prep_res:
             return {"error": prep_res["error"], "success": False}
 
+        # 使用解构赋值简化代码
         code_structure = prep_res["code_structure"]
-        target_language = prep_res["target_language"]
-        retry_count = prep_res["retry_count"]
-        quality_threshold = prep_res["quality_threshold"]
-        model_name = prep_res["model"]
-        repo_name = prep_res.get("repo_name", "unknown")
+        target_language, retry_count = prep_res["target_language"], prep_res["retry_count"]
+        quality_threshold, model_name = prep_res["quality_threshold"], prep_res["model"]
+        repo_name = prep_res.get("repo_name", "docs")
         log_and_notify(f"AsyncAIUnderstandCoreModulesNode.exec_async: 使用仓库名称 {repo_name}", "info")
 
         if not self.llm_client:
@@ -233,7 +232,7 @@ class AsyncAIUnderstandCoreModulesNode(AsyncNode):
             "file_types": code_structure.get("file_types", {}),
             "directories": self._simplify_directories(code_structure.get("directories", {})),
         }
-        repo_name = code_structure.get("repo_name", "unknown")
+        repo_name = code_structure.get("repo_name", "docs")
         dumped_code_structure = json.dumps(simplified_structure, indent=2, ensure_ascii=False)
         template_str = str(self.config.core_modules_prompt_template)
         return template_str.format(

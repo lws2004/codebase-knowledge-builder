@@ -156,14 +156,11 @@ class AsyncGenerateDependencyNode(AsyncNode):
         if "error" in prep_res:
             return {"success": False, "error": prep_res["error"]}
 
-        code_structure = prep_res["code_structure"]
-        core_modules = prep_res["core_modules"]
-        target_language = prep_res["target_language"]
-        output_dir = prep_res["output_dir"]
-        retry_count = prep_res["retry_count"]
-        quality_threshold = prep_res["quality_threshold"]
-        model_name = prep_res["model"]
-        output_format = prep_res["output_format"]
+        # 使用解构赋值简化代码
+        code_structure, core_modules = prep_res["code_structure"], prep_res["core_modules"]
+        target_language, output_dir = prep_res["target_language"], prep_res["output_dir"]
+        retry_count, quality_threshold = prep_res["retry_count"], prep_res["quality_threshold"]
+        model_name, output_format = prep_res["model"], prep_res["output_format"]
         repo_name = prep_res.get("repo_name", "default_repo")
         log_and_notify(f"AsyncGenerateDependencyNode.exec_async: 使用仓库名称 {repo_name}", "info")
 
@@ -275,7 +272,7 @@ class AsyncGenerateDependencyNode(AsyncNode):
 
         # 确保repo_name不为空
         if not repo_name or repo_name == "unknown":
-            repo_name = code_structure.get("repo_name", "requests")
+            repo_name = code_structure.get("repo_name", "docs")
 
         # 获取模板
         template = self.config.dependency_prompt_template

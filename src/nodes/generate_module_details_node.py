@@ -400,79 +400,204 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
             str: 模块代码内容，如果找不到则返回错误信息字符串。
         """
         # 处理模块路径
-        # 如果模块路径是一个模块名而不是文件路径，尝试转换为文件路径
-        if not module_path_in_repo.endswith((".py", ".js", ".java", ".c", ".cpp", ".go", ".rb")):
+        module_path_in_repo = self._normalize_module_path(module_path_in_repo)
+
+        # 尝试从不同来源获取代码内容
+        code_content = self._get_code_from_rag_exact_match(module_path_in_repo, rag_data)
+        if code_content:
+            return code_content
+
+        code_content = self._get_code_from_rag_partial_match(module_path_in_repo, rag_data)
+        if code_content:
+            return code_content
+
+        code_content = self._get_code_from_filesystem_exact_match(module_path_in_repo, repo_path)
+        if code_content:
+            return code_content
+
+        code_content = self._get_code_from_filesystem_fuzzy_match(module_path_in_repo, repo_path)
+        if code_content:
+            return code_content
+
+        # 如果所有方法都失败，生成模拟内容
+        return self._generate_mock_module_content(module_path_in_repo)
+
+    def _normalize_module_path(self, module_path: str) -> str:
+        """将模块名称标准化为文件路径
+
+        Args:
+            module_path: 原始模块路径或名称
+
+        Returns:
+            标准化后的模块路径
+        """
+        if not module_path.endswith((".py", ".js", ".java", ".c", ".cpp", ".go", ".rb")):
             # 尝试将模块名转换为文件路径
-            module_parts = module_path_in_repo.split(".")
+            module_parts = module_path.split(".")
             possible_path = "/".join(module_parts) + ".py"
-            log_and_notify(f"尝试将模块名 {module_path_in_repo} 转换为文件路径: {possible_path}", "info")
-            module_path_in_repo = possible_path
+            log_and_notify(f"尝试将模块名 {module_path} 转换为文件路径: {possible_path}", "info")
+            return possible_path
+        return module_path
 
-        # Try to get from rag_data first - 尝试精确匹配
-        if module_path_in_repo in rag_data.get("file_contents", {}):
-            log_and_notify(f"在RAG数据中找到精确匹配的模块: {module_path_in_repo}", "info")
-            return cast(str, rag_data["file_contents"][module_path_in_repo])
+    def _get_code_from_rag_exact_match(self, module_path: str, rag_data: Dict[str, Any]) -> Optional[str]:
+        """从RAG数据中精确匹配获取代码
 
-        # 尝试在RAG数据中查找部分匹配
-        module_name = os.path.basename(module_path_in_repo)
+        Args:
+            module_path: 模块路径
+            rag_data: RAG数据
+
+        Returns:
+            匹配到的代码内容或None
+        """
+        if module_path in rag_data.get("file_contents", {}):
+            log_and_notify(f"在RAG数据中找到精确匹配的模块: {module_path}", "info")
+            return cast(str, rag_data["file_contents"][module_path])
+        return None
+
+    def _get_code_from_rag_partial_match(self, module_path: str, rag_data: Dict[str, Any]) -> Optional[str]:
+        """从RAG数据中部分匹配获取代码
+
+        Args:
+            module_path: 模块路径
+            rag_data: RAG数据
+
+        Returns:
+            匹配到的代码内容或None
+        """
+        module_name = os.path.basename(module_path)
         module_name = os.path.splitext(module_name)[0]  # 移除扩展名
 
-        # 尝试在RAG数据中查找包含模块名的文件
         for file_path, content_from_rag in rag_data.get("file_contents", {}).items():
             if module_name in file_path:
                 log_and_notify(f"在RAG数据中找到部分匹配的模块: {file_path}", "info")
-                return cast(str, content_from_rag)  # 确保返回 str
+                return cast(str, content_from_rag)
+        return None
 
-        # Fallback to reading from file system - 尝试精确匹配
-        full_module_path = os.path.join(repo_path, module_path_in_repo)
+    def _get_code_from_filesystem_exact_match(self, module_path: str, repo_path: str) -> Optional[str]:
+        """从文件系统中精确匹配获取代码
+
+        Args:
+            module_path: 模块路径
+            repo_path: 仓库路径
+
+        Returns:
+            匹配到的代码内容或None
+        """
+        full_module_path = os.path.join(repo_path, module_path)
         try:
             with open(full_module_path, "r", encoding="utf-8") as f:
                 log_and_notify(f"在文件系统中找到精确匹配的模块: {full_module_path}", "info")
                 return f.read()
         except FileNotFoundError:
             log_and_notify(f"模块文件未找到: {full_module_path}，尝试智能匹配", "warning")
+            return None
+        except Exception as e:
+            log_and_notify(f"读取模块文件 {full_module_path} 时出错: {e}", "error")
+            return f"Error reading file {module_path}: {e}"
 
-            # 尝试在文件系统中查找部分匹配
-            best_match = None
-            best_match_score = 0
+    def _get_code_from_filesystem_fuzzy_match(self, module_path: str, repo_path: str) -> Optional[str]:
+        """从文件系统中模糊匹配获取代码
 
-            for root, _, files in os.walk(repo_path):
-                for file in files:
-                    if file.endswith((".py", ".js", ".java", ".c", ".cpp", ".go", ".rb")):
-                        # 计算匹配分数
-                        score = 0
-                        if module_name in file:
-                            score += 5  # 文件名包含模块名
-                        if module_name == os.path.splitext(file)[0]:
-                            score += 10  # 文件名完全匹配模块名
+        Args:
+            module_path: 模块路径
+            repo_path: 仓库路径
 
-                        # 检查路径匹配
-                        rel_path = os.path.relpath(os.path.join(root, file), repo_path)
-                        path_parts = os.path.dirname(rel_path).split(os.sep)
-                        module_parts = os.path.dirname(module_path_in_repo).split(os.sep)
+        Returns:
+            匹配到的代码内容或None
+        """
+        module_name = os.path.basename(module_path)
+        module_name = os.path.splitext(module_name)[0]  # 移除扩展名
 
-                        # 计算路径部分匹配数
-                        for part in module_parts:
-                            if part and part in path_parts:
-                                score += 3
+        best_match_info = self._find_best_matching_file(module_path, module_name, repo_path)
+        if not best_match_info:
+            return None
 
-                        if score > best_match_score:
-                            best_match = os.path.join(root, file)
-                            best_match_score = score
+        best_match, best_match_score = best_match_info
 
-            # 如果找到最佳匹配，读取文件
-            if best_match and best_match_score > 5:  # 设置一个最低匹配分数阈值
-                try:
-                    with open(best_match, "r", encoding="utf-8") as f:
-                        rel_path = os.path.relpath(best_match, repo_path)
-                        log_and_notify(f"在文件系统中找到最佳匹配的模块: {rel_path} (分数: {best_match_score})", "info")
-                        return f.read()
-                except Exception as e:
-                    log_and_notify(f"读取匹配的模块文件时出错: {e}", "error")
+        # 如果找到最佳匹配，读取文件
+        if best_match and best_match_score > 5:  # 设置一个最低匹配分数阈值
+            try:
+                with open(best_match, "r", encoding="utf-8") as f:
+                    rel_path = os.path.relpath(best_match, repo_path)
+                    log_and_notify(f"在文件系统中找到最佳匹配的模块: {rel_path} (分数: {best_match_score})", "info")
+                    return f.read()
+            except Exception as e:
+                log_and_notify(f"读取匹配的模块文件时出错: {e}", "error")
+                return None
+        return None
 
-            # 如果仍然找不到，返回一个模拟的模块内容
-            log_and_notify(f"无法找到模块 {module_name} 的任何匹配文件，将生成模拟内容", "warning")
-            return f"""
+    def _find_best_matching_file(self, module_path: str, module_name: str, repo_path: str) -> Optional[Tuple[str, int]]:
+        """查找最佳匹配的文件
+
+        Args:
+            module_path: 模块路径
+            module_name: 模块名称
+            repo_path: 仓库路径
+
+        Returns:
+            (最佳匹配文件路径, 匹配分数)元组或None
+        """
+        best_match = None
+        best_match_score = 0
+
+        for root, _, files in os.walk(repo_path):
+            for file in files:
+                if file.endswith((".py", ".js", ".java", ".c", ".cpp", ".go", ".rb")):
+                    score = self._calculate_match_score(file, module_name, module_path, root, repo_path)
+                    if score > best_match_score:
+                        best_match = os.path.join(root, file)
+                        best_match_score = score
+
+        if best_match and best_match_score > 5:
+            return (best_match, best_match_score)
+        return None
+
+    def _calculate_match_score(self, file: str, module_name: str, module_path: str, root: str, repo_path: str) -> int:
+        """计算文件与模块的匹配分数
+
+        Args:
+            file: 文件名
+            module_name: 模块名称
+            module_path: 模块路径
+            root: 当前目录
+            repo_path: 仓库根目录
+
+        Returns:
+            匹配分数
+        """
+        score = 0
+        # 文件名匹配
+        if module_name in file:
+            score += 5  # 文件名包含模块名
+        if module_name == os.path.splitext(file)[0]:
+            score += 10  # 文件名完全匹配模块名
+
+        # 路径匹配
+        rel_path = os.path.relpath(os.path.join(root, file), repo_path)
+        path_parts = os.path.dirname(rel_path).split(os.sep)
+        module_parts = os.path.dirname(module_path).split(os.sep)
+
+        # 计算路径部分匹配数
+        for part in module_parts:
+            if part and part in path_parts:
+                score += 3
+
+        return score
+
+    def _generate_mock_module_content(self, module_path: str) -> str:
+        """生成模拟的模块内容
+
+        Args:
+            module_path: 模块路径
+
+        Returns:
+            模拟的模块内容
+        """
+        module_name = os.path.basename(module_path)
+        module_name = os.path.splitext(module_name)[0]  # 移除扩展名
+
+        log_and_notify(f"无法找到模块 {module_name} 的任何匹配文件，将生成模拟内容", "warning")
+        return f"""
 # 模拟的 {module_name} 模块
 # 注意: 此内容是自动生成的，因为无法找到实际的模块文件
 
@@ -503,9 +628,6 @@ def main():
 if __name__ == "__main__":
     main()
 """
-        except Exception as e:
-            log_and_notify(f"读取模块文件 {full_module_path} 时出错: {e}", "error")
-            return f"Error reading file {module_path_in_repo}: {e}"
 
     def _create_prompt(self, module_info: Dict[str, Any], code_content: str) -> str:
         """创建单个模块的提示
@@ -765,7 +887,7 @@ if __name__ == "__main__":
         else:
             result_parts.extend(self._generate_default_content(module_name, repo_name))
 
-        return ''.join(result_parts)
+        return "".join(result_parts)
 
     def _prepare_metadata_and_title(self, content: str, module_name: str) -> List[str]:
         """准备元数据和标题部分"""
@@ -796,7 +918,7 @@ if __name__ == "__main__":
             "## 📋 模块概述\n\n",
             "### 📝 模块名称和路径\n",
             f"- **模块名称**: `{module_name}`\n",
-            f"- **模块路径**: 在{repo_name}代码库中\n\n"
+            f"- **模块路径**: 在{repo_name}代码库中\n\n",
         ]
 
     def _generate_default_api(self, module_name: str) -> List[str]:
@@ -806,7 +928,7 @@ if __name__ == "__main__":
             "### 📦 主要类\n\n",
             f"- `{module_name.split('.')[-1].capitalize()}`: 主要类\n\n",
             "### 📦 主要函数\n\n",
-            "- `main()`: 主要函数\n\n"
+            "- `main()`: 主要函数\n\n",
         ]
 
     def _generate_default_examples(self, module_name: str) -> List[str]:
@@ -817,7 +939,7 @@ if __name__ == "__main__":
             f"# {module_name} 使用示例\n",
             f"import {module_name.split('.')[0]}\n\n",
             "# 示例代码\n",
-            "```\n\n"
+            "```\n\n",
         ]
 
     def _generate_default_dependencies(self, module_name: str, repo_name: str) -> List[str]:
@@ -827,7 +949,7 @@ if __name__ == "__main__":
             "### 📌 该模块依赖的其他模块\n\n",
             f"- 其他{repo_name}模块\n\n",
             "### 📌 依赖该模块的其他模块\n\n",
-            f"- 其他{repo_name}模块\n\n"
+            f"- 其他{repo_name}模块\n\n",
         ]
 
     def _generate_best_practices(self, module_name: str) -> List[str]:
@@ -837,7 +959,7 @@ if __name__ == "__main__":
             "### 🚩 注意事项\n\n",
             f"使用{module_name}模块时的注意事项。\n\n",
             "### 🌟 最佳实践\n\n",
-            f"使用{module_name}模块的最佳实践。\n\n"
+            f"使用{module_name}模块的最佳实践。\n\n",
         ]
 
     def _save_module_file(self, file_path: str, content: str) -> None:
