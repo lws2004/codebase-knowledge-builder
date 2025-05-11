@@ -205,16 +205,95 @@ python run_tests.py --all
 
 - `src/`: 源代码
   - `nodes/`: 节点实现
+    - `ai_understand_core_modules_node.py`: AI理解核心模块节点
+    - `analyze_history_node.py`: 历史分析节点
     - `analyze_repo_flow.py`: 仓库分析流程
+    - `async_parallel_batch_node.py`: 异步并行批处理节点
+    - `async_parallel_flow.py`: 异步并行流程
     - `combine_content_node.py`: 内容组合节点
+    - `content_quality_check_node.py`: 内容质量检查节点
+    - `flow_connector_nodes.py`: 流程连接器节点
     - `format_output_node.py`: 输出格式化节点
+    - `generate_api_docs_node.py`: API文档生成节点
     - `generate_content_flow.py`: 内容生成流程
+    - `generate_dependency_node.py`: 依赖关系生成节点
+    - `generate_glossary_node.py`: 术语表生成节点
+    - `generate_module_details_node.py`: 模块详情生成节点
+    - `generate_overall_architecture_node.py`: 整体架构生成节点
+    - `generate_quick_look_node.py`: 快速浏览生成节点
+    - `generate_timeline_node.py`: 时间线生成节点
+    - `input_node.py`: 输入节点
+    - `interactive_qa_node.py`: 交互式问答节点
+    - `module_quality_check_node.py`: 模块质量检查节点
+    - `parallel_generate_content_flow.py`: 并行内容生成流程
+    - `parallel_start_node.py`: 并行启动节点
+    - `parse_code_batch_node.py`: 代码批量解析节点
+    - `parse_code_node.py`: 代码解析节点
+    - `prepare_rag_data_node.py`: RAG数据准备节点
+    - `prepare_repo_node.py`: 仓库准备节点
+    - `publish_node.py`: 发布节点
   - `utils/`: 工具类
     - `git_utils/`: Git 相关工具
+      - `history_analyzer.py`: 历史分析器
+      - `repo_manager.py`: 仓库管理器
     - `llm_wrapper/`: LLM 调用工具
+      - `llm_client_async.py`: 异步LLM客户端
+      - `llm_client_base.py`: 基础LLM客户端
+      - `llm_client_langfuse.py`: Langfuse集成客户端
+      - `llm_client_sync.py`: 同步LLM客户端
+      - `llm_client_utils.py`: LLM客户端工具
+      - `llm_client.py`: LLM客户端
+      - `token_utils.py`: Token工具
     - `logger/`: 日志工具
+    - `code_parser_base.py`: 代码解析基类
+    - `code_parser_extractors.py`: 代码解析提取器
+    - `code_parser_file.py`: 文件代码解析器
+    - `code_parser_repo.py`: 仓库代码解析器
+    - `code_parser.py`: 代码解析器
+    - `config_loader.py`: 配置加载器
+    - `env_manager.py`: 环境管理器
+    - `formatter.py`: 格式化工具
+    - `language_utils.py`: 语言工具
+    - `llm_client.py`: LLM客户端
+    - `logging_config.py`: 日志配置
+    - `performance.py`: 性能工具
+    - `rag_utils.py`: RAG工具
 - `tests/`: 测试脚本
+  - `test_analyze_history.py`: 历史分析测试
+  - `test_analyze_repo.py`: 仓库分析测试
+  - `test_code_parser.py`: 代码解析测试
+  - `test_combine_content_node.py`: 内容组合节点测试
+  - `test_config_loader.py`: 配置加载器测试
+  - `test_env_manager.py`: 环境管理器测试
+  - `test_flow.py`: 流程测试
+  - `test_format_output_node.py`: 输出格式化节点测试
+  - `test_formatter.py`: 格式化工具测试
+  - `test_generate_content_flow.py`: 内容生成流程测试
+  - `test_generate_docs.py`: 文档生成测试
+  - `test_generate_module_details_node.py`: 模块详情生成节点测试
+  - `test_input_prepare.py`: 输入准备测试
+  - `test_interactive_qa_node.py`: 交互式问答节点测试
+  - `test_litellm_logging.py`: LiteLLM日志测试
+  - `test_llm_call.py`: LLM调用测试
+  - `test_llm_client_optimized.py`: 优化LLM客户端测试
+  - `test_model_config.py`: 模型配置测试
+  - `test_openrouter.py`: OpenRouter测试
+  - `test_parallel_performance.py`: 并行性能测试
+  - `test_publish_node.py`: 发布节点测试
+  - `test_rag_utils.py`: RAG工具测试
+  - `test_token_utils.py`: Token工具测试
+  - `test_with_requests.py`: Requests库测试
 - `docs/`: 文档
+  - `design.md`: 设计文档
+- `docs_output/`: 文档输出目录
+  - `{repo_name}/`: 按仓库名组织的文档
+    - `modules/`: 模块文档
+    - `index.md`: 文档首页
+    - `overview.md`: 系统架构
+    - `dependency.md`: 依赖关系
+    - `glossary.md`: 术语表
+    - `timeline.md`: 演变历史
+    - `quick_look.md`: 快速浏览
 - `config/`: 配置文件
   - `default.yml`: 默认配置文件
   - `{env}.yml`: 环境特定配置文件
@@ -224,13 +303,16 @@ python run_tests.py --all
   - `run_tests.sh`: 运行测试脚本
   - `run.sh`: 运行主程序脚本
   - `clean.sh`: 清理环境脚本
+- `assets/`: 资源文件
+  - `banner.png`: 项目横幅图片
+- `examples/`: 示例文件
+- `typings/`: 类型定义
+  - `pocketflow/`: PocketFlow类型定义
 - `.vscode/`: VSCode 配置目录
   - `settings.json`: VSCode 设置
   - `launch.json`: 调试配置
   - `tasks.json`: 任务配置
   - `extensions.json`: 推荐扩展
-- `.uv/`: uv 配置目录
-  - `config.toml`: uv 配置文件
 - `pyproject.toml`: 项目配置文件
 - `requirements.txt`: 依赖列表
 - `main.py`: 主程序入口
