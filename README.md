@@ -12,11 +12,15 @@
 
 ## 功能
 
-- 分析 Git 仓库的提交历史
-- 识别重要文件和贡献者
-- 使用 LLM 生成历史总结
-- 直接以用户指定语言生成内容，无需额外翻译
-- 支持多种 LLM 提供商（OpenAI、OpenRouter、阿里百炼、火山引擎、硅基流动）
+- 🔍 分析 Git 仓库的提交历史和代码结构
+- 🧩 识别重要文件、模块和贡献者
+- 🤖 使用 LLM 生成全面的代码库文档
+- 📊 生成架构图、依赖关系图和时间线图表
+- 📝 直接以用户指定语言生成内容，无需额外翻译
+- 🌐 支持多种 LLM 提供商（OpenAI、OpenRouter、阿里百炼、火山引擎、硅基流动）
+- ⚡ 支持异步并行处理，提高生成效率
+- 🔄 提供内容质量检查和自动优化
+- 💬 支持交互式问答，深入了解代码库
 
 ## 安装
 
@@ -77,12 +81,29 @@ cp .env.example .env
 
 ```
 # 必需的配置
-LLM_API_KEY=your_api_key_here
-LANGFUSE_PUBLIC_KEY=your_public_key_here
-LANGFUSE_SECRET_KEY=your_secret_key_here
+LLM_API_KEY=your_api_key_here  # LLM API密钥
+LANGFUSE_PUBLIC_KEY=your_public_key_here  # Langfuse公钥（可选，用于跟踪和评估）
+LANGFUSE_SECRET_KEY=your_secret_key_here  # Langfuse私钥（可选，用于跟踪和评估）
+
+# LLM配置（可选）
+LLM_MODEL=openai/gpt-4  # 格式: "provider/model"，例如: "openai/gpt-4", "anthropic/claude-3-opus-20240229"
+LLM_BASE_URL=https://api.openai.com/v1  # 自定义API基础URL
+LLM_MAX_TOKENS=4000  # 控制LLM输出的最大token数
+# LLM_MAX_INPUT_TOKENS=25000  # 控制输入到LLM的最大token数（可选）
 ```
 
 其他配置项已在配置文件中设置默认值，只有在需要覆盖默认值时才需要在环境变量中设置。
+
+#### LLM提供商配置
+
+支持的LLM提供商格式：
+
+- **OpenAI**: `openai/gpt-4`、`openai/gpt-3.5-turbo`
+- **Anthropic**: `anthropic/claude-3-opus-20240229`、`anthropic/claude-3-sonnet-20240229`
+- **OpenRouter**: `openrouter/anthropic/claude-3-opus-20240229`
+- **阿里百炼**: `alibaba/qwen-max`
+- **火山引擎**: `volcengine/moonshot-v1-8k`
+- **硅基流动**: `moonshot/moonshot-v1-8k`
 
 ### YAML 配置文件
 
@@ -131,17 +152,26 @@ python main.py --repo-url https://github.com/username/repo.git --env production
 #### 运行主程序
 
 ```bash
-./scripts/run.sh https://github.com/username/repo.git [branch] [env]
+./scripts/run.sh https://github.com/username/repo.git [branch] [language] [env] [parallel]
 ```
 
 参数说明：
 - 第一个参数：Git 仓库 URL（必需）
 - 第二个参数：分支名称（可选，默认为 `main`）
-- 第三个参数：环境名称（可选，默认为 `default`）
+- 第三个参数：文档语言（可选，默认为 `zh`）
+- 第四个参数：环境名称（可选，默认为 `default`）
+- 第五个参数：是否启用并行处理（可选，默认为 `false`）
 
 例如：
 ```bash
-./scripts/run.sh https://github.com/username/repo.git develop production
+# 基本用法
+./scripts/run.sh https://github.com/username/repo.git
+
+# 指定分支和语言
+./scripts/run.sh https://github.com/username/repo.git develop en
+
+# 完整参数
+./scripts/run.sh https://github.com/username/repo.git develop zh production true
 ```
 
 #### 运行所有测试
@@ -170,28 +200,42 @@ python main.py --repo-url https://github.com/username/repo.git --env production
 
 ```bash
 source .venv/bin/activate
-python main.py --repo-url https://github.com/username/repo.git --branch main --env default
+python main.py --repo-url https://github.com/username/repo.git --branch main --env default --language zh
 ```
 
 可用的命令行参数：
 
 - `--repo-url`：Git 仓库 URL（必需）
 - `--branch`：分支名称（可选，默认使用配置文件中的 `git.default_branch`）
-- `--output`：输出文件路径（可选，默认为 `history_analysis.json`）
+- `--output-dir`：输出目录路径（可选，默认为 `docs_output`）
+- `--language`：文档语言（可选，默认为 `zh`）
 - `--env`：环境名称（可选，默认为 `default`）
+- `--parallel`：是否启用并行处理（可选，默认为 `False`）
+- `--interactive`：是否启用交互式问答（可选，默认为 `False`）
 
-#### 分析 Git 仓库历史（测试脚本）
+#### 运行测试脚本
 
 ```bash
 source .venv/bin/activate
+
+# 分析 Git 仓库历史
 python tests/test_analyze_history.py --repo-path /path/to/repo --max-commits 100
+
+# 测试代码解析
+python tests/test_code_parser.py --repo-path /path/to/repo
+
+# 测试内容生成
+python tests/test_generate_content_flow.py --repo-url https://github.com/username/repo.git
+
+# 测试并行性能
+python tests/test_parallel_performance.py --repo-url https://github.com/username/repo.git
 ```
 
 #### 运行完整流程（测试脚本）
 
 ```bash
 source .venv/bin/activate
-python tests/test_flow.py --repo-url https://github.com/username/repo.git --branch main
+python tests/test_flow.py --repo-url https://github.com/username/repo.git --branch main --language zh
 ```
 
 #### 运行所有测试
@@ -200,6 +244,18 @@ python tests/test_flow.py --repo-url https://github.com/username/repo.git --bran
 source .venv/bin/activate
 python run_tests.py --all
 ```
+
+#### 查看生成的文档
+
+生成的文档将保存在 `docs_output/{repo_name}/` 目录下，包括：
+
+- `index.md`：文档首页
+- `overview.md`：系统架构
+- `dependency.md`：依赖关系
+- `glossary.md`：术语表
+- `timeline.md`：演变历史
+- `quick_look.md`：快速浏览
+- `modules/`：模块详细文档
 
 ## 项目结构
 
@@ -318,9 +374,52 @@ python run_tests.py --all
 - `main.py`: 主程序入口
 - `run_tests.py`: 测试运行脚本
 
+## 项目架构和工作流程
+
+项目基于 [PocketFlow](https://github.com/The-Pocket/PocketFlow) 框架开发，采用节点式流程设计，主要包含以下几个阶段：
+
+1. **输入与准备阶段**：接收用户输入，准备代码库
+   - 输入节点：接收用户参数
+   - 准备仓库节点：克隆或验证本地代码库
+
+2. **代码库分析阶段**：分析代码库结构和历史
+   - 代码解析节点：解析代码结构和依赖关系
+   - 历史分析节点：分析提交历史和贡献者信息
+   - AI理解核心模块节点：使用LLM理解代码库核心架构
+
+3. **内容生成阶段**：生成各类文档内容
+   - 整体架构生成节点：生成系统架构文档
+   - 依赖关系生成节点：生成依赖关系文档
+   - 时间线生成节点：生成演变历史文档
+   - 术语表生成节点：生成术语表文档
+   - 快速浏览生成节点：生成快速浏览文档
+   - 模块详情生成节点：生成模块详细文档
+
+4. **质量检查阶段**：检查生成内容质量
+   - 内容质量检查节点：评估文档质量并提供改进建议
+   - 模块质量检查节点：评估模块文档质量并提供改进建议
+
+5. **内容组合与格式化阶段**：组合和格式化最终文档
+   - 内容组合节点：组合各部分内容
+   - 格式化输出节点：格式化最终文档
+
+6. **交互问答阶段**（可选）：支持用户交互式问答
+   - 交互式问答节点：回答用户关于代码库的问题
+
+### 并行处理
+
+项目支持两种并行处理模式：
+
+1. **批处理并行**：将大量文件分批并行处理
+   - 代码批量解析节点：并行解析多个代码文件
+   - 模块批量生成节点：并行生成多个模块文档
+
+2. **流程并行**：并行执行多个内容生成流程
+   - 并行内容生成流程：同时生成多种类型的文档
+
 ## 贡献
 
-欢迎提交 Pull Request 和 Issue。
+欢迎提交 Pull Request 和 Issue。如果您有任何问题或建议，请随时提出。
 
 ## 许可证
 
