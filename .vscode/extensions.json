@@ -1,10 +1,7 @@
 {
     "recommendations": [
-        "ms-python.python",
-        "ms-python.vscode-pylance",
-        "charliermarsh.ruff", // 替代 Black、isort 和 Flake8
-        "njpwerner.autodocstring",
-        "yzhang.markdown-all-in-one",
-        "redhat.vscode-yaml"
+        "charliermarsh.ruff",
+        "mypy-lang.mypy",
+        "ms-python.vscode-pytest"
     ]
 }
