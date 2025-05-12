@@ -97,9 +97,10 @@ class ModuleQualityCheckNode(Node):
         # 获取模块列表
         modules = module_details.get("docs", [])
         if not modules:
-            error_msg = "模块详细文档中没有模块"
-            log_and_notify(error_msg, "error", notify=True)
-            return {"success": False, "error": error_msg}
+            warning_msg = "模块详细文档中没有模块，将跳过质量检查"
+            log_and_notify(warning_msg, "warning", notify=True)
+            # 返回空结果但标记为成功，允许流程继续
+            return {"success": True, "modules": [], "overall_score": 0.0, "warning": warning_msg}
 
         # 检查每个模块的质量
         checked_modules = []
@@ -302,7 +303,10 @@ class ModuleQualityCheckNode(Node):
             system_prompt = f"""你是一个文档质量评估专家，擅长评估文档质量并提供改进建议。
 请用{target_language}语言回答，但保持代码、变量名和技术术语的原始形式。
 你的评估应该客观公正，基于文档的完整性、准确性、可读性、格式化和可视化。
-请不要提供修复后的完整文档，只提供详细的改进建议，让生成文档的节点能够根据这些建议重新生成更好的文档。"""
+
+【重要说明】：你的回复将直接用于评估文档质量，不要在回复中包含任何指导性文本或元说明。
+不要在回复中包含"无需提供修复后的完整文档，只需根据上述改进建议进行修改即可"这样的文本。
+只需提供客观的评估和具体的改进建议即可。"""
 
             # 调用 LLM
             messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]

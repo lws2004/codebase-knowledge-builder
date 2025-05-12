@@ -1,11 +1,11 @@
 """异步并行批处理节点，用于并行处理多个项目。"""
 
-import asyncio
 from typing import Any, Dict, List, Optional
 
 from pocketflow import AsyncNode
 
 from ..utils.logger import log_and_notify
+from .async_parallel_flow import AsyncParallelBatchFlow
 
 
 class AsyncParallelBatchNode(AsyncNode):
@@ -79,8 +79,96 @@ class AsyncParallelBatchNode(AsyncNode):
         shared["batch_results"] = exec_res
         return "default"
 
+    class ItemProcessor(AsyncNode):
+        """处理单个项目的内部异步节点类"""
+
+        def __init__(self, parent_node: "AsyncParallelBatchNode"):
+            """初始化项目处理器
+
+            Args:
+                parent_node: 父节点实例，用于调用其exec_async和exec_fallback_async方法
+            """
+            super().__init__()
+            self.parent_node = parent_node
+
+        async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+            """准备阶段，从 shared 中获取项目
+
+            Args:
+                shared: 共享存储
+
+            Returns:
+                准备结果
+            """
+            return shared
+
+        async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+            """执行阶段，处理单个项目
+
+            Args:
+                prep_res: 准备结果
+
+            Returns:
+                执行结果
+            """
+            item = prep_res.get("_item")
+            try:
+                result = await self.parent_node.exec_async(item)
+                return {"_result": result, "_success": True}
+            except Exception as e:
+                log_and_notify(f"AsyncParallelBatchNode: 处理项目时出错: {str(e)}", "error")
+                try:
+                    fallback_result = await self.parent_node.exec_fallback_async(item, e)
+                    return {"_result": fallback_result, "_success": False, "_error": str(e)}
+                except Exception as fallback_error:
+                    log_and_notify(f"AsyncParallelBatchNode: 回退处理项目时出错: {str(fallback_error)}", "error")
+                    return {
+                        "_result": None,
+                        "_success": False,
+                        "_error": str(e),
+                        "_fallback_error": str(fallback_error),
+                    }
+
+        async def post_async(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+            """后处理阶段
+
+            Args:
+                shared: 共享存储
+                prep_res: 准备结果
+                exec_res: 执行结果
+
+            Returns:
+                后续动作
+            """
+            return "default"
+
+    def _process_batch_results(self, batch_results: List[Any]) -> List[Any]:
+        """处理批处理结果
+
+        Args:
+            batch_results: 批处理结果列表
+
+        Returns:
+            处理后的结果列表
+        """
+        result_list = []
+        for result in batch_results:
+            if isinstance(result, dict) and "_result" in result:
+                result_list.append(result["_result"])
+            elif isinstance(result, BaseException):
+                # 如果是异常，添加 None
+                log_and_notify(f"AsyncParallelBatchNode: 批处理任务抛出异常: {result}", "error")
+                result_list.append(None)
+            else:
+                # 其他情况，添加 None
+                log_and_notify(f"AsyncParallelBatchNode: 批处理任务返回了意外结果: {result}", "error")
+                result_list.append(None)
+        return result_list
+
     async def run_async(self, shared: Dict[str, Any]) -> str:
         """运行节点
+
+        使用 Pocket Flow 的 AsyncParallelBatchFlow 实现并发批处理
 
         Args:
             shared: 共享存储
@@ -97,32 +185,17 @@ class AsyncParallelBatchNode(AsyncNode):
 
         log_and_notify(f"AsyncParallelBatchNode: 开始并行处理 {len(item_list)} 个项目", "info")
 
-        # 创建信号量控制并发数
-        if self.max_concurrency:
-            semaphore = asyncio.Semaphore(self.max_concurrency)
-        else:
-            # 创建一个永远可用的信号量
-            semaphore = asyncio.Semaphore(len(item_list))
+        # 为每个项目创建参数字典
+        batch_params = [{"_item": item} for item in item_list]
 
-        async def process_item(item: Any, index: int) -> Any:
-            async with semaphore:
-                try:
-                    return await self.exec_async(item)
-                except Exception as e:
-                    log_and_notify(f"AsyncParallelBatchNode: 处理项目 {index} 时出错: {str(e)}", "error")
-                    try:
-                        return await self.exec_fallback_async(item, e)
-                    except Exception as fallback_error:
-                        log_and_notify(
-                            f"AsyncParallelBatchNode: 回退处理项目 {index} 时出错: {str(fallback_error)}", "error"
-                        )
-                        return None
+        # 创建并行批处理流程
+        batch_flow = AsyncParallelBatchFlow(flow=self.ItemProcessor(self), max_concurrency=self.max_concurrency)
 
-        # 创建所有任务
-        tasks = [process_item(item, i) for i, item in enumerate(item_list)]
+        # 执行批处理
+        batch_results = await batch_flow.exec_async(batch_params)
 
-        # 并行执行所有任务
-        result_list = await asyncio.gather(*tasks)
+        # 处理批处理结果
+        result_list = self._process_batch_results(batch_results)
 
         # 后处理阶段
         return await self.post_async(shared, item_list, result_list)

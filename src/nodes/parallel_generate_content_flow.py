@@ -1,4 +1,4 @@
-"""并行生成内容流程，使用AsyncParallelBatchNode模式实现并行协调各个内容生成节点。"""
+"""并行生成内容流程，使用 Pocket Flow 风格的并发模式实现并行协调各个内容生成节点。"""
 
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from pocketflow import AsyncFlow, AsyncNode
 
 from ..utils.logger import log_and_notify
+from .async_parallel_flow import AsyncParallelBatchFlow
 from .content_quality_check_node import ContentQualityCheckNode
 from .generate_api_docs_node import AsyncGenerateApiDocsNode
 from .generate_dependency_node import AsyncGenerateDependencyNode
@@ -18,7 +19,7 @@ from .module_quality_check_node import ModuleQualityCheckNode
 
 
 class ParallelDocGenerationNode(AsyncNode):
-    """并行文档生成节点，实现手动并行"""
+    """并行文档生成节点，使用 Pocket Flow 风格的 AsyncParallelBatchFlow 实现并发"""
 
     def __init__(self, nodes_config: Dict[str, Dict[str, Any]]):
         """初始化并行文档生成节点
@@ -68,37 +69,8 @@ class ParallelDocGenerationNode(AsyncNode):
             )
         return tasks_description
 
-    async def _run_single_node_async(self, task_desc: Dict[str, Any]) -> Dict[str, Any]:
-        """异步运行单个子节点的辅助方法。"""
-        node_name = task_desc["node_name"]
-        node: AsyncNode = task_desc["node"]  # node is an AsyncNode
-        task_shared = task_desc["shared"]
-        log_and_notify(f"ParallelDocGenerationNode: 开始执行节点 {node_name}", "info")
-        try:
-            # Manually run the AsyncNode lifecycle
-            prep_result = await node.prep_async(task_shared)
-            # Ensure prep_result doesn't indicate immediate failure before exec
-            if isinstance(prep_result, dict) and prep_result.get("error"):
-                raise Exception(f"Prep stage failed for node {node_name}: {prep_result['error']}")
-
-            exec_result = await node.exec_async(prep_result)
-            # task_shared might be modified by exec if prep_result was task_shared and modified in place,
-            # but primarily modifications happen in post_async based on exec_result.
-            await node.post_async(
-                task_shared, prep_result, exec_result
-            )  # task_shared is modified in place by post_async
-
-            log_and_notify(f"ParallelDocGenerationNode: 节点 {node_name} 执行成功", "info")
-            # 'task_shared' now contains the results from the node's post_async
-            return {"node_name": node_name, "result": task_shared, "success": True}
-        except Exception as e:
-            error_msg = f"节点 {node_name} 执行出错: {str(e)}"
-            log_and_notify(error_msg, "error")
-            task_shared["error"] = error_msg  # Ensure error is in the shared dict for this task
-            return {"node_name": node_name, "result": task_shared, "error": error_msg, "success": False}
-
     async def exec_async(self, tasks_description: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """执行阶段，使用 asyncio.gather 并行运行所有任务。
+        """执行阶段，使用 AsyncParallelBatchFlow 并行运行所有任务。
 
         Args:
             tasks_description: 从 prep_async 返回的任务描述列表。
@@ -106,12 +78,50 @@ class ParallelDocGenerationNode(AsyncNode):
         Returns:
             所有任务的执行结果列表。
         """
-        if not tasks_description:
-            return []
+        log_and_notify(f"ParallelDocGenerationNode: 开始并行执行 {len(tasks_description)} 个文档生成任务", "info")
 
-        coroutines = [self._run_single_node_async(task_desc) for task_desc in tasks_description]
-        results = await asyncio.gather(*coroutines)  # gather 默认 return_exceptions=False
-        return results
+        # 创建一个处理单个节点的异步节点
+        class NodeProcessor(AsyncNode):
+            def __init__(self, parent_node: ParallelDocGenerationNode):
+                super().__init__()
+                self.parent_node = parent_node
+
+            async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+                # 从 shared 中获取任务描述
+                return shared
+
+            async def exec_async(self, task_desc: Dict[str, Any]) -> Dict[str, Any]:
+                # 执行单个节点
+                node_name = task_desc["node_name"]
+                node: AsyncNode = task_desc["node"]
+                task_shared = task_desc["shared"]
+                
+                log_and_notify(f"ParallelDocGenerationNode: 开始执行节点 {node_name}", "info")
+                try:
+                    # 运行 AsyncNode 生命周期
+                    prep_result = await node.prep_async(task_shared)
+                    if isinstance(prep_result, dict) and prep_result.get("error"):
+                        raise Exception(f"Prep stage failed for node {node_name}: {prep_result['error']}")
+
+                    exec_result = await node.exec_async(prep_result)
+                    await node.post_async(task_shared, prep_result, exec_result)
+
+                    log_and_notify(f"ParallelDocGenerationNode: 节点 {node_name} 执行成功", "info")
+                    return {"node_name": node_name, "success": True, "shared": task_shared}
+                except Exception as e:
+                    error_msg = f"ParallelDocGenerationNode: 节点 {node_name} 执行失败: {str(e)}"
+                    log_and_notify(error_msg, "error")
+                    return {"node_name": node_name, "success": False, "error": error_msg, "shared": task_shared}
+
+            async def post_async(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+                # 直接返回 "default"，结果已经在 exec_res 中
+                return "default"
+
+        # 创建并行批处理流程
+        batch_flow = AsyncParallelBatchFlow(flow=NodeProcessor(self))
+        
+        # 执行批处理
+        return await batch_flow.exec_async(tasks_description)
 
     def _check_for_errors(self, exec_res_list: List[Dict[str, Any]]) -> List[str]:
         """检查执行结果中是否有错误
@@ -124,7 +134,9 @@ class ParallelDocGenerationNode(AsyncNode):
         """
         errors = []
         for result in exec_res_list:
-            if not result.get("success", False):
+            if isinstance(result, Exception):
+                errors.append(f"执行异常: {str(result)}")
+            elif not result.get("success", False):
                 errors.append(result.get("error", f"节点 {result.get('node_name', '未知')} 执行失败"))
         return errors
 
@@ -135,24 +147,25 @@ class ParallelDocGenerationNode(AsyncNode):
             shared: 共享存储
             exec_res_list: 执行结果列表
         """
-        # 定义节点名称到共享存储键的映射
-        node_to_shared_key = {
-            "architecture": "architecture_doc",
-            "api_docs": "api_docs",
-            "timeline": "timeline_doc",
-            "dependency": "dependency_doc",
-            "glossary": "glossary_doc",
-            "quick_look": "quick_look_doc",
-        }
-
+        # 合并每个节点的结果到共享存储
         for result in exec_res_list:
-            node_name = result["node_name"]
-            node_result = result["result"]
+            if isinstance(result, dict) and result.get("success", False):
+                node_name = result.get("node_name", "")
+                node_shared = result.get("shared", {})
 
-            # 如果节点名称在映射中，并且对应的键在节点结果中存在
-            shared_key = node_to_shared_key.get(node_name)
-            if shared_key and shared_key in node_result:
-                shared[shared_key] = node_result[shared_key]
+                # 根据节点名称，将特定结果合并到共享存储
+                if node_name == "architecture":
+                    shared["architecture_doc"] = node_shared.get("architecture_doc", {})
+                elif node_name == "api_docs":
+                    shared["api_docs"] = node_shared.get("api_docs", {})
+                elif node_name == "timeline":
+                    shared["timeline_doc"] = node_shared.get("timeline_doc", {})
+                elif node_name == "dependency":
+                    shared["dependency_doc"] = node_shared.get("dependency_doc", {})
+                elif node_name == "glossary":
+                    shared["glossary_doc"] = node_shared.get("glossary_doc", {})
+                elif node_name == "quick_look":
+                    shared["quick_look_doc"] = node_shared.get("quick_look_doc", {})
 
     async def post_async(
         self, shared: Dict[str, Any], prep_res: List[Dict[str, Any]], exec_res_list: List[Dict[str, Any]]
@@ -167,18 +180,20 @@ class ParallelDocGenerationNode(AsyncNode):
         Returns:
             后续动作
         """
-        # 检查是否有节点执行出错
-        errors = self._check_for_errors(exec_res_list)
+        log_and_notify("ParallelDocGenerationNode: 后处理阶段开始", "info")
 
+        # 检查是否有任务执行出错
+        errors = self._check_for_errors(exec_res_list)
         if errors:
             error_msg = "; ".join(errors)
-            log_and_notify(f"ParallelDocGenerationNode: 部分节点执行出错: {error_msg}", "error")
+            log_and_notify(f"ParallelDocGenerationNode: 部分任务执行出错: {error_msg}", "error")
             shared["error"] = error_msg
             return "error"
 
         # 合并所有节点结果到共享存储
         self._merge_node_results(shared, exec_res_list)
-
+        
+        log_and_notify("ParallelDocGenerationNode: 并行文档生成完成", "info")
         return "default"
 
 

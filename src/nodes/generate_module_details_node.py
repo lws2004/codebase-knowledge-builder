@@ -7,11 +7,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from pocketflow import AsyncNode
+from pocketflow import AsyncFlow, AsyncNode
 from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper import LLMClient
 from ..utils.logger import log_and_notify
+from .async_parallel_flow import AsyncParallelBatchFlow
 
 
 class GenerateModuleDetailsNodeConfig(BaseModel):
@@ -149,99 +150,156 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
             "output_format": self.config.output_format,
         }
 
-    async def _process_single_module(
-        self, module_info: Dict[str, Any], prep_data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """异步处理单个模块的文档生成。"""
-        module_name = module_info.get("name", "unknown_module")
-        module_path_in_repo = module_info.get("path", "")
-        repo_name = prep_data["repo_name"]
-        output_dir = prep_data["output_dir"]
-        target_language = prep_data["target_language"]
-        model = prep_data["model"]
-        retry_count = prep_data["retry_count"]
-        quality_threshold = prep_data["quality_threshold"]
+    # 移除 _process_single_module 方法，因为它已被 ModuleProcessor 类替代
 
-        log_and_notify(f"AsyncGenerateModuleDetailsNode: 开始处理模块 {module_name}", "debug")
+    class ModuleProcessor(AsyncFlow):
+        """处理单个模块文档生成的内部流程类"""
 
-        if not self.llm_client:
-            log_and_notify(
-                f"AsyncGenerateModuleDetailsNode: Skipping module {module_name} due to missing LLM client.", "error"
-            )
-            return {
-                "name": module_name,
-                "path": module_path_in_repo,
-                "success": False,
-                "error": "LLM client not available",
-            }
+        def __init__(self, parent: "AsyncGenerateModuleDetailsNode"):
+            super().__init__()
+            self.parent = parent
 
-        try:
-            code_content = self._get_module_code(
-                module_path_in_repo, prep_data["rag_data"], prep_data["code_structure"], prep_data["repo_path"]
-            )
-            prompt = self._create_prompt(module_info, code_content)
+        async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+            """准备阶段，获取模块信息
 
-            for attempt in range(retry_count):
-                try:
-                    generated_content, quality_score, success = await self._call_model_async(
-                        prompt, target_language, model
-                    )
+            Args:
+                shared: 包含模块信息和准备数据的字典
 
-                    if success and quality_score["overall"] >= quality_threshold:
-                        # Ensure modules_dir is created (might be called concurrently)
-                        repo_specific_output_dir = os.path.join(output_dir, repo_name or "default_repo")
-                        modules_dir = os.path.join(repo_specific_output_dir, "modules")
-                        os.makedirs(modules_dir, exist_ok=True)
+            Returns:
+                准备结果
+            """
+            return shared
 
-                        file_name_stem = self._get_module_file_name(module_info)
-                        # 确保使用 .md 扩展名
-                        file_path = os.path.join(modules_dir, f"{file_name_stem}.md")
+        async def exec_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+            """执行阶段，生成模块文档
 
-                        # 处理生成的内容，确保内容完整
-                        processed_content = self._process_module_content(generated_content, module_name, repo_name)
+            Args:
+                shared: 包含模块信息和准备数据的字典
 
-                        # Asynchronous file write
-                        await asyncio.to_thread(self._save_module_file, file_path, processed_content)
+            Returns:
+                执行结果
+            """
+            module_info = shared.get("module_info", {})
+            prep_data = shared.get("prep_data", {})
 
-                        return {
-                            "name": module_name,
-                            "path": module_path_in_repo,
-                            "file_path": file_path,
-                            "content": processed_content,
-                            "quality_score": quality_score,
-                            "success": True,
-                        }
-                    elif success:
-                        log_and_notify(
-                            f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 生成质量不佳 "
-                            f"(分数: {quality_score['overall']}), 重试 {attempt + 1}",
-                            "warning",
-                        )
-                    else:
-                        log_and_notify(
-                            f"AsyncGenerateModuleDetailsNode: 模块 {module_name} _call_model_async 指示失败, "
-                            f"重试 {attempt + 1}",
-                            "warning",
+            module_name = module_info.get("name", "unknown_module")
+            module_path_in_repo = module_info.get("path", "")
+            repo_name = prep_data["repo_name"]
+            output_dir = prep_data["output_dir"]
+            target_language = prep_data["target_language"]
+            model = prep_data["model"]
+            retry_count = prep_data["retry_count"]
+            quality_threshold = prep_data["quality_threshold"]
+
+            log_and_notify(f"AsyncGenerateModuleDetailsNode: 开始处理模块 {module_name}", "debug")
+
+            if not self.parent.llm_client:
+                log_and_notify(
+                    f"AsyncGenerateModuleDetailsNode: Skipping module {module_name} due to missing LLM client.", "error"
+                )
+                return {
+                    "name": module_name,
+                    "path": module_path_in_repo,
+                    "success": False,
+                    "error": f"LLMClientNotAvailableInModule: {module_name}",
+                }
+
+            try:
+                code_content = self.parent._get_module_code(
+                    module_path_in_repo, prep_data["rag_data"], prep_data["code_structure"], prep_data["repo_path"]
+                )
+                prompt = self.parent._create_prompt(module_info, code_content)
+
+                for attempt in range(retry_count):
+                    try:
+                        generated_content, quality_score, success = await self.parent._call_model_async(
+                            prompt, target_language, model
                         )
 
-                except Exception as e_call:
-                    log_and_notify(
-                        f"AsyncGenerateModuleDetailsNode: 模块 {module_name} LLM调用失败 "
-                        f"(尝试 {attempt + 1}): {e_call}",
-                        "warning",
-                    )
+                        if success and quality_score["overall"] >= quality_threshold:
+                            # Ensure modules_dir is created (might be called concurrently)
+                            repo_specific_output_dir = os.path.join(output_dir, repo_name or "default_repo")
+                            modules_dir = os.path.join(repo_specific_output_dir, "modules")
+                            os.makedirs(modules_dir, exist_ok=True)
 
-                if attempt < retry_count - 1:
-                    await asyncio.sleep(2**attempt)
+                            file_name_stem = self.parent._get_module_file_name(module_info)
+                            # 确保使用 .md 扩展名
+                            file_path = os.path.join(modules_dir, f"{file_name_stem}.md")
 
-            log_and_notify(f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 所有重试均失败", "error")
-            return {"name": module_name, "path": module_path_in_repo, "success": False, "error": "Max retries reached"}
+                            # 处理生成的内容，确保内容完整
+                            processed_content = self.parent._process_module_content(
+                                generated_content, module_name, repo_name
+                            )
 
-        except Exception as e_process:
-            log_and_notify(
-                f"AsyncGenerateModuleDetailsNode: 处理模块 {module_name} 时发生意外错误: {e_process}", "error"
-            )
-            return {"name": module_name, "path": module_path_in_repo, "success": False, "error": str(e_process)}
+                            # Asynchronous file write
+                            await asyncio.to_thread(self.parent._save_module_file, file_path, processed_content)
+
+                            return {
+                                "name": module_name,
+                                "path": module_path_in_repo,
+                                "file_path": file_path,
+                                "content": processed_content,
+                                "quality_score": quality_score,
+                                "success": True,
+                            }
+                        elif success:
+                            log_and_notify(
+                                f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 生成质量不佳 "
+                                f"(分数: {quality_score['overall']}), 重试 {attempt + 1}",
+                                "warning",
+                            )
+                        else:
+                            log_and_notify(
+                                f"AsyncGenerateModuleDetailsNode: 模块 {module_name} _call_model_async 指示失败, "
+                                f"重试 {attempt + 1}",
+                                "warning",
+                            )
+
+                    except Exception as e_call:
+                        log_and_notify(
+                            f"AsyncGenerateModuleDetailsNode: 模块 {module_name} LLM调用失败 "
+                            f"(尝试 {attempt + 1}): {e_call}",
+                            "warning",
+                        )
+
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(2**attempt)
+
+                log_and_notify(f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 所有重试均失败", "error")
+                return {
+                    "name": module_name,
+                    "path": module_path_in_repo,
+                    "success": False,
+                    "error": f"MaxRetriesReachedInModule: {module_name}",
+                }
+
+            except Exception as e_process:
+                detailed_error_msg = f"ModuleProcessorException: {type(e_process).__name__} - {str(e_process)}"
+                log_and_notify(
+                    f"AsyncGenerateModuleDetailsNode: Error processing module {module_name}: {detailed_error_msg}",
+                    "error",
+                )
+                return {
+                    "name": module_name,
+                    "path": module_path_in_repo,
+                    "success": False,
+                    "error": detailed_error_msg,
+                }
+
+        async def post_async(self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
+            """后处理阶段，返回执行结果
+
+            Args:
+                shared: 共享存储
+                prep_res: 准备阶段的结果
+                exec_res: 执行阶段的结果
+
+            Returns:
+                下一个节点的动作
+            """
+            # 将执行结果更新到共享存储
+            shared.update(exec_res)
+            return "default"
 
     async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
         """执行阶段，并行生成所有模块的详细文档
@@ -266,15 +324,19 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
                 "index_file_path": None,
             }  # No modules, but not an error state for the node itself
 
-        # Create tasks for each module to be processed by _process_single_module
-        tasks = [self._process_single_module(module_info, prep_res) for module_info in modules_to_process]
+        # 创建批处理参数列表
+        batch_params = []
+        for module_info in modules_to_process:
+            batch_params.append({"module_info": module_info, "prep_data": prep_res})
 
-        log_and_notify(f"AsyncGenerateModuleDetailsNode: 创建 {len(tasks)} 个模块处理任务", "info")
+        log_and_notify(f"AsyncGenerateModuleDetailsNode: 创建 {len(batch_params)} 个模块处理任务", "info")
 
-        # Run all module processing tasks concurrently
-        # gather will return a list of results (dicts from _process_single_module)
-        # or exceptions if a task raised one directly (though _process_single_module tries to catch)
-        results_or_exceptions = await asyncio.gather(*tasks, return_exceptions=True)
+        # 使用 AsyncParallelBatchFlow 并行处理所有模块
+        module_processor = self.ModuleProcessor(self)
+        batch_flow = AsyncParallelBatchFlow(module_processor, max_concurrency=self.config.max_modules_per_batch)
+
+        # 执行批处理流程
+        results_or_exceptions = await batch_flow.exec_async(batch_params)
 
         log_and_notify("AsyncGenerateModuleDetailsNode: 所有模块处理任务完成", "info")
 
@@ -290,11 +352,10 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
             elif isinstance(res_or_exc, dict) and res_or_exc.get("success"):
                 processed_module_docs.append(res_or_exc)
             elif isinstance(res_or_exc, dict) and not res_or_exc.get("success"):
-                err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 处理失败: "
-                f"{res_or_exc.get('error', 'Unknown error')}"
+                err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 处理失败: {res_or_exc.get('error', 'Unknown error')}"
                 log_and_notify(err_msg, "error")
                 errors_encountered.append({"module": module_name, "error": res_or_exc.get("error", "Unknown error")})
-            else:  # Should not happen if _process_single_module always returns a dict or raises
+            else:  # Should not happen if ModuleProcessor always returns a dict or raises
                 err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 返回了意外结果: {res_or_exc}"
                 log_and_notify(err_msg, "error")
                 errors_encountered.append({"module": module_name, "error": "Unexpected result type"})
@@ -319,11 +380,15 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
                 errors_encountered.append({"module": "index_generation", "error": str(e_index)})
                 index_file_path = None  # Ensure it's None if saving failed
 
+        # 即使所有模块处理都失败，也返回成功状态，但包含错误信息
+        # 这样可以让流程继续执行，而不会因为模块处理失败而中断整个流程
         return {
             "module_docs": processed_module_docs,  # List of dicts for successfully processed modules
             "index_file_path": index_file_path,
             "errors": errors_encountered,  # List of errors encountered
-            "success": not errors_encountered,  # Overall success if no errors
+            "success": True,  # 总是返回成功，让流程继续
+            "has_errors": bool(errors_encountered),  # 标记是否有错误
+            "error_count": len(errors_encountered),  # 错误数量
         }
 
     async def post_async(self, shared: Dict[str, Any], _: Dict[str, Any], exec_res: Dict[str, Any]) -> str:
@@ -356,12 +421,14 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
         shared["module_details"] = {
             "docs": exec_res.get("module_docs", []),  # Successfully generated module docs
             "index_file_path": exec_res.get("index_file_path"),
-            "success": exec_res.get("success", True),  # Overall success of the node
+            "success": True,  # 总是标记为成功，让流程继续
             "partial_errors": exec_res.get("errors", []),  # Errors for specific modules or index
+            "has_errors": exec_res.get("has_errors", False),  # 是否有错误
+            "error_count": exec_res.get("error_count", 0),  # 错误数量
         }
 
         num_successful = len(exec_res.get("module_docs", []))
-        num_errors = len(exec_res.get("errors", []))
+        num_errors = exec_res.get("error_count", len(exec_res.get("errors", [])))
 
         log_message = (
             f"AsyncGenerateModuleDetailsNode: 模块详细文档处理完成。成功: {num_successful}, 失败/错误: {num_errors}."
@@ -371,10 +438,10 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
         else:
             log_and_notify(log_message, "info")
 
-        if not exec_res.get("success", True):
-            # If exec overall failed (likely due to partial errors), return "partial_error"
+        if exec_res.get("has_errors", False) and num_errors == len(exec_res.get("modules_to_process", [])):
+            # 如果所有模块都失败，返回"partial_error"
             log_and_notify(
-                "AsyncGenerateModuleDetailsNode: Returning 'partial_error' due to exec_res success flag being False.",
+                "AsyncGenerateModuleDetailsNode: 所有模块处理都失败，返回'partial_error'",
                 "warning",
             )
             return "partial_error"
@@ -738,22 +805,37 @@ if __name__ == "__main__":
         ]
 
         try:
-            raw_response = await self.llm_client.acompletion(messages=messages, model=model)
+            # 添加超时处理，防止LLM调用卡住
+            import asyncio
+
+            # 设置60秒超时
+            timeout = 60
+            try:
+                # 使用asyncio.wait_for添加超时
+                raw_response = await asyncio.wait_for(
+                    self.llm_client.acompletion(messages=messages, model=model), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                log_and_notify(f"AsyncGenerateModuleDetailsNode: LLM调用超时 ({timeout}秒)", "error")
+                return "LLM调用超时，请稍后重试或检查网络连接。", {"overall": 0.0}, False
+
             if not raw_response:
                 log_and_notify("AsyncGenerateModuleDetailsNode: LLM 返回空响应", "error")
-                return "", {}, False
+                return "LLM返回空响应，请稍后重试。", {"overall": 0.0}, False
 
             content = self.llm_client.get_completion_content(raw_response)
             if not content:
                 log_and_notify("AsyncGenerateModuleDetailsNode: 从 LLM 响应中提取内容失败", "error")
-                return "", {}, False
+                return "从LLM响应中提取内容失败，请稍后重试。", {"overall": 0.0}, False
 
             quality_score = self._evaluate_quality(content)
             return content, quality_score, True
 
         except Exception as e:
-            log_and_notify(f"AsyncGenerateModuleDetailsNode: _call_model_async 异常: {str(e)}", "error")
-            return "", {}, False
+            error_msg = f"AsyncGenerateModuleDetailsNode: _call_model_async 异常: {str(e)}"
+            log_and_notify(error_msg, "error")
+            # 返回更有用的错误信息，而不是空字符串
+            return f"生成文档时出错: {str(e)}", {"overall": 0.0}, False
 
     def _evaluate_quality(self, content: str) -> Dict[str, float]:
         """评估生成内容的质量。

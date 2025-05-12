@@ -230,7 +230,7 @@ class AsyncPrepareRAGDataNode(AsyncNode):
         return files
 
     async def _read_files_async(self, repo_path: str, files: List[str]) -> Dict[str, str]:
-        """异步读取文件内容
+        """异步读取文件内容，使用 Pocket Flow 风格的并发实现
 
         Args:
             repo_path: 仓库路径
@@ -239,21 +239,59 @@ class AsyncPrepareRAGDataNode(AsyncNode):
         Returns:
             文件内容字典 {file_path: content}
         """
+        from .async_parallel_flow import AsyncParallelBatchFlow
+
+        # 创建一个处理单个文件的异步节点
+        class FileReader(AsyncNode):
+            def __init__(self, parent_node: AsyncPrepareRAGDataNode, repo_path: str):
+                super().__init__()
+                self.parent_node = parent_node
+                self.repo_path = repo_path
+
+            async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
+                # 从 shared 中获取文件路径
+                return shared
+
+            async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
+                # 读取单个文件
+                file_path = prep_res["file_path"]
+                full_path = os.path.join(self.repo_path, file_path)
+
+                try:
+                    # 使用 asyncio.to_thread 在单独的线程中运行同步文件读取
+                    content = await asyncio.to_thread(self.parent_node._read_sync, full_path)
+                    return {"file_path": file_path, "content": content, "success": True}
+                except FileNotFoundError:
+                    log_and_notify(f"AsyncPrepareRAGDataNode: 文件未找到: {full_path}", "warning")
+                    return {"file_path": file_path, "success": False, "error": "file_not_found"}
+                except Exception as e:
+                    log_and_notify(f"AsyncPrepareRAGDataNode: 读取文件时出错 {full_path}: {e}", "error")
+                    return {"file_path": file_path, "success": False, "error": str(e)}
+
+            async def post_async(
+                self, shared: Dict[str, Any], prep_res: Dict[str, Any], exec_res: Dict[str, Any]
+            ) -> str:
+                # 直接返回 "default"，结果已经在 exec_res 中
+                return "default"
+
+        # 为每个文件创建参数字典
+        file_params = [{"file_path": file_path} for file_path in files]
+
+        # 创建并行批处理流程
+        batch_flow = AsyncParallelBatchFlow(flow=FileReader(self, repo_path))
+
+        # 执行批处理
+        results = await batch_flow.exec_async(file_params)
+
+        # 处理结果
         file_contents = {}
+        for result in results:
+            if isinstance(result, dict) and result.get("success", False):
+                file_path = result.get("file_path")
+                content = result.get("content")
+                if file_path and content is not None:
+                    file_contents[file_path] = content
 
-        async def read_single_file(file_path: str) -> None:
-            full_path = os.path.join(repo_path, file_path)
-            try:
-                # Use asyncio.to_thread to run the synchronous file read in a separate thread
-                content = await asyncio.to_thread(self._read_sync, full_path)
-                file_contents[file_path] = content
-            except FileNotFoundError:
-                log_and_notify(f"AsyncPrepareRAGDataNode: 文件未找到: {full_path}", "warning")  # Downgraded severity
-            except Exception as e:
-                log_and_notify(f"AsyncPrepareRAGDataNode: 读取文件时出错 {full_path}: {e}", "error")
-
-        tasks = [read_single_file(f) for f in files]
-        await asyncio.gather(*tasks)
         return file_contents
 
     # Synchronous helper function for reading file content, to be used with to_thread

@@ -141,7 +141,7 @@ class FormatOutputNode(Node):
             return {"success": False, "error": prep_res["error"]}
 
         # 获取参数
-        combined_content = prep_res["combined_content"]
+        combined_content = self._filter_unwanted_text(prep_res["combined_content"])
         file_structure = prep_res["file_structure"]
         repo_structure = prep_res["repo_structure"]
         output_dir = prep_res["output_dir"]
@@ -204,13 +204,14 @@ class FormatOutputNode(Node):
             # 检查是否生成了文件
             if not output_files:
                 log_and_notify("警告: 没有生成任何文件", "warning")
-                # 尝试直接保存原始内容
+                # 尝试直接保存原始内容，但先过滤掉不应该出现的文本
+                filtered_content = self._filter_unwanted_text(combined_content)
                 index_path = os.path.join(output_dir, repo_name, "index.md")
                 os.makedirs(os.path.dirname(index_path), exist_ok=True)
                 with open(index_path, "w", encoding="utf-8") as f:
-                    f.write(f"---\ntitle: 文档首页\n---\n\n# 文档首页\n\n{combined_content}")
+                    f.write(f"---\ntitle: 文档首页\n---\n\n# 文档首页\n\n{filtered_content}")
                 output_files = [index_path]
-                log_and_notify(f"已将原始内容保存到 {index_path}", "info")
+                log_and_notify(f"已将过滤后的原始内容保存到 {index_path}", "info")
 
             return {
                 "formatted_content": formatted_content,
@@ -252,9 +253,9 @@ class FormatOutputNode(Node):
         # 默认返回
         return "default"
 
-    def _extract_section(self, content: str, section_names: List[str],
-                        flags: int = re.MULTILINE | re.DOTALL,
-                        exact_match: bool = False) -> str:
+    def _extract_section(
+        self, content: str, section_names: List[str], flags: int = re.MULTILINE | re.DOTALL, exact_match: bool = False
+    ) -> str:
         """从内容中提取指定部分
 
         Args:
@@ -268,18 +269,10 @@ class FormatOutputNode(Node):
         """
         if exact_match:
             # 精确匹配：只匹配与section_names完全相同的标题
-            pattern = (
-                r"##\s+(?:"
-                + "|".join(section_names)
-                + r")\b(.+?)(?=##\s+|$)"
-            )
+            pattern = r"##\s+(?:" + "|".join(section_names) + r")\b(.+?)(?=##\s+|$)"
         else:
             # 模糊匹配：匹配包含section_names中任意一个的标题
-            pattern = (
-                r"##\s+(?:(?:.*?\s)?"
-                + "|".join(section_names)
-                + r"(?:\s.*?)?)\b(.+?)(?=##\s+|$)"
-            )
+            pattern = r"##\s+(?:(?:.*?\s)?" + "|".join(section_names) + r"(?:\s.*?)?)\b(.+?)(?=##\s+|$)"
 
         match = re.search(pattern, content, flags)
         return match.group(1).strip() if match else ""
@@ -414,7 +407,10 @@ class FormatOutputNode(Node):
 
         for shared_key, dict_key, file_name in content_sources:
             if shared_key in shared and shared[shared_key].get("success", False):
-                content_dict[dict_key] = shared[shared_key].get("content", "")
+                content = shared[shared_key].get("content", "")
+                # 过滤掉不应该出现的文本
+                content = self._filter_unwanted_text(content)
+                content_dict[dict_key] = content
                 print(f"合并了{shared_key}文档，长度: {len(content_dict[dict_key])}")
             else:
                 # 尝试从文件中读取
@@ -425,6 +421,8 @@ class FormatOutputNode(Node):
                     if os.path.exists(file_path):
                         with open(file_path, "r", encoding="utf-8") as f:
                             content = f.read()
+                            # 过滤掉不应该出现的文本
+                            content = self._filter_unwanted_text(content)
                             content_dict[dict_key] = content
                             print(f"从文件读取了{file_name}文档，长度: {len(content)}")
                 except Exception as e:
@@ -449,3 +447,26 @@ class FormatOutputNode(Node):
             log_and_notify(f"不支持的输出格式: {output_format}，保持 Markdown 格式", "warning")
 
         return markdown_files
+
+    def _filter_unwanted_text(self, content: str) -> str:
+        """过滤掉不应该出现在文档中的文本
+
+        Args:
+            content: 原始内容
+
+        Returns:
+            过滤后的内容
+        """
+        # 过滤掉常见的不应该出现的文本
+        unwanted_texts = [
+            "无需提供修复后的完整文档，只需根据上述改进建议进行修改即可。",
+            "无需提供修复后的完整文档，只需根据上述改进建议进行修改即可",
+            "请不要提供修复后的完整文档，只提供详细的改进建议",
+            "不要在回复中包含无需提供修复后的完整文档，只需根据上述改进建议进行修改即可这样的文本",
+        ]
+
+        filtered_content = content
+        for text in unwanted_texts:
+            filtered_content = filtered_content.replace(text, "")
+
+        return filtered_content
