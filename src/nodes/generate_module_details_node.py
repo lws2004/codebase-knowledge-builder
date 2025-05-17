@@ -7,12 +7,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from pocketflow import AsyncFlow, AsyncNode
+from pocketflow import AsyncNode
 from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper import LLMClient
 from ..utils.logger import log_and_notify
-from .async_parallel_flow import AsyncParallelBatchFlow
+from .async_parallel_batch_node import AsyncParallelBatchNode
 
 
 class GenerateModuleDetailsNodeConfig(BaseModel):
@@ -152,11 +152,13 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
 
     # 移除 _process_single_module 方法，因为它已被 ModuleProcessor 类替代
 
-    class ModuleProcessor(AsyncFlow):
+    class ModuleProcessor(AsyncNode):
         """处理单个模块文档生成的内部流程类"""
 
         def __init__(self, parent: "AsyncGenerateModuleDetailsNode"):
+            # 初始化 AsyncNode 类
             super().__init__()
+            # 初始化其他属性
             self.parent = parent
 
         async def prep_async(self, shared: Dict[str, Any]) -> Dict[str, Any]:
@@ -205,11 +207,25 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
                 }
 
             try:
+                # 添加详细日志，记录模块处理开始
+                log_and_notify(f"ModuleProcessor: 开始处理模块 {module_name}，获取代码内容", "info")
+
                 code_content = self.parent._get_module_code(
                     module_path_in_repo, prep_data["rag_data"], prep_data["code_structure"], prep_data["repo_path"]
                 )
+
+                # 检查代码内容是否为空或过短
+                if not code_content or len(code_content.strip()) < 10:
+                    log_and_notify(f"ModuleProcessor: 模块 {module_name} 的代码内容为空或过短", "warning")
+                    # 使用模拟内容
+                    code_content = self.parent._generate_mock_module_content(module_path_in_repo)
+
+                log_and_notify(f"ModuleProcessor: 为模块 {module_name} 创建提示", "info")
                 prompt = self.parent._create_prompt(module_info, code_content)
 
+                log_and_notify(
+                    f"ModuleProcessor: 开始为模块 {module_name} 调用LLM，最大重试次数: {retry_count}", "info"
+                )
                 for attempt in range(retry_count):
                     try:
                         generated_content, quality_score, success = await self.parent._call_model_async(
@@ -274,11 +290,15 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
                 }
 
             except Exception as e_process:
+                import traceback
+
+                error_details = traceback.format_exc()
                 detailed_error_msg = f"ModuleProcessorException: {type(e_process).__name__} - {str(e_process)}"
                 log_and_notify(
                     f"AsyncGenerateModuleDetailsNode: Error processing module {module_name}: {detailed_error_msg}",
                     "error",
                 )
+                log_and_notify(f"详细错误信息: {error_details}", "error")
                 return {
                     "name": module_name,
                     "path": module_path_in_repo,
@@ -299,6 +319,8 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
             """
             # 将执行结果更新到共享存储
             shared.update(exec_res)
+            # prep_res 参数在此方法中未使用，但需要保留以符合接口要求
+            _ = prep_res
             return "default"
 
     async def exec_async(self, prep_res: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,12 +353,34 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
 
         log_and_notify(f"AsyncGenerateModuleDetailsNode: 创建 {len(batch_params)} 个模块处理任务", "info")
 
-        # 使用 AsyncParallelBatchFlow 并行处理所有模块
-        module_processor = self.ModuleProcessor(self)
-        batch_flow = AsyncParallelBatchFlow(module_processor, max_concurrency=self.config.max_modules_per_batch)
+        # 创建一个自定义的 AsyncParallelBatchNode 子类，用于处理模块
+        class ModuleBatchNode(AsyncParallelBatchNode):
+            def __init__(self, parent: "AsyncGenerateModuleDetailsNode", max_concurrency: int):
+                super().__init__(max_concurrency=max_concurrency)
+                self.parent = parent
 
-        # 执行批处理流程
-        results_or_exceptions = await batch_flow.exec_async(batch_params)
+            async def prep_async(self, shared: Dict[str, Any]) -> List[Dict[str, Any]]:
+                # shared 参数在此方法中未使用，但需要保留以符合接口要求
+                _ = shared
+                # 直接返回传入的批处理参数
+                return batch_params
+
+            async def exec_async(self, item: Dict[str, Any]) -> Dict[str, Any]:
+                # 使用 ModuleProcessor 处理单个模块
+                processor = self.parent.ModuleProcessor(self.parent)
+                # 执行处理流程
+                await processor.prep_async(item)
+                return await processor.exec_async(item)
+
+        # 创建批处理节点
+        batch_node = ModuleBatchNode(self, self.config.max_modules_per_batch)
+
+        # 执行批处理
+        shared_copy = {"batch_params": batch_params}
+        await batch_node.run_async(shared_copy)
+
+        # 获取结果
+        results_or_exceptions = shared_copy.get("batch_results", [])
 
         log_and_notify("AsyncGenerateModuleDetailsNode: 所有模块处理任务完成", "info")
 
@@ -466,28 +510,51 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
         Returns:
             str: 模块代码内容，如果找不到则返回错误信息字符串。
         """
-        # 处理模块路径
-        module_path_in_repo = self._normalize_module_path(module_path_in_repo)
+        # code_structure 参数在此方法中未使用，但需要保留以符合接口要求
+        _ = code_structure
 
-        # 尝试从不同来源获取代码内容
-        code_content = self._get_code_from_rag_exact_match(module_path_in_repo, rag_data)
-        if code_content:
-            return code_content
+        try:
+            # 处理模块路径
+            log_and_notify(f"_get_module_code: 开始处理模块路径 {module_path_in_repo}", "info")
+            module_path_in_repo = self._normalize_module_path(module_path_in_repo)
+            log_and_notify(f"_get_module_code: 标准化后的模块路径 {module_path_in_repo}", "info")
 
-        code_content = self._get_code_from_rag_partial_match(module_path_in_repo, rag_data)
-        if code_content:
-            return code_content
+            # 尝试从不同来源获取代码内容
+            log_and_notify("_get_module_code: 尝试从RAG数据中精确匹配获取代码", "info")
+            code_content = self._get_code_from_rag_exact_match(module_path_in_repo, rag_data)
+            if code_content:
+                log_and_notify(f"_get_module_code: 从RAG数据中精确匹配获取代码成功，长度: {len(code_content)}", "info")
+                return code_content
 
-        code_content = self._get_code_from_filesystem_exact_match(module_path_in_repo, repo_path)
-        if code_content:
-            return code_content
+            log_and_notify("_get_module_code: 尝试从RAG数据中部分匹配获取代码", "info")
+            code_content = self._get_code_from_rag_partial_match(module_path_in_repo, rag_data)
+            if code_content:
+                log_and_notify(f"_get_module_code: 从RAG数据中部分匹配获取代码成功，长度: {len(code_content)}", "info")
+                return code_content
 
-        code_content = self._get_code_from_filesystem_fuzzy_match(module_path_in_repo, repo_path)
-        if code_content:
-            return code_content
+            log_and_notify("_get_module_code: 尝试从文件系统中精确匹配获取代码", "info")
+            code_content = self._get_code_from_filesystem_exact_match(module_path_in_repo, repo_path)
+            if code_content:
+                log_and_notify(f"_get_module_code: 从文件系统中精确匹配获取代码成功，长度: {len(code_content)}", "info")
+                return code_content
 
-        # 如果所有方法都失败，生成模拟内容
-        return self._generate_mock_module_content(module_path_in_repo)
+            log_and_notify("_get_module_code: 尝试从文件系统中模糊匹配获取代码", "info")
+            code_content = self._get_code_from_filesystem_fuzzy_match(module_path_in_repo, repo_path)
+            if code_content:
+                log_and_notify(f"_get_module_code: 从文件系统中模糊匹配获取代码成功，长度: {len(code_content)}", "info")
+                return code_content
+
+            # 如果所有方法都失败，生成模拟内容
+            log_and_notify("_get_module_code: 所有获取代码方法都失败，生成模拟内容", "warning")
+            return self._generate_mock_module_content(module_path_in_repo)
+        except Exception as e:
+            import traceback
+
+            error_details = traceback.format_exc()
+            log_and_notify(f"_get_module_code: 获取模块代码时出错: {str(e)}", "error")
+            log_and_notify(f"_get_module_code: 详细错误信息: {error_details}", "error")
+            # 出错时也返回模拟内容，而不是抛出异常
+            return self._generate_mock_module_content(module_path_in_repo)
 
     def _normalize_module_path(self, module_path: str) -> str:
         """将模块名称标准化为文件路径
@@ -736,10 +803,8 @@ if __name__ == "__main__":
         Returns:
             模块文档内容
         """
-        # repo_name = prep_data["repo_name"] # 未使用
-        # output_dir = prep_data["output_dir"] # 未使用
-        # target_language = prep_data["target_language"] # 未使用
-        # model = prep_data["model"] # 未使用
+        # prep_data 参数在此方法中未使用，但需要保留以符合接口要求
+        _ = prep_data
 
         # 获取模块名称
         module_name = Path(module_path_in_repo).stem
@@ -798,6 +863,8 @@ if __name__ == "__main__":
         system_prompt_content = (
             f"你是一个代码库文档专家，请按照用户要求为指定模块生成详细文档。目标语言: {target_language}。"
             f"请确保你的分析是基于实际提供的模块信息和代码内容。"
+            f"请详细分析代码，提供完整的模块概述、类和函数详解、使用示例、依赖关系以及注意事项和最佳实践。"
+            f"生成的文档应该包含丰富的代码示例和详细的API说明，以帮助开发者理解和使用该模块。"
         )
         messages = [
             {"role": "system", "content": system_prompt_content},
@@ -808,8 +875,8 @@ if __name__ == "__main__":
             # 添加超时处理，防止LLM调用卡住
             import asyncio
 
-            # 设置60秒超时
-            timeout = 60
+            # 设置300秒超时（5分钟），因为模块文档生成可能需要更长时间
+            timeout = 300
             try:
                 # 使用asyncio.wait_for添加超时
                 raw_response = await asyncio.wait_for(
@@ -832,8 +899,12 @@ if __name__ == "__main__":
             return content, quality_score, True
 
         except Exception as e:
+            import traceback
+
+            error_details = traceback.format_exc()
             error_msg = f"AsyncGenerateModuleDetailsNode: _call_model_async 异常: {str(e)}"
             log_and_notify(error_msg, "error")
+            log_and_notify(f"详细错误信息: {error_details}", "error")
             # 返回更有用的错误信息，而不是空字符串
             return f"生成文档时出错: {str(e)}", {"overall": 0.0}, False
 
@@ -1025,13 +1096,24 @@ if __name__ == "__main__":
         ]
 
     def _generate_default_dependencies(self, module_name: str, repo_name: str) -> List[str]:
-        """生成默认的依赖关系"""
+        """生成默认的依赖关系
+
+        Args:
+            module_name: 模块名称
+            repo_name: 仓库名称
+
+        Returns:
+            依赖关系文本列表
+        """
+        # 确保使用module_name参数，避免IDE警告
+        module_display_name = module_name.split(".")[-1]
+
         return [
             "## 🔄 依赖关系\n\n",
             "### 📌 该模块依赖的其他模块\n\n",
-            f"- 其他{repo_name}模块\n\n",
+            f"- {module_display_name}模块依赖于其他{repo_name}模块\n\n",
             "### 📌 依赖该模块的其他模块\n\n",
-            f"- 其他{repo_name}模块\n\n",
+            f"- 其他{repo_name}模块可能依赖于{module_display_name}模块\n\n",
         ]
 
     def _generate_best_practices(self, module_name: str) -> List[str]:

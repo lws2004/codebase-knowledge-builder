@@ -512,105 +512,149 @@ def split_content_into_files(
 
     # --- End Helper function ---
 
+    # 尝试读取自定义的 index 模板
+    index_template_path = "templates/index_template.md"
+    index_template_content = None
+    if os.path.exists(index_template_path):
+        try:
+            with open(index_template_path, "r", encoding="utf-8") as f:
+                index_template_content = f.read()
+        except Exception as e:
+            print(f"读取 index 模板失败: {str(e)}")
+
+    # 检查模块目录是否存在
+    modules_exist = False
+    modules_dir = os.path.join(output_dir, repo_name, "modules")
+    if os.path.exists(modules_dir) and os.path.isdir(modules_dir):
+        modules_exist = len([f for f in os.listdir(modules_dir) if f.endswith(".md")]) > 0
+
+    # 获取仓库简介
+    introduction = ""
+    for section_name, section_content in content_dict.items():
+        if "introduction" in section_name.lower() or "简介" in section_name:
+            introduction = section_content
+            break
+
     if file_structure is None:
-        file_structure = {
-            f"{repo_name}/index.md": {
-                "title": "文档首页",
-                "sections": ["introduction", "navigation"],
-                "add_modules_link": True,
-                "default_content": (
-                    f"# {repo_name.capitalize()} 文档\n\n"
-                    f"欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n"
-                    f"## 主要内容\n\n"
-                    f"- [系统架构概览](./overview.md)\n"
-                    f"- [详细架构](./overall_architecture.md)\n"
-                    f"- [模块列表](./modules.md)\n"
-                ),
-                "no_auto_fix": True,
-            },
-            f"{repo_name}/overview.md": {
-                "title": "系统架构概览",
-                "sections": ["introduction", "core_modules_summary"],
-                "add_modules_link": True,
-                "default_content": (
-                    f"# {repo_name.capitalize()} 系统架构概览\n\n"
-                    f"{repo_name} 是一个功能强大的库，提供了简洁易用的API。本文档提供了系统的高级概述。\n\n"
-                    f"## 核心组件\n\n"
-                    f"- **API接口**: 提供简洁的用户接口\n"
-                    f"- **会话管理**: 处理HTTP会话\n"
-                    f"- **请求处理**: 构建和发送HTTP请求\n"
-                    f"- **响应处理**: 解析和处理HTTP响应\n\n"
-                    f"查看[详细架构](./overall_architecture.md)了解更多信息。\n"
-                ),
-                "no_auto_fix": True,
-            },
-            f"{repo_name}/overall_architecture.md": {
-                "title": "详细架构",
-                "sections": ["architecture"],
-                "default_content": (
-                    f"# {repo_name.capitalize()} 详细架构\n\n"
-                    f"本文档详细介绍了 {repo_name} 的内部架构和工作原理。\n\n"
-                    f"## 架构设计\n\n"
-                    f"{repo_name} 采用模块化设计，各组件之间职责明确，耦合度低。\n\n"
-                    f"## 数据流\n\n"
-                    f"1. 用户调用API函数\n"
-                    f"2. 创建请求对象\n"
-                    f"3. 发送HTTP请求\n"
-                    f"4. 接收并处理响应\n"
-                    f"5. 返回响应对象给用户\n"
-                ),
-                "no_auto_fix": True,
-            },
-            f"{repo_name}/quick_look.md": {
-                "title": "项目速览",
-                "sections": ["introduction"],
-                "default_content": (
-                    f"# {repo_name.capitalize()} 项目速览\n\n"
-                    f"{repo_name} 是一个功能强大的库，本文档提供了快速了解项目的方法。\n\n"
-                    f"## 主要特点\n\n"
-                    f"- 简单易用的API\n"
-                    f"- 强大的功能\n"
-                    f"- 良好的扩展性\n"
-                ),
-            },
-            f"{repo_name}/dependency.md": {
-                "title": "依赖关系",
-                "sections": ["dependencies"],
-                "default_content": (
-                    f"# {repo_name.capitalize()} 依赖关系\n\n"
-                    f"本文档描述了 {repo_name} 的依赖关系。\n\n"
-                    f"## 外部依赖\n\n"
-                    f"- 核心依赖\n"
-                    f"- 可选依赖\n\n"
-                    f"## 内部依赖\n\n"
-                    f"- 模块间依赖关系\n"
-                ),
-            },
-            f"{repo_name}/glossary.md": {
-                "title": "术语表",
-                "sections": ["glossary"],
-                "default_content": (
-                    f"# {repo_name.capitalize()} 术语表\n\n"
-                    f"{repo_name} 的常用术语和定义。\n\n"
-                    f"## 常用术语\n\n"
-                    f"- **术语1**: 定义1\n"
-                    f"- **术语2**: 定义2\n"
-                ),
-            },
-            f"{repo_name}/timeline.md": {
-                "title": "项目时间线",
-                "sections": ["evolution_narrative"],
-                "default_content": (
-                    f"# {repo_name.capitalize()} 项目时间线\n\n"
-                    f"{repo_name} 的演变历史和重要里程碑。\n\n"
-                    f"## 主要版本\n\n"
-                    f"- **v1.0**: 初始版本\n"
-                    f"- **v2.0**: 重大更新\n"
-                    f"- **最新版**: 当前版本\n"
-                ),
-            },
-            # Module files are handled separately
-        }
+        # 如果有自定义模板，使用它
+        if index_template_content:
+            # 替换模板中的变量
+            index_content = index_template_content
+            index_content = index_content.replace("{{ repo_name }}", repo_name)
+            index_content = index_content.replace("{{ introduction }}", introduction)
+            index_content = index_content.replace("{% if modules_exist %}", "")
+            index_content = index_content.replace("{% else %}", "" if modules_exist else "<!--")
+            index_content = index_content.replace("{% endif %}", "" if modules_exist else "-->")
+
+            file_structure = {
+                f"{repo_name}/index.md": {
+                    "title": f"{repo_name} 文档中心",
+                    "sections": [],  # 不使用自动生成的内容
+                    "add_modules_link": False,  # 模板中已包含模块链接
+                    "default_content": index_content,
+                    "no_auto_fix": True,
+                },
+            }
+        else:
+            # 使用默认模板
+            file_structure = {
+                f"{repo_name}/index.md": {
+                    "title": "文档首页",
+                    "sections": ["introduction", "navigation"],
+                    "add_modules_link": True,
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 文档\n\n"
+                        f"欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n"
+                        f"## 主要内容\n\n"
+                        f"- [系统架构概览](./overview.md)\n"
+                        f"- [详细架构](./overall_architecture.md)\n"
+                        f"- [模块列表](./modules/index.md)\n"
+                    ),
+                    "no_auto_fix": True,
+                },
+                f"{repo_name}/overview.md": {
+                    "title": "系统架构概览",
+                    "sections": ["introduction", "core_modules_summary"],
+                    "add_modules_link": True,
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 系统架构概览\n\n"
+                        f"{repo_name} 是一个功能强大的库，提供了简洁易用的API。本文档提供了系统的高级概述。\n\n"
+                        f"## 核心组件\n\n"
+                        f"- **API接口**: 提供简洁的用户接口\n"
+                        f"- **会话管理**: 处理HTTP会话\n"
+                        f"- **请求处理**: 构建和发送HTTP请求\n"
+                        f"- **响应处理**: 解析和处理HTTP响应\n\n"
+                        f"查看[详细架构](./overall_architecture.md)了解更多信息。\n"
+                    ),
+                    "no_auto_fix": True,
+                },
+                f"{repo_name}/overall_architecture.md": {
+                    "title": "详细架构",
+                    "sections": ["architecture"],
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 详细架构\n\n"
+                        f"本文档详细介绍了 {repo_name} 的内部架构和工作原理。\n\n"
+                        f"## 架构设计\n\n"
+                        f"{repo_name} 采用模块化设计，各组件之间职责明确，耦合度低。\n\n"
+                        f"## 数据流\n\n"
+                        f"1. 用户调用API函数\n"
+                        f"2. 创建请求对象\n"
+                        f"3. 发送HTTP请求\n"
+                        f"4. 接收并处理响应\n"
+                        f"5. 返回响应对象给用户\n"
+                    ),
+                    "no_auto_fix": True,
+                },
+                f"{repo_name}/quick_look.md": {
+                    "title": "项目速览",
+                    "sections": ["introduction"],
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 项目速览\n\n"
+                        f"{repo_name} 是一个功能强大的库，本文档提供了快速了解项目的方法。\n\n"
+                        f"## 主要特点\n\n"
+                        f"- 简单易用的API\n"
+                        f"- 强大的功能\n"
+                        f"- 良好的扩展性\n"
+                    ),
+                },
+                f"{repo_name}/dependency.md": {
+                    "title": "依赖关系",
+                    "sections": ["dependencies"],
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 依赖关系\n\n"
+                        f"本文档描述了 {repo_name} 的依赖关系。\n\n"
+                        f"## 外部依赖\n\n"
+                        f"- 核心依赖\n"
+                        f"- 可选依赖\n\n"
+                        f"## 内部依赖\n\n"
+                        f"- 模块间依赖关系\n"
+                    ),
+                },
+                f"{repo_name}/glossary.md": {
+                    "title": "术语表",
+                    "sections": ["glossary"],
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 术语表\n\n"
+                        f"{repo_name} 的常用术语和定义。\n\n"
+                        f"## 常用术语\n\n"
+                        f"- **术语1**: 定义1\n"
+                        f"- **术语2**: 定义2\n"
+                    ),
+                },
+                f"{repo_name}/timeline.md": {
+                    "title": "项目时间线",
+                    "sections": ["evolution_narrative"],
+                    "default_content": (
+                        f"# {repo_name.capitalize()} 项目时间线\n\n"
+                        f"{repo_name} 的演变历史和重要里程碑。\n\n"
+                        f"## 主要版本\n\n"
+                        f"- **v1.0**: 初始版本\n"
+                        f"- **v2.0**: 重大更新\n"
+                        f"- **最新版**: 当前版本\n"
+                    ),
+                },
+                # Module files are handled separately
+            }
 
     # 处理overview.md和overall_architecture.md内容重复的问题
     if f"{repo_name}/overview.md" in file_structure and f"{repo_name}/overall_architecture.md" in file_structure:

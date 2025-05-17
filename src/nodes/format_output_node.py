@@ -236,6 +236,8 @@ class FormatOutputNode(Node):
             _prep_res: 准备阶段的结果（未使用）
             exec_res: 执行结果
         """
+        # _prep_res 参数在此方法中未使用，但需要保留以符合接口要求
+        _ = _prep_res
         if exec_res.get("success", False):
             # 更新共享存储
             shared["formatted_content"] = exec_res["formatted_content"]
@@ -449,7 +451,7 @@ class FormatOutputNode(Node):
         return markdown_files
 
     def _filter_unwanted_text(self, content: str) -> str:
-        """过滤掉不应该出现在文档中的文本
+        """过滤掉不应该出现在文档中的文本，并修复格式问题
 
         Args:
             content: 原始内容
@@ -468,5 +470,37 @@ class FormatOutputNode(Node):
         filtered_content = content
         for text in unwanted_texts:
             filtered_content = filtered_content.replace(text, "")
+
+        # 移除文档开头和结尾的 ```markdown 和 ``` 标记
+        if filtered_content.startswith("```markdown\n"):
+            filtered_content = filtered_content[12:]
+        if filtered_content.endswith("\n```"):
+            filtered_content = filtered_content[:-4]
+
+        # 修复 Mermaid 图表格式问题
+        # 移除 Mermaid 图表周围的 ```markdown 和 ``` 标记
+        filtered_content = filtered_content.replace("```markdown\n```mermaid", "```mermaid")
+        filtered_content = filtered_content.replace("```\n```mermaid", "```mermaid")
+
+        # 添加 YAML front matter
+        if not filtered_content.startswith("---\n"):
+            title = "文档"
+            # 尝试从内容中提取标题
+            lines = filtered_content.split("\n")
+            for line in lines:
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                    break
+
+            front_matter = f"---\ntitle: {title}\n---\n\n"
+            filtered_content = front_matter + filtered_content
+
+        # 修复 timeline.md 文件中的格式问题
+        if "演变历史" in filtered_content or "时间线" in filtered_content:
+            # 移除 ```markdown 标记
+            filtered_content = filtered_content.replace("```markdown", "")
+            # 确保文件末尾没有多余的 ``` 标记
+            if filtered_content.endswith("```"):
+                filtered_content = filtered_content[:-3]
 
         return filtered_content

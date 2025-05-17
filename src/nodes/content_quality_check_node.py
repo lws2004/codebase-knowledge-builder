@@ -443,7 +443,13 @@ class ContentQualityCheckNode(Node):
         # Manual parsing logic (simplified example - might need refinement)
         def extract_score(key: str) -> int:
             match = re.search(rf"{key}.*?(\d+).*?[评分分数]", content, re.DOTALL | re.IGNORECASE)
-            return int(match.group(1)) if match else 0
+            if match:
+                try:
+                    return int(match.group(1))
+                except (ValueError, TypeError):
+                    log_and_notify(f"无法将 {match.group(1)} 转换为整数", "warning")
+                    return 5
+            return 5  # 默认分数
 
         try:
             result["clarity"]["score"] = extract_score("清晰度|Clarity")
@@ -456,7 +462,11 @@ class ContentQualityCheckNode(Node):
 
             overall_match = re.search(r"总体[评分分数].*?(\d+)", content, re.DOTALL | re.IGNORECASE)
             if overall_match:
-                result["overall"] = int(overall_match.group(1))
+                try:
+                    result["overall"] = int(overall_match.group(1))
+                except (ValueError, TypeError):
+                    log_and_notify(f"无法将总体评分 {overall_match.group(1)} 转换为整数", "warning")
+                    result["overall"] = 5
             else:
                 # 如果没有找到总体评分，使用其他评分的平均值
                 scores = [
@@ -469,7 +479,10 @@ class ContentQualityCheckNode(Node):
                     result["engagement"]["score"],
                 ]
                 valid_scores = [s for s in scores if s > 0]
-                result["overall"] = int(sum(valid_scores) / len(valid_scores)) if valid_scores else 5
+                if valid_scores:
+                    result["overall"] = int(sum(valid_scores) / len(valid_scores))
+                else:
+                    result["overall"] = 5
         except Exception as e:
             log_and_notify(f"解析评分时出错: {str(e)}", "warning")
             # 设置默认评分
