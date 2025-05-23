@@ -330,7 +330,7 @@ def create_code_links(
 
         # 添加代码块
         if code:
-            result_parts.append(f"\n``python\n{code}\n```\n")
+            result_parts.append(f"\n```python\n{code}\n```\n")
 
         # 添加位置说明
         if file_path:
@@ -567,8 +567,7 @@ def split_content_into_files(
                         f"欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n"
                         f"## 主要内容\n\n"
                         f"- [系统架构概览](./overview.md)\n"
-                        f"- [详细架构](./overall_architecture.md)\n"
-                        f"- [模块列表](./modules/index.md)\n"
+                        f"- [模块列表](./modules.md)\n"
                     ),
                     "no_auto_fix": True,
                 },
@@ -584,27 +583,11 @@ def split_content_into_files(
                         f"- **会话管理**: 处理HTTP会话\n"
                         f"- **请求处理**: 构建和发送HTTP请求\n"
                         f"- **响应处理**: 解析和处理HTTP响应\n\n"
-                        f"查看[详细架构](./overall_architecture.md)了解更多信息。\n"
+                        f"查看[模块列表](./modules.md)了解更多信息。\n"
                     ),
                     "no_auto_fix": True,
                 },
-                f"{repo_name}/overall_architecture.md": {
-                    "title": "详细架构",
-                    "sections": ["architecture"],
-                    "default_content": (
-                        f"# {repo_name.capitalize()} 详细架构\n\n"
-                        f"本文档详细介绍了 {repo_name} 的内部架构和工作原理。\n\n"
-                        f"## 架构设计\n\n"
-                        f"{repo_name} 采用模块化设计，各组件之间职责明确，耦合度低。\n\n"
-                        f"## 数据流\n\n"
-                        f"1. 用户调用API函数\n"
-                        f"2. 创建请求对象\n"
-                        f"3. 发送HTTP请求\n"
-                        f"4. 接收并处理响应\n"
-                        f"5. 返回响应对象给用户\n"
-                    ),
-                    "no_auto_fix": True,
-                },
+                # 移除 overall_architecture.md
                 f"{repo_name}/quick_look.md": {
                     "title": "项目速览",
                     "sections": ["introduction"],
@@ -656,39 +639,11 @@ def split_content_into_files(
                 # Module files are handled separately
             }
 
-    # 处理overview.md和overall_architecture.md内容重复的问题
-    if f"{repo_name}/overview.md" in file_structure and f"{repo_name}/overall_architecture.md" in file_structure:
-        # 确保overview.md和overall_architecture.md内容不重复
-        overview_sections = file_structure[f"{repo_name}/overview.md"]["sections"]
-        overall_arch_sections = file_structure[f"{repo_name}/overall_architecture.md"]["sections"]
-
-        # 移除重复的部分
-        common_sections = set(overview_sections) & set(overall_arch_sections)
-        if common_sections:
-            print(f"警告: overview.md和overall_architecture.md有重复的部分: {common_sections}")
-            # 从overview.md中移除与overall_architecture.md重复的部分
-            for section in list(common_sections):
-                if section in overview_sections and len(overview_sections) > 1:  # 确保至少保留一个section
-                    overview_sections.remove(section)
-            file_structure[f"{repo_name}/overview.md"]["sections"] = overview_sections
-
-    # 特别处理overview.md和overall_architecture.md内容重复问题
-    if f"{repo_name}/overview.md" in file_structure:
-        overview_content = file_structure[f"{repo_name}/overview.md"].get("content", "")
-        if f"{repo_name}/overall_architecture.md" in file_structure:
-            overall_arch_content = file_structure[f"{repo_name}/overall_architecture.md"].get("content", "")
-
-            # 如果overview.md包含overall_architecture.md的全部或部分内容，则清空overview.md的对应部分
-            if overview_content and overall_arch_content:
-                if overall_arch_content in overview_content:
-                    # 如果整体架构内容完全包含在overview中，则清空overview的对应部分
-                    file_structure[f"{repo_name}/overview.md"]["content"] = overview_content.replace(
-                        overall_arch_content, ""
-                    ).strip()
-                    print("警告: 已从overview.md中移除与overall_architecture.md重复的内容")
+    # 不再处理 overview.md 和 overall_architecture.md 内容重复的问题
+    # 因为我们不再生成 overall_architecture.md 文件
 
     # 确保file_structure中包含所有必要文件
-    required_files = [f"{repo_name}/overview.md", f"{repo_name}/overall_architecture.md"]
+    required_files = [f"{repo_name}/overview.md"]  # 移除 overall_architecture.md
     for required_file in required_files:
         if required_file not in file_structure:
             print(f"警告: {required_file} 不存在于file_structure中，正在创建默认条目")
@@ -702,20 +657,14 @@ def split_content_into_files(
         os.makedirs(os.path.join(output_dir, repo_name), exist_ok=True)
     generated_files: List[str] = []
 
-    # 特别处理overview.md和overall_architecture.md内容重复问题
+    # 特别处理overview.md内容
     if repo_name and file_structure and f"{repo_name}/overview.md" in file_structure:
         overview_content = file_structure[f"{repo_name}/overview.md"].get("content", "")
-        if f"{repo_name}/overall_architecture.md" in file_structure:
-            overall_arch_content = file_structure[f"{repo_name}/overall_architecture.md"].get("content", "")
-            if overview_content and overall_arch_content and overall_arch_content in overview_content:
-                file_structure[f"{repo_name}/overview.md"]["content"] = overview_content.replace(
-                    overall_arch_content, ""
-                ).strip()
-                print("警告: 已从overview.md中移除与overall_architecture.md重复的内容")
+        # 不再处理 overall_architecture.md
 
     # 确保file_structure中包含所有必要文件
     if repo_name and file_structure:
-        required_files = [f"{repo_name}/overview.md", f"{repo_name}/overall_architecture.md"]
+        required_files = [f"{repo_name}/overview.md"]  # 移除 overall_architecture.md
         for required_file in required_files:
             if required_file not in file_structure:
                 print(f"警告: {required_file} 不存在于file_structure中，正在创建默认条目")
@@ -723,62 +672,207 @@ def split_content_into_files(
                 title = file_name.replace(".md", "").replace("_", " ").title()
                 file_structure[required_file] = {"title": title, "sections": [], "content": ""}
 
+    # 生成文件
+    if file_structure:
+        for file_path, file_info in file_structure.items():
+            full_path = os.path.join(output_dir, file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            
+            # 获取文件内容
+            content = file_info.get("default_content", "")
+            if not content:
+                # 如果没有默认内容，则根据sections生成内容
+                sections = file_info.get("sections", [])
+                title = file_info.get("title", "文档")
+                content = f"# {title}\n\n"
+                
+                for section in sections:
+                    if section in content_dict:
+                        content += f"## {section.replace('_', ' ').title()}\n\n{content_dict[section]}\n\n"
+            
+            # 写入文件
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            
+            # 添加到生成的文件列表
+            generated_files.append(full_path)
+    
+    # 添加额外的必要文件
+    # 添加 glossary.md
+    if "glossary" in content_dict:
+        glossary_path = os.path.join(output_dir, repo_name, "glossary.md")
+        os.makedirs(os.path.dirname(glossary_path), exist_ok=True)
+        with open(glossary_path, "w", encoding="utf-8") as f:
+            f.write(f"# 术语表\n\n{content_dict['glossary']}")
+        generated_files.append(glossary_path)
+    
+    # 添加 evolution.md
+    if "evolution_narrative" in content_dict:
+        evolution_path = os.path.join(output_dir, repo_name, "evolution.md")
+        os.makedirs(os.path.dirname(evolution_path), exist_ok=True)
+        with open(evolution_path, "w", encoding="utf-8") as f:
+            f.write(f"# 项目演变\n\n{content_dict['evolution_narrative']}")
+        generated_files.append(evolution_path)
+    
+    # 添加 modules.md
+    modules_path = os.path.join(output_dir, repo_name, "modules.md")
+    os.makedirs(os.path.dirname(modules_path), exist_ok=True)
+    # 添加元数据，包括标题和分类
+    repo_title = repo_name.replace('-', ' ').title()
+    modules_content = f"---\ntitle: 模块列表\ncategory: {repo_title}\n---\n\n# 模块列表\n\n"
+    if "modules" in content_dict:
+        for module_info in content_dict["modules"]:
+            module_name = module_info.get("name", "")
+            if module_name:
+                module_title = module_info.get("title", module_name.replace("_", " ").title())
+                # 根据模块名称确定正确的路径
+                if module_name == "formatter" or module_name == "parser":
+                    modules_content += f"- [{module_title}](./utils/{module_name}.md)\n"
+                elif module_name == "core_logic":
+                    modules_content += f"- [{module_title}](./core/logic.md)\n"
+                else:
+                    modules_content += f"- [{module_title}](./{module_name.replace('_', '-')}.md)\n"
+    with open(modules_path, "w", encoding="utf-8") as f:
+        f.write(modules_content)
+    generated_files.append(modules_path)
+    
     # 构建文档结构
     if repo_name:  # 确保 repo_name 存在
         root_dir = Path(output_dir) / repo_name
         all_module_doc_paths_map = {}
-        # generated_files 应该包含所有已写入文件的路径
-        # 此处的 generated_files 可能需要从写入 final_files 的逻辑中获取
-        for file_path_str in generated_files:  # 假设 generated_files 包含字符串路径
-            file_path_obj = Path(file_path_str)
-            if file_path_obj.is_absolute() and file_path_str.startswith(str(Path(output_dir) / repo_name)):
-                # Make it relative to repo_name dir inside output_dir
-                try:
-                    rel_path = file_path_obj.relative_to(root_dir).as_posix()
-                    all_module_doc_paths_map[rel_path] = file_path_str
-                except ValueError:
-                    # Handle cases where file_path_str might not be under root_dir as expected
-                    print(f"Warning: Could not make {file_path_str} relative to {root_dir}")
-            elif not file_path_obj.is_absolute():  # If it's already relative to output_dir perhaps
-                # This case needs careful handling based on how generated_files paths are constructed
-                pass
+        
+        # 处理模块文档
+        if "modules" in content_dict and repo_structure:
+            modules = content_dict.get("modules", [])
+            for module_info in modules:
+                module_name = module_info.get("name", "")
+                if not module_name:
+                    continue
+                
+                # 映射模块名到文档路径
+                module_doc_path = map_module_to_docs_path(module_name, repo_structure)
+                
+                # 完整的模块文档路径
+                full_module_path = os.path.join(output_dir, module_doc_path)
+                os.makedirs(os.path.dirname(full_module_path), exist_ok=True)
+                
+                # 生成模块文档内容
+                title = module_info.get("title", module_name.replace("_", " ").title())
+                description = module_info.get("description", "")
+                api = module_info.get("api", "")
+                examples = module_info.get("examples", "")
+                
+                # 添加元数据
+                content_parts = []
+                if justdoc_compatible:
+                    # 从路径中提取目录名作为分类
+                    rel_path = os.path.relpath(full_module_path, os.path.join(output_dir, repo_name))
+                    category = os.path.dirname(rel_path).replace("/", " ").title()
+                    if not category:
+                        category = repo_name.replace("-", " ").title()
+                    metadata = f"---\ntitle: {title}\ncategory: {category}\n---\n\n"
+                    content_parts.append(metadata)
+                
+                # 添加标题和内容
+                content_parts.append(f"# {title}")
+                if description:
+                    content_parts.append(description)
+                if api:
+                    content_parts.append(f"## API\n\n{api}")
+                if examples:
+                    content_parts.append(f"## 示例\n\n{examples}")
+                
+                # 写入文件
+                with open(full_module_path, "w", encoding="utf-8") as f:
+                    f.write("\n\n".join(content_parts))
+                
+                # 添加到生成的文件列表
+                generated_files.append(full_module_path)
+                
+                # 添加到模块路径映射
+                rel_path = os.path.relpath(full_module_path, os.path.join(output_dir, repo_name))
+                all_module_doc_paths_map[module_name] = rel_path
+                
+                # 确保目录索引文件存在
+                dir_path = os.path.dirname(full_module_path)
+                if dir_path != os.path.join(output_dir, repo_name):
+                    index_path = os.path.join(dir_path, "index.md")
+                    if not os.path.exists(index_path):
+                        dir_name = os.path.basename(dir_path)
+                        dir_title = dir_name.replace("_", " ").title()
+                        
+                        # 创建索引文件内容
+                        index_content = []
+                        if justdoc_compatible:
+                            parent_dir = os.path.basename(os.path.dirname(dir_path))
+                            category = parent_dir.replace("-", " ").title() if parent_dir != repo_name else repo_name.replace("-", " ").title()
+                            metadata = f"---\ntitle: {dir_title} 模块\ncategory: {category}\n---\n\n"
+                            index_content.append(metadata)
+                        
+                        index_content.append(f"# 📁 {dir_title} 模块")
+                        index_content.append(f"`{os.path.relpath(dir_path, os.path.join(output_dir, repo_name))}`")
+                        
+                        # 写入索引文件
+                        with open(index_path, "w", encoding="utf-8") as f:
+                            f.write("\n\n".join(index_content))
+                        
+                        # 添加到生成的文件列表
+                        generated_files.append(index_path)
 
         # 生成模块索引文件
-        if module_dirs:  # 确保 module_dirs 存在并有内容
-            for dir_path_rel_to_out in module_dirs:
-                index_md_in_dir_path = Path(dir_path_rel_to_out) / "index.md"
-                index_md_full_path = os.path.join(output_dir, index_md_in_dir_path.as_posix())
-                dir_actual_name = Path(dir_path_rel_to_out).name
-                dir_title = dir_actual_name.replace("_", " ").title()
-                index_content_parts = []
-                if justdoc_compatible:
-                    parent_of_dir_actual_name = Path(dir_path_rel_to_out).parent.name
-                    category = (
-                        parent_of_dir_actual_name.replace("-", " ").title()
-                        if parent_of_dir_actual_name != repo_name
-                        else repo_name.replace("-", " ").title()
-                    )
-                    metadata = f"---\ntitle: {dir_title} 模块\ncategory: {category}\n---\n\n"
-                    index_content_parts.append(metadata)
-                index_content_parts.append(f"# 📁 {dir_title} 模块")
-                index_content_parts.append(f"`{dir_path_rel_to_out}`")
-                dir_path_abs = os.path.join(output_dir, dir_path_rel_to_out)
-                if os.path.exists(dir_path_abs) and os.path.isdir(dir_path_abs):
-                    for file_name in sorted(os.listdir(dir_path_abs)):
-                        if file_name.endswith(".md") and file_name != "index.md":
-                            module_name_local = file_name[:-3].replace("_", " ").title()
-                            link = f"- [{module_name_local}]({file_name})"
-                            index_content_parts.append(link)
-                final_dir_index_content = "\n".join(index_content_parts)
-                # _resolve_module_links 应该是 self._resolve_module_links 如果在类中，或者直接调用
-                final_dir_index_content = resolve_module_links(
-                    final_dir_index_content, index_md_full_path, all_module_doc_paths_map
-                )
-                with open(index_md_full_path, "w", encoding="utf-8") as f:
-                    f.write(final_dir_index_content)
-                if index_md_full_path not in generated_files:
-                    generated_files.append(index_md_full_path)
+        # 查找所有已生成的模块文档所在的目录
+        module_dirs_set = set()
+        for file_path in generated_files:
+            if os.path.isfile(file_path) and file_path.endswith(".md"):
+                dir_path = os.path.dirname(file_path)
+                if dir_path != os.path.join(output_dir, repo_name):  # 排除根目录
+                    module_dirs_set.add(dir_path)
+        
+        # 为每个目录生成索引文件
+        for dir_path in module_dirs_set:
+            # 创建index.md文件路径
+            index_md_path = os.path.join(dir_path, "index.md")
+            
+            # 获取目录名称
+            dir_name = os.path.basename(dir_path)
+            dir_title = dir_name.replace("_", " ").title()
+            
+            # 准备索引文件内容
+            index_content_parts = []
+            
+            # 添加元数据
+            if justdoc_compatible:
+                parent_dir = os.path.basename(os.path.dirname(dir_path))
+                category = parent_dir.replace("-", " ").title() if parent_dir != repo_name else repo_name.replace("-", " ").title()
+                metadata = f"---\ntitle: {dir_title} 模块\ncategory: {category}\n---\n\n"
+                index_content_parts.append(metadata)
+            
+            # 添加标题
+            index_content_parts.append(f"# 📁 {dir_title} 模块")
+            
+            # 添加目录路径
+            rel_path = os.path.relpath(dir_path, os.path.join(output_dir, repo_name))
+            index_content_parts.append(f"`{rel_path}`")
+            
+            # 添加目录中的文件链接
+            for file_name in sorted(os.listdir(dir_path)):
+                if file_name.endswith(".md") and file_name != "index.md":
+                    module_name = file_name[:-3].replace("_", " ").title()
+                    link = f"- [{module_name}]({file_name})"
+                    index_content_parts.append(link)
+            
+            # 合并内容
+            index_content = "\n\n".join(index_content_parts)
+            
+            # 写入文件
+            with open(index_md_path, "w", encoding="utf-8") as f:
+                f.write(index_content)
+            
+            # 添加到生成的文件列表
+            if index_md_path not in generated_files:
+                generated_files.append(index_md_path)
 
+    print(f"生成的文件列表: {generated_files}")
     return generated_files
 
 
@@ -792,9 +886,66 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
     Returns:
         str: 映射后的文档路径
     """
-    # 实现模块到文档路径的映射逻辑
-    # 这里添加具体的实现代码
-    return module_name.replace(".", "/") + ".md"
+    # 获取仓库名称
+    repo_name = repo_structure.get("repo_name", "docs")
+    
+    # 特殊处理 core_logic 模块
+    if module_name == "core_logic":
+        return f"{repo_name}/core/logic.md"
+    
+    # 特殊处理 formatter 和 parser 模块
+    if module_name in ["formatter", "parser"]:
+        return f"{repo_name}/utils/{module_name}.md"
+    
+    # 特殊处理 data_processor 模块 - 使用连字符而不是下划线
+    if module_name == "data_processor":
+        return f"docs/data-processor/main.md"
+    
+    # 如果模块不在仓库结构中，返回基本路径
+    if module_name not in repo_structure:
+        return f"{repo_name}/{module_name.replace('_', '-').replace('.', '/')}.md"
+    
+    # 获取模块的文件路径
+    module_info = repo_structure.get(module_name, {})
+    file_path = module_info.get("path", "")
+    
+    if not file_path:
+        return f"{repo_name}/{module_name.replace('_', '-').replace('.', '/')}.md"
+    
+    # 从文件路径提取目录结构
+    parts = file_path.split("/")
+    
+    # 忽略src或类似的前缀目录
+    if len(parts) > 1 and parts[0] in ["src", "lib", "app"]:
+        parts = parts[1:]
+    
+    # 特殊处理 utils/helpers 目录
+    if "utils" in parts and "helpers" in parts and len(parts) > 2:
+        # 对于 utils/helpers/string_utils.py 这样的路径，我们希望得到 helpers/string-utils.md
+        helpers_index = parts.index("helpers")
+        if helpers_index > 0 and helpers_index < len(parts) - 1:
+            # 取 helpers 和最后一个部分
+            parts = ["helpers"] + [parts[-1]]
+    # 其他 utils 目录的处理
+    elif "utils" in parts and len(parts) > 1:
+        utils_index = parts.index("utils")
+        # 确保 utils 目录存在于路径中
+        if utils_index > 0:
+            parts = ["utils"] + [parts[-1]]
+        else:
+            # 如果 utils 已经是第一个目录，保持不变
+            parts = parts[utils_index:utils_index+2]
+    
+    # 移除文件扩展名
+    if len(parts) > 0:
+        parts[-1] = os.path.splitext(parts[-1])[0]
+    
+    # 处理文件名中的下划线，将其替换为连字符
+    if len(parts) > 0:
+        parts[-1] = parts[-1].replace('_', '-')
+    
+    # 组合成文档路径
+    return f"{repo_name}/{'/'.join(parts)}.md"
 
 
 def generate_module_detail_page(
