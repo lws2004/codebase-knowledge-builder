@@ -503,4 +503,11 @@ class FormatOutputNode(Node):
             if filtered_content.endswith("```"):
                 filtered_content = filtered_content[:-3]
 
+        # Normalize line breaks to use only \n
+        filtered_content = filtered_content.replace("\r\n", "\n").replace("\r", "\n")
+
+        # Collapse multiple consecutive blank lines into a single blank line
+        # This regex replaces two or more consecutive newlines with exactly two newlines (one blank line)
+        filtered_content = re.sub(r"\n{2,}", "\n\n", filtered_content)
+
         return filtered_content

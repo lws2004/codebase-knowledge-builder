@@ -35,21 +35,26 @@ def format_markdown(
 
 {introduction}
 
+
 ## 系统架构
 
 {architecture}
+
 
 ## 核心模块
 
 {core_modules}
 
+
 ## 使用示例
 
 {examples}
 
+
 ## 常见问题
 
 {faq}
+
 
 ## 参考资料
 
@@ -562,14 +567,17 @@ def split_content_into_files(
                     "title": "文档首页",
                     "sections": ["introduction", "navigation"],
                     "add_modules_link": True,
-                    "default_content": (
-                        f"# {repo_name.capitalize()} 文档\n\n"
-                        f"欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，提供了对 {repo_name} 代码库的全面概述。\n\n"
-                        f"## 主要内容\n\n"
-                        f"- [系统架构概览](./overview.md)\n"
-                        f"- [详细架构](./overall_architecture.md)\n"
-                        f"- [模块列表](./modules/index.md)\n"
-                    ),
+                    "default_content": f"""# {repo_name.capitalize()} 文档
+
+欢迎查看 {repo_name} 的文档。这是一个自动生成的文档，
+提供了对 {repo_name} 代码库的全面概述。
+
+## 主要内容
+
+- [系统架构概览](./overview.md)
+- [详细架构](./overall_architecture.md)
+- [模块列表](./modules/index.md)
+""",
                     "no_auto_fix": True,
                 },
                 f"{repo_name}/overview.md": {
