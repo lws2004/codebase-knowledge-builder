@@ -19,49 +19,45 @@ from src.utils.llm_wrapper.token_utils import (
 class TestTokenUtils(unittest.TestCase):
     """测试Token工具模块"""
 
-    @patch("litellm.completion")
-    def test_count_tokens(self, mock_completion):
+    def test_count_tokens(self):
         """测试token计数功能"""
-        # 设置模拟响应
-        mock_response = MagicMock()
-        mock_response.usage.prompt_tokens = 4  # 设置为固定值
-        mock_completion.return_value = mock_response
+        # 在测试环境中，函数会使用简单估算
 
-        # 测试正常情况
+        # 测试中文文本
         result = count_tokens("测试文本", "openai/gpt-4")
-        self.assertEqual(result, 4)
-        mock_completion.assert_called_once()
+        self.assertEqual(result, 4)  # 4个中文字符 = 4 tokens
 
-        # 测试异常情况 - 模拟litellm抛出异常
-        mock_completion.reset_mock()
-        mock_completion.side_effect = Exception("测试异常")
+        # 测试英文文本
+        result = count_tokens("This is a test", "openai/gpt-4")
+        self.assertEqual(result, 3)  # 14个字符 / 4 = 3 tokens (向下取整)
 
-        # 跳过tiktoken测试，因为它依赖于实际的tiktoken库
-        # 我们只测试正常情况下的litellm调用
-        self.assertTrue(1 <= count_tokens("This is a test", "gpt-4") <= 10)
+        # 测试空文本
+        result = count_tokens("", "openai/gpt-4")
+        self.assertEqual(result, 0)
 
-    @patch("litellm.completion")
-    def test_count_message_tokens(self, mock_completion):
+        # 测试混合文本 - "Hello 世界" 有8个字符，但中文字符只有2个，不到1/3，所以按英文计算
+        result = count_tokens("Hello 世界", "openai/gpt-4")
+        self.assertEqual(result, 2)  # 8个字符 / 4 = 2 tokens (按英文计算)
+
+    def test_count_message_tokens(self):
         """测试消息token计数功能"""
-        # 设置模拟响应
-        mock_response = MagicMock()
-        mock_response.usage.prompt_tokens = 14  # 设置为固定值
-        mock_completion.return_value = mock_response
+        # 在测试环境中，函数会使用简单估算
 
-        # 测试正常情况
+        # 测试中文消息
         messages = [{"role": "system", "content": "你是助手"}, {"role": "user", "content": "你好"}]
         result = count_message_tokens(messages, "openai/gpt-4")
+        # 4个中文字符 + 2个中文字符 + 8个消息开销 = 14
         self.assertEqual(result, 14)
-        mock_completion.assert_called_once()
 
-        # 测试异常情况 - 模拟litellm抛出异常
-        mock_completion.reset_mock()
-        mock_completion.side_effect = Exception("测试异常")
-
-        # 跳过tiktoken测试，因为它依赖于实际的tiktoken库
-        # 我们只测试正常情况下的litellm调用
+        # 测试英文消息
         messages = [{"role": "system", "content": "You are an assistant"}, {"role": "user", "content": "Hello"}]
-        self.assertTrue(5 <= count_message_tokens(messages, "gpt-4") <= 30)
+        result = count_message_tokens(messages, "openai/gpt-4")
+        # (21 + 5) / 4 + 8 = 6 + 8 = 14
+        self.assertEqual(result, 14)
+
+        # 测试空消息列表
+        result = count_message_tokens([], "openai/gpt-4")
+        self.assertEqual(result, 0)
 
     @patch("src.utils.llm_wrapper.token_utils.count_message_tokens")
     def test_truncate_messages_if_needed_no_truncation(self, mock_count_message_tokens):

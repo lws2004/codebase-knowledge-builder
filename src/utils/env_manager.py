@@ -13,6 +13,7 @@ from src.utils.logger import log_and_notify
 LLM_PROVIDER_ENV = "LLM_PROVIDER"
 LLM_MODEL_ENV = "LLM_MODEL"
 LLM_API_KEY_ENV = "LLM_API_KEY"
+LLM_BASE_URL_ENV = "LLM_BASE_URL"
 LLM_MAX_TOKENS_ENV = "LLM_MAX_TOKENS"
 LLM_MAX_INPUT_TOKENS_ENV = "LLM_MAX_INPUT_TOKENS"
 LLM_TEMPERATURE_ENV = "LLM_TEMPERATURE"
@@ -232,32 +233,38 @@ def _apply_provider_specific_config(config: Dict[str, Any], loader: ConfigLoader
     """Applies provider-specific settings (base_url, etc.) to the config dict."""
     provider = config.get("provider")
 
-    if provider == "openai":
-        base_url = os.getenv(OPENAI_BASE_URL_ENV)
-        if base_url:
-            config["base_url"] = base_url
-    elif provider == "openrouter":
-        base_url = os.getenv(OPENROUTER_BASE_URL_ENV)
-        if base_url:
-            config["base_url"] = base_url
+    # 首先检查通用的 LLM_BASE_URL 环境变量
+    base_url = os.getenv(LLM_BASE_URL_ENV)
+
+    # 如果没有设置通用的 LLM_BASE_URL，则检查提供商特定的环境变量
+    if not base_url:
+        if provider == "openai":
+            base_url = os.getenv(OPENAI_BASE_URL_ENV)
+        elif provider == "openrouter":
+            base_url = os.getenv(OPENROUTER_BASE_URL_ENV)
+        elif provider in ["alibaba", "tongyi"]:
+            base_url = os.getenv(ALIBABA_BASE_URL_ENV)
+        elif provider == "volcengine":
+            base_url = os.getenv(VOLCENGINE_BASE_URL_ENV)
+        elif provider == "moonshot":
+            base_url = os.getenv(MOONSHOT_BASE_URL_ENV)
+
+    # 如果找到了 base_url，设置到配置中
+    if base_url:
+        config["base_url"] = base_url
+    elif provider in ["alibaba", "tongyi"]:
+        # 对于阿里云，如果没有设置任何 base_url，使用配置文件中的默认值
+        config["base_url"] = loader.get("llm.alibaba.base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+    # 设置提供商特定的其他配置
+    if provider == "openrouter":
         config["site_url"] = os.getenv(OR_SITE_URL_ENV, os.getenv(APP_URL_ENV_COMPAT))
         config["app_name"] = os.getenv(
             OR_APP_NAME_ENV,
             os.getenv(APP_NAME_ENV_COMPAT, loader.get(OPENROUTER_APP_NAME_CONFIG, "Codebase Knowledge Builder")),
         )
-    elif provider in ["alibaba", "tongyi"]:
-        base_url = os.getenv(ALIBABA_BASE_URL_ENV)
-        if base_url:
-            config["base_url"] = base_url
     elif provider == "volcengine":
-        base_url = os.getenv(VOLCENGINE_BASE_URL_ENV)
-        if base_url:
-            config["base_url"] = base_url
         config["service_id"] = os.getenv(VOLCENGINE_SERVICE_ID_ENV, loader.get(VOLCENGINE_SERVICE_ID_CONFIG, ""))
-    elif provider == "moonshot":
-        base_url = os.getenv(MOONSHOT_BASE_URL_ENV)
-        if base_url:
-            config["base_url"] = base_url
 
 
 def _get_langfuse_config(loader: ConfigLoader) -> Dict[str, Any]:

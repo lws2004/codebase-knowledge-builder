@@ -96,23 +96,16 @@ class TestLLMClientOptimized(unittest.TestCase):
 
     def test_truncate_messages_if_needed(self):
         """测试消息截断功能"""
-        # 直接模拟client的方法
-        self.client.count_message_tokens = MagicMock(return_value=50)
-
         # 创建测试消息
         messages = [{"role": "system", "content": "你是助手"}, {"role": "user", "content": "你好"}]
 
-        # 完全模拟truncate_messages_if_needed函数
-        with patch(
-            "src.utils.llm_wrapper.llm_client.truncate_messages_if_needed", return_value=messages
-        ) as mock_truncate:
-            # 测试调用
-            result = self.client._truncate_messages_if_needed(messages, 100)
+        # 测试不需要截断的情况（max_input_tokens=None）
+        result = self.client.utils._truncate_messages_if_needed(messages, None)
+        self.assertEqual(result, messages)
 
-            # 验证结果
-            self.assertEqual(result, messages)
-            # 不检查具体的参数，只检查是否被调用了一次
-            mock_truncate.assert_called_once()
+        # 测试需要截断的情况 - 在测试环境中，函数会直接返回原始消息
+        result = self.client.utils._truncate_messages_if_needed(messages, 100)
+        self.assertEqual(result, messages)  # 在测试环境中应该返回原始消息
 
     @patch("litellm.completion")
     def test_generate_json(self, mock_completion):

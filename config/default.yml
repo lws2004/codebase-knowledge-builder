@@ -34,7 +34,7 @@ llm:
 
    # 阿里百炼配置
    alibaba:
-      base_url: "https://dashscope.aliyuncs.com/api/v1"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
    # 火山引擎配置
    volcengine:

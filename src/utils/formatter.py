@@ -1179,14 +1179,26 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
         str: 映射后的文档路径
     """
     # 基于仓库结构确定模块路径
-    if repo_structure and "modules" in repo_structure:
-        modules = repo_structure["modules"]
-        for module_info in modules:
-            if module_info.get("name") == module_name:
-                return module_info.get("path", module_name.replace(".", "/") + ".md")
+    if repo_structure and module_name in repo_structure:
+        module_info = repo_structure[module_name]
+        if "path" in module_info:
+            # 从源代码路径转换为文档路径
+            source_path = module_info["path"]
+            # 移除 src/ 前缀（如果存在）
+            if source_path.startswith("src/"):
+                source_path = source_path[4:]
+            # 移除 utils/ 前缀（如果存在）
+            if source_path.startswith("utils/"):
+                source_path = source_path[6:]
+            # 移除文件扩展名
+            if source_path.endswith((".py", ".js", ".java", ".c", ".cpp", ".go", ".rb")):
+                source_path = source_path.rsplit(".", 1)[0]
+            # 转换为文档路径，添加 docs/ 前缀
+            doc_path = "docs/" + source_path.replace("_", "-") + ".md"
+            return doc_path
 
-    # 默认映射逻辑
-    return module_name.replace(".", "/") + ".md"
+    # 默认映射逻辑 - 添加 docs/ 前缀并转换下划线为连字符
+    return "docs/" + module_name.replace("_", "-").replace(".", "/") + ".md"
 
 
 def generate_module_detail_page(

@@ -132,3 +132,8 @@ import_group_spacing = 1
 
 [tool.uv.sources]
 codebase-knowledge-builder = { path = ".", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
