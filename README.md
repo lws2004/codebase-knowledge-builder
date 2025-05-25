@@ -21,6 +21,11 @@
 - ⚡ 支持异步并行处理，提高生成效率
 - 🔄 提供内容质量检查和自动优化
 - 💬 支持交互式问答，深入了解代码库
+- 🎨 **Mermaid图表验证和自动修复**，确保图表语法正确
+- 📈 **智能质量评估**，7维度文档质量检查
+- 🚀 **高性能并行处理**，支持大型代码库快速分析
+- 🔧 **模块化架构**，易于扩展和定制
+- 💾 **智能缓存机制**，避免重复计算和API调用
 
 ## 安装
 
@@ -141,6 +146,36 @@ git:
 
 ```bash
 python main.py --repo-url https://github.com/username/repo.git --env production
+```
+
+### 🆕 新增配置选项
+
+#### Mermaid图表验证配置
+```yaml
+mermaid_validation:
+  enabled: true                    # 启用Mermaid验证
+  use_cli: true                   # 优先使用mermaid-cli
+  fallback_to_rules: true         # CLI失败时回退到规则验证
+  backup_files: true              # 修复前备份文件
+  max_regeneration_attempts: 2    # 最大重新生成次数
+```
+
+#### 并行处理配置
+```yaml
+parallel_processing:
+  enabled: true                   # 启用并行处理
+  max_workers: 4                  # 最大工作线程数
+  max_concurrent_llm_calls: 3     # 最大并发LLM调用数
+  enable_async: true              # 启用异步处理
+```
+
+#### 质量评估配置
+```yaml
+quality_assessment:
+  enabled: true                   # 启用质量评估
+  overall_threshold: 7.0          # 总体质量阈值
+  auto_regenerate: true           # 自动重新生成低质量文档
+  detailed_feedback: true         # 提供详细反馈
 ```
 
 ## 使用方法
@@ -280,6 +315,7 @@ python run_tests.py --all
     - `generate_timeline_node.py`: 时间线生成节点
     - `input_node.py`: 输入节点
     - `interactive_qa_node.py`: 交互式问答节点
+    - `mermaid_validation_node.py`: **Mermaid图表验证节点**
     - `module_quality_check_node.py`: 模块质量检查节点
     - `parallel_generate_content_flow.py`: 并行内容生成流程
     - `parallel_start_node.py`: 并行启动节点
@@ -312,6 +348,8 @@ python run_tests.py --all
     - `language_utils.py`: 语言工具
     - `llm_client.py`: LLM客户端
     - `logging_config.py`: 日志配置
+    - `mermaid_validator.py`: **Mermaid图表验证器**
+    - `mermaid_regenerator.py`: **Mermaid图表重新生成器**
     - `performance.py`: 性能工具
     - `rag_utils.py`: RAG工具
 - `tests/`: 测试脚本
@@ -332,15 +370,19 @@ python run_tests.py --all
   - `test_litellm_logging.py`: LiteLLM日志测试
   - `test_llm_call.py`: LLM调用测试
   - `test_llm_client_optimized.py`: 优化LLM客户端测试
+  - `test_mermaid_validation.py`: **Mermaid验证测试**
   - `test_model_config.py`: 模型配置测试
   - `test_openrouter.py`: OpenRouter测试
+  - `test_optimized_docs_generation.py`: **优化文档生成测试**
   - `test_parallel_performance.py`: 并行性能测试
+  - `test_prompt_optimization.py`: **提示词优化测试**
   - `test_publish_node.py`: 发布节点测试
   - `test_rag_utils.py`: RAG工具测试
   - `test_token_utils.py`: Token工具测试
   - `test_with_requests.py`: Requests库测试
 - `docs/`: 文档
   - `design.md`: 设计文档
+  - `prompt_optimization_summary.md`: **提示词优化总结**
 - `docs_output/`: 文档输出目录
   - `{repo_name}/`: 按仓库名组织的文档
     - `modules/`: 模块文档
@@ -398,6 +440,7 @@ python run_tests.py --all
 4. **质量检查阶段**：检查生成内容质量
    - 内容质量检查节点：评估文档质量并提供改进建议
    - 模块质量检查节点：评估模块文档质量并提供改进建议
+   - **Mermaid验证节点**：验证和修复文档中的Mermaid图表
 
 5. **内容组合与格式化阶段**：组合和格式化最终文档
    - 内容组合节点：组合各部分内容
@@ -408,7 +451,7 @@ python run_tests.py --all
 
 ### 并行处理
 
-项目支持两种并行处理模式：
+项目支持多种并行处理模式，显著提升处理效率：
 
 1. **批处理并行**：将大量文件分批并行处理
    - 代码批量解析节点：并行解析多个代码文件
@@ -416,6 +459,49 @@ python run_tests.py --all
 
 2. **流程并行**：并行执行多个内容生成流程
    - 并行内容生成流程：同时生成多种类型的文档
+   - **异步并行流程**：支持异步节点的并行执行
+
+3. **智能并发控制**：
+   - 可配置的最大并发数，避免资源过载
+   - 信号量机制控制并发访问
+   - 异常隔离，单个任务失败不影响其他任务
+
+### 🎨 Mermaid图表验证
+
+项目内置了强大的Mermaid图表验证和修复功能：
+
+1. **多层验证机制**：
+   - 优先使用mermaid-cli进行真实渲染验证
+   - 回退到基于规则的语法检查
+   - 支持多种图表类型验证
+
+2. **自动修复功能**：
+   - 检测到语法错误时自动调用LLM重新生成
+   - 保留原始文件备份
+   - 智能错误定位和修复建议
+
+3. **性能优化**：
+   - 进程池隔离，避免主线程阻塞
+   - 异步验证，提升处理效率
+   - 缓存验证结果，避免重复检查
+
+### 📈 质量评估系统
+
+项目采用7维度质量评估体系：
+
+1. **评估维度**：
+   - 📚 完整性：内容覆盖度和信息完整性
+   - ✅ 准确性：技术信息和代码示例的正确性
+   - 📖 可读性：语言表达和逻辑结构的清晰度
+   - 🎨 格式化：Markdown语法和排版的规范性
+   - 📊 可视化：图表和示意图的丰富程度
+   - 🎓 教学价值：文档的教学效果和学习价值
+   - 🔧 实用性：代码示例和实践指导的实用性
+
+2. **智能优化**：
+   - 低于阈值的文档自动触发重新生成
+   - 提供具体的改进建议和优先级
+   - 支持迭代优化，持续提升质量
 
 ## 贡献
 

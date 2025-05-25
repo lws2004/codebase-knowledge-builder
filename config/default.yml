@@ -1119,6 +1119,76 @@ nodes:
 
          请提供准确、全面的回答，包括相关代码引用和解释。如果无法回答，请说明原因。
 
+   # Mermaid验证节点配置 🆕
+   mermaid_validation:
+      enabled: true # 是否启用Mermaid图表验证
+      retry_count: 3 # 验证失败时的重试次数
+      timeout: 30 # 验证超时时间（秒）
+      use_cli: true # 是否优先使用mermaid-cli进行验证
+      fallback_to_rules: true # CLI验证失败时是否回退到规则验证
+      backup_files: true # 修复前是否备份原文件
+      max_regeneration_attempts: 2 # 图表重新生成的最大尝试次数
+      # 支持的图表类型
+      supported_chart_types:
+         - "graph"
+         - "flowchart"
+         - "sequenceDiagram"
+         - "classDiagram"
+         - "stateDiagram"
+         - "pie"
+         - "timeline"
+         - "gitgraph"
+      # 图表重新生成提示模板
+      regeneration_prompt_template: |
+         你是一个Mermaid图表专家。以下图表存在语法错误，请重新生成一个语法正确的版本。
+
+         错误的图表：
+         ```mermaid
+         {original_chart}
+         ```
+
+         错误信息：
+         {error_messages}
+
+         上下文信息：
+         {context}
+
+         请生成一个语法正确的Mermaid图表，要求：
+         1. 保持原图表的核心信息和结构
+         2. 修复所有语法错误
+         3. 确保节点标识符只使用字母、数字和下划线
+         4. 节点标签避免使用特殊符号如括号()、引号""等
+         5. 使用简洁清晰的中文标签
+
+         请只返回修复后的Mermaid代码，不要包含其他说明文字。
+
+   # 并行处理配置 🆕
+   parallel_processing:
+      enabled: true # 是否启用并行处理
+      max_workers: 4 # 最大并发工作线程数
+      max_concurrent_llm_calls: 3 # 最大并发LLM调用数
+      batch_size: 10 # 批处理大小
+      timeout: 300 # 并行任务超时时间（秒）
+      enable_async: true # 是否启用异步处理
+      semaphore_limit: 5 # 信号量限制
+      error_isolation: true # 是否启用错误隔离
+
+   # 质量评估配置 🆕
+   quality_assessment:
+      enabled: true # 是否启用质量评估
+      overall_threshold: 7.0 # 总体质量阈值
+      dimension_thresholds: # 各维度质量阈值
+         completeness: 7.0 # 完整性
+         accuracy: 8.0 # 准确性
+         readability: 7.5 # 可读性
+         formatting: 8.0 # 格式化
+         visualization: 6.0 # 可视化
+         educational_value: 7.0 # 教学价值
+         practicality: 7.5 # 实用性
+      auto_regenerate: true # 低于阈值时是否自动重新生成
+      max_regeneration_attempts: 2 # 最大重新生成尝试次数
+      detailed_feedback: true # 是否提供详细反馈
+
    publish:
       platforms:
          - "github"
