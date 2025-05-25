@@ -7,7 +7,11 @@ from typing import Any, Dict, List, Optional
 from pocketflow import Node
 from pydantic import BaseModel, Field
 
-from ..utils.formatter import format_markdown, split_content_into_files
+from ..utils.formatter import (
+    fix_mermaid_syntax,
+    format_markdown,
+    split_content_into_files,
+)
 from ..utils.logger import log_and_notify
 
 
@@ -472,15 +476,73 @@ class FormatOutputNode(Node):
             filtered_content = filtered_content.replace(text, "")
 
         # 移除文档开头和结尾的 ```markdown 和 ``` 标记
+        # 处理开头的markdown标记
         if filtered_content.startswith("```markdown\n"):
             filtered_content = filtered_content[12:]
+        elif filtered_content.startswith("```markdown"):
+            filtered_content = filtered_content[11:]
+
+        # 处理结尾的markdown标记
         if filtered_content.endswith("\n```"):
             filtered_content = filtered_content[:-4]
+        elif filtered_content.endswith("```"):
+            filtered_content = filtered_content[:-3]
+
+        # 处理文档开头的孤立```markdown标记（不在代码块中的）
+        lines = filtered_content.split("\n")
+        if lines and lines[0].strip() == "```markdown":
+            lines = lines[1:]
+
+        # 处理文档结尾的孤立```标记（不在代码块中的）
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+
+        filtered_content = "\n".join(lines)
 
         # 修复 Mermaid 图表格式问题
         # 移除 Mermaid 图表周围的 ```markdown 和 ``` 标记
         filtered_content = filtered_content.replace("```markdown\n```mermaid", "```mermaid")
         filtered_content = filtered_content.replace("```\n```mermaid", "```mermaid")
+
+        # 修复 Mermaid 图表中的特殊字符问题
+        filtered_content = fix_mermaid_syntax(filtered_content)
+
+        # 清理多余的总结文本
+        from ..utils.formatter import remove_redundant_summaries
+
+        filtered_content = remove_redundant_summaries(filtered_content)
+
+        # 移除其他可能的markdown代码块标记
+        filtered_content = filtered_content.replace("```markdown\n", "")
+        filtered_content = filtered_content.replace("```markdown", "")
+
+        # 处理孤立的```标记（不在代码块中的）
+        lines = filtered_content.split("\n")
+        cleaned_lines = []
+        in_code_block = False
+
+        for line in lines:
+            stripped_line = line.strip()
+
+            # 检查是否是代码块开始/结束标记
+            if stripped_line.startswith("```"):
+                if stripped_line == "```":
+                    # 孤立的```标记，检查是否应该保留
+                    if in_code_block:
+                        # 这是代码块结束标记
+                        cleaned_lines.append(line)
+                        in_code_block = False
+                    else:
+                        # 这可能是孤立的```标记，跳过
+                        continue
+                else:
+                    # 这是带语言标识的代码块开始标记
+                    cleaned_lines.append(line)
+                    in_code_block = True
+            else:
+                cleaned_lines.append(line)
+
+        filtered_content = "\n".join(cleaned_lines)
 
         # 添加 YAML front matter
         if not filtered_content.startswith("---\n"):
@@ -494,14 +556,6 @@ class FormatOutputNode(Node):
 
             front_matter = f"---\ntitle: {title}\n---\n\n"
             filtered_content = front_matter + filtered_content
-
-        # 修复 timeline.md 文件中的格式问题
-        if "演变历史" in filtered_content or "时间线" in filtered_content:
-            # 移除 ```markdown 标记
-            filtered_content = filtered_content.replace("```markdown", "")
-            # 确保文件末尾没有多余的 ``` 标记
-            if filtered_content.endswith("```"):
-                filtered_content = filtered_content[:-3]
 
         # Normalize line breaks to use only \n
         filtered_content = filtered_content.replace("\r\n", "\n").replace("\r", "\n")

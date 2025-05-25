@@ -24,7 +24,11 @@ class ContentEvaluationResult(TypedDict):  # noqa: D101
     structure: ContentEvaluationCategory
     readability: ContentEvaluationCategory
     consistency: ContentEvaluationCategory
-    engagement: ContentEvaluationCategory  # Assuming engagement is always present
+    engagement: ContentEvaluationCategory
+    formatting: ContentEvaluationCategory
+    visualization: ContentEvaluationCategory
+    educational_value: ContentEvaluationCategory
+    practical_utility: ContentEvaluationCategory
     overall: int
     needs_fix: bool
     fix_suggestions: str
@@ -399,6 +403,10 @@ class ContentQualityCheckNode(Node):
                 "readability": evaluation["readability"]["score"] / 10.0,
                 "consistency": evaluation["consistency"]["score"] / 10.0,
                 "engagement": evaluation["engagement"]["score"] / 10.0,
+                "formatting": evaluation["formatting"]["score"] / 10.0,
+                "visualization": evaluation["visualization"]["score"] / 10.0,
+                "educational_value": evaluation["educational_value"]["score"] / 10.0,
+                "practical_utility": evaluation["practical_utility"]["score"] / 10.0,
                 "overall": evaluation["overall"] / 10.0,  # overall 是 int，确保结果是 float
             }
 
@@ -435,6 +443,10 @@ class ContentQualityCheckNode(Node):
             "readability": {"score": 0, "comments": ""},
             "consistency": {"score": 0, "comments": ""},
             "engagement": {"score": 0, "comments": ""},
+            "formatting": {"score": 0, "comments": ""},
+            "visualization": {"score": 0, "comments": ""},
+            "educational_value": {"score": 0, "comments": ""},
+            "practical_utility": {"score": 0, "comments": ""},
             "overall": 0,
             "needs_fix": False,
             "fix_suggestions": "",
@@ -459,6 +471,10 @@ class ContentQualityCheckNode(Node):
             result["readability"]["score"] = extract_score("可读性|Readability")
             result["consistency"]["score"] = extract_score("一致性|Consistency")
             result["engagement"]["score"] = extract_score("吸引力|Engagement")
+            result["formatting"]["score"] = extract_score("格式化|Formatting")
+            result["visualization"]["score"] = extract_score("可视化|Visualization")
+            result["educational_value"]["score"] = extract_score("教学价值|Educational Value")
+            result["practical_utility"]["score"] = extract_score("实用性|Practical Utility")
 
             overall_match = re.search(r"总体[评分分数].*?(\d+)", content, re.DOTALL | re.IGNORECASE)
             if overall_match:
@@ -477,6 +493,10 @@ class ContentQualityCheckNode(Node):
                     result["readability"]["score"],
                     result["consistency"]["score"],
                     result["engagement"]["score"],
+                    result["formatting"]["score"],
+                    result["visualization"]["score"],
+                    result["educational_value"]["score"],
+                    result["practical_utility"]["score"],
                 ]
                 valid_scores = [s for s in scores if s > 0]
                 if valid_scores:
@@ -493,6 +513,10 @@ class ContentQualityCheckNode(Node):
             result["readability"]["score"] = 5
             result["consistency"]["score"] = 5
             result["engagement"]["score"] = 5
+            result["formatting"]["score"] = 5
+            result["visualization"]["score"] = 5
+            result["educational_value"]["score"] = 5
+            result["practical_utility"]["score"] = 5
             result["overall"] = 5
 
         result["needs_fix"] = "需要修复" in content or "建议修复" in content

@@ -399,6 +399,30 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
                 err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 处理失败: {res_or_exc.get('error', 'Unknown error')}"
                 log_and_notify(err_msg, "error")
                 errors_encountered.append({"module": module_name, "error": res_or_exc.get("error", "Unknown error")})
+            elif res_or_exc is None:
+                # 处理None结果，这通常是由于异常导致的回退结果
+                err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 处理失败，返回了None结果，将重试"
+                log_and_notify(err_msg, "warning")
+                # 对于None结果，我们尝试重新处理这个模块
+                try:
+                    log_and_notify(f"AsyncGenerateModuleDetailsNode: 开始重试处理模块 {module_name}", "info")
+                    module_info = modules_to_process[i]
+                    processor = self.ModuleProcessor(self)
+                    retry_item = {"module_info": module_info, "prep_data": prep_res}
+                    await processor.prep_async(retry_item)
+                    retry_result = await processor.exec_async(retry_item)
+
+                    if isinstance(retry_result, dict) and retry_result.get("success"):
+                        log_and_notify(f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 重试成功", "info")
+                        processed_module_docs.append(retry_result)
+                    else:
+                        log_and_notify(f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 重试仍然失败", "error")
+                        errors_encountered.append({"module": module_name, "error": "Retry failed after None result"})
+                except Exception as retry_error:
+                    log_and_notify(
+                        f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 重试时发生异常: {retry_error}", "error"
+                    )
+                    errors_encountered.append({"module": module_name, "error": f"Retry exception: {str(retry_error)}"})
             else:  # Should not happen if ModuleProcessor always returns a dict or raises
                 err_msg = f"AsyncGenerateModuleDetailsNode: 模块 {module_name} 返回了意外结果: {res_or_exc}"
                 log_and_notify(err_msg, "error")

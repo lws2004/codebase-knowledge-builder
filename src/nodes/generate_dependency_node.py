@@ -390,17 +390,121 @@ class AsyncGenerateDependencyNode(AsyncNode):
             log_and_notify(f"创建目录失败 {repo_specific_dir}: {e}", "error")
             raise
 
-        # 确保使用.md扩展名
-        file_ext = ".md"
+        # 根据输出格式确定文件扩展名
+        file_ext = ".md" if output_format.lower() == "markdown" else f".{output_format.lower()}"
         file_name = f"dependency{file_ext}"
         file_path = os.path.join(repo_specific_dir, file_name)  # Save inside repo sub-directory
 
         try:
+            # 过滤内容，移除多余的markdown标记
+            filtered_content = self._filter_unwanted_text(content)
+
             # This part runs in a thread via asyncio.to_thread
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
+                f.write(filtered_content)
             log_and_notify(f"依赖关系文档已保存到: {file_path}", "info")
             return file_path
         except IOError as e:
             log_and_notify(f"保存依赖关系文档失败: {str(e)}", "error", notify=True)
             raise
+
+    def _filter_unwanted_text(self, content: str) -> str:
+        """过滤掉不应该出现在文档中的文本，并修复格式问题
+
+        Args:
+            content: 原始内容
+
+        Returns:
+            过滤后的内容
+        """
+        import re
+
+        # 过滤掉常见的不应该出现的文本
+        unwanted_texts = [
+            "无需提供修复后的完整文档，只需根据上述改进建议进行修改即可。",
+            "无需提供修复后的完整文档，只需根据上述改进建议进行修改即可",
+            "请不要提供修复后的完整文档，只提供详细的改进建议",
+            "不要在回复中包含无需提供修复后的完整文档，只需根据上述改进建议进行修改即可这样的文本",
+        ]
+
+        filtered_content = content
+        for text in unwanted_texts:
+            filtered_content = filtered_content.replace(text, "")
+
+        # 移除文档开头和结尾的 ```markdown 和 ``` 标记
+        # 处理开头的markdown标记
+        if filtered_content.startswith("```markdown\n"):
+            filtered_content = filtered_content[12:]
+        elif filtered_content.startswith("```markdown"):
+            filtered_content = filtered_content[11:]
+
+        # 处理结尾的markdown标记
+        if filtered_content.endswith("\n```"):
+            filtered_content = filtered_content[:-4]
+        elif filtered_content.endswith("```"):
+            filtered_content = filtered_content[:-3]
+
+        # 处理文档开头的孤立```markdown标记（不在代码块中的）
+        lines = filtered_content.split("\n")
+        if lines and lines[0].strip() == "```markdown":
+            lines = lines[1:]
+
+        # 处理文档结尾的孤立```标记（不在代码块中的）
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+
+        filtered_content = "\n".join(lines)
+
+        # 修复 Mermaid 图表格式问题
+        # 移除 Mermaid 图表周围的 ```markdown 和 ``` 标记
+        filtered_content = filtered_content.replace("```markdown\n```mermaid", "```mermaid")
+        filtered_content = filtered_content.replace("```\n```mermaid", "```mermaid")
+
+        # 修复 Mermaid 图表中的特殊字符问题
+        from ..utils.formatter import fix_mermaid_syntax, remove_redundant_summaries
+
+        filtered_content = fix_mermaid_syntax(filtered_content)
+
+        # 清理多余的总结文本
+        filtered_content = remove_redundant_summaries(filtered_content)
+
+        # 移除其他可能的markdown代码块标记
+        filtered_content = filtered_content.replace("```markdown\n", "")
+        filtered_content = filtered_content.replace("```markdown", "")
+
+        # 处理孤立的```标记（不在代码块中的）
+        lines = filtered_content.split("\n")
+        cleaned_lines = []
+        in_code_block = False
+
+        for line in lines:
+            stripped_line = line.strip()
+
+            # 检查是否是代码块开始/结束标记
+            if stripped_line.startswith("```"):
+                if stripped_line == "```":
+                    # 孤立的```标记，检查是否应该保留
+                    if in_code_block:
+                        # 这是代码块结束标记
+                        cleaned_lines.append(line)
+                        in_code_block = False
+                    else:
+                        # 这可能是孤立的```标记，跳过
+                        continue
+                else:
+                    # 这是带语言标识的代码块开始标记
+                    cleaned_lines.append(line)
+                    in_code_block = True
+            else:
+                cleaned_lines.append(line)
+
+        filtered_content = "\n".join(cleaned_lines)
+
+        # Normalize line breaks to use only \n
+        filtered_content = filtered_content.replace("\r\n", "\n").replace("\r", "\n")
+
+        # Collapse multiple consecutive blank lines into a single blank line
+        # This regex replaces two or more consecutive newlines with exactly two newlines (one blank line)
+        filtered_content = re.sub(r"\n{2,}", "\n\n", filtered_content)
+
+        return filtered_content

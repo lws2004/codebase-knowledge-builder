@@ -6,6 +6,356 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def fix_mermaid_syntax(content: str) -> str:
+    """修复Mermaid图表中的语法问题
+
+    Args:
+        content: 原始内容
+
+    Returns:
+        修复后的内容
+    """
+    import re
+
+    # 查找所有Mermaid代码块，使用更精确的正则表达式
+    mermaid_pattern = r"```mermaid\n((?:(?!```)[\s\S])*?)\n```"
+
+    def fix_mermaid_block(match):
+        mermaid_content = match.group(1).strip()
+
+        # 如果内容为空或过短，跳过
+        if not mermaid_content or len(mermaid_content) < 5:
+            return match.group(0)
+
+        # 检查是否有常见的语法错误
+        has_errors = _detect_mermaid_errors(mermaid_content)
+
+        if not has_errors:
+            return match.group(0)  # 无错误，返回原内容
+
+        print("检测到Mermaid语法错误，正在修复...")
+
+        try:
+            # 首先尝试简单修复
+            fixed_content = _simple_mermaid_fix(mermaid_content)
+
+            # 如果简单修复后仍有错误，尝试LLM修复
+            if _detect_mermaid_errors(fixed_content):
+                fixed_content = _llm_mermaid_fix(mermaid_content)
+
+            return f"```mermaid\n{fixed_content}\n```"
+
+        except Exception as e:
+            print(f"修复Mermaid图表失败: {e}")
+            # 回退到原内容
+            return match.group(0)
+
+    # 应用修复到所有Mermaid代码块
+    fixed_content = re.sub(mermaid_pattern, fix_mermaid_block, content, flags=re.DOTALL)
+
+    return fixed_content
+
+
+def _detect_mermaid_errors(mermaid_content: str) -> bool:
+    """检测Mermaid图表中的语法错误
+
+    Args:
+        mermaid_content: Mermaid图表内容
+
+    Returns:
+        是否存在语法错误
+    """
+    import re
+
+    # 检查各种语法错误
+    errors = [
+        # [|text|text] 格式错误
+        re.search(r"\[\|[^|]*\|[^|]*\]", mermaid_content),
+        # 嵌套方括号错误，如 A[A[text]] 或 B[B["text"]
+        re.search(r"([A-Z])\[\1\[", mermaid_content),
+        # 未闭合的引号在方括号中
+        re.search(r'\[[^"]*"[^"]*\](?!\s*-->)', mermaid_content),
+        # 箭头语法错误，如 --> A (text)"]
+        re.search(r'-->\s*[A-Z]\s*\([^)]*\)"\]', mermaid_content),
+        # 行尾分号
+        re.search(r";\s*$", mermaid_content, re.MULTILINE),
+        # subgraph名称与节点名称冲突
+        _check_subgraph_conflicts(mermaid_content),
+    ]
+
+    return any(errors)
+
+
+def _check_subgraph_conflicts(mermaid_content: str) -> bool:
+    """检查subgraph名称与节点名称冲突
+
+    Args:
+        mermaid_content: Mermaid图表内容
+
+    Returns:
+        是否存在冲突
+    """
+    import re
+
+    # 提取subgraph名称
+    subgraph_names = re.findall(r"subgraph\s+(\w+)", mermaid_content)
+
+    # 提取节点名称
+    node_names = re.findall(r"(\w+)\[", mermaid_content)
+
+    # 检查是否有冲突
+    conflicts = set(subgraph_names) & set(node_names)
+
+    return len(conflicts) > 0
+
+
+def _llm_mermaid_fix(mermaid_content: str) -> str:
+    """使用LLM修复Mermaid图表
+
+    Args:
+        mermaid_content: 原始Mermaid内容
+
+    Returns:
+        修复后的Mermaid内容
+    """
+    try:
+        from src.utils.env_manager import get_llm_config
+        from src.utils.llm_wrapper.llm_client import LLMClient
+
+        config = get_llm_config()
+        llm_client = LLMClient(config)
+
+        prompt = f"""请修复以下Mermaid图表中的语法错误，确保生成的图表符合Mermaid语法规范：
+
+原始图表：
+```mermaid
+{mermaid_content}
+```
+
+修复要求：
+1. 移除 [|text|text] 格式的错误语法
+2. 修复嵌套方括号问题，如 A[A[text]] 应改为 A[text]
+3. 解决subgraph名称与节点名称冲突问题
+4. 移除行尾的分号
+5. 修复箭头语法错误
+6. 确保中文字符正确显示
+7. 保持图表的原始含义和结构
+
+请只返回修复后的Mermaid代码（不包含```mermaid标记），不要添加任何解释："""
+
+        response = llm_client.generate_text(prompt, max_tokens=1000)
+
+        # 清理响应，移除可能的代码块标记
+        cleaned_response = response.strip()
+        if cleaned_response.startswith("```mermaid"):
+            cleaned_response = cleaned_response[10:]
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3]
+
+        return cleaned_response.strip()
+
+    except Exception as e:
+        print(f"LLM修复失败: {e}")
+        return mermaid_content
+
+
+def _simple_mermaid_fix(mermaid_content: str) -> str:
+    """简单的Mermaid语法修复（回退方案）
+
+    Args:
+        mermaid_content: 原始Mermaid内容
+
+    Returns:
+        修复后的Mermaid内容（不包含代码块标记）
+    """
+    import re
+
+    # 1. 修复 [|text|text] 格式错误，逐行处理以保持结构
+    lines = mermaid_content.split("\n")
+    fixed_lines = []
+    for line in lines:
+        if re.search(r"\[\|[^|]*\|[^|]*\]", line):
+            # 修复这一行的管道符号，保留其余内容
+            fixed_line = re.sub(r"\[\|([^|]*)\|([^|]*)\]", r"[\1]", line)
+            fixed_lines.append(fixed_line)
+        else:
+            fixed_lines.append(line)
+
+    mermaid_content = "\n".join(fixed_lines)
+
+    # 2. 修复嵌套方括号问题，如 A[A[text]] -> A[text]
+    mermaid_content = re.sub(r"([A-Z])\[\1\[([^\]]*)\]\]", r"\1[\2]", mermaid_content)
+
+    # 3. 修复其他嵌套方括号问题，如 B[B["text"] -> B["text"]
+    mermaid_content = re.sub(r"([A-Z])\[\1\[\"([^\"]*)\"]", r'\1["\2"]', mermaid_content)
+
+    # 4. 修复未闭合的嵌套方括号，如 A[A[text] -> A[text]
+    mermaid_content = re.sub(r"([A-Z])\[\1\[([^\]]*)\](?!\])", r"\1[\2]", mermaid_content)
+
+    # 5. 修复箭头语法错误，如 --> A (text)"] -> --> A
+    mermaid_content = re.sub(r'-->\s*([A-Z])\s*\([^)]*\)"\]', r"--> \1", mermaid_content)
+
+    # 6. 移除行尾分号
+    mermaid_content = re.sub(r";\s*$", "", mermaid_content, flags=re.MULTILINE)
+
+    # 7. 修复未闭合的引号 - 更精确的模式
+    mermaid_content = re.sub(r'\[([^"\]]*)"([^"\]]*)\](?!\s*-->)', r'["\1\2"]', mermaid_content)
+
+    # 8. 修复更复杂的嵌套方括号情况
+    mermaid_content = re.sub(r'([A-Z])\[([A-Z])\["([^"]*)"', r'\1["\3"]', mermaid_content)
+
+    # 9. 修复subgraph名称冲突
+    subgraph_names = re.findall(r"subgraph\s+(\w+)", mermaid_content)
+    node_names = re.findall(r"(\w+)\[", mermaid_content)
+    conflicts = set(subgraph_names) & set(node_names)
+
+    for conflict in conflicts:
+        # 将subgraph名称改为避免冲突
+        mermaid_content = re.sub(rf"subgraph\s+{conflict}\b", f"subgraph {conflict}Group", mermaid_content)
+
+    # 10. 智能清理，保留图表结构
+    lines = mermaid_content.split("\n")
+    cleaned_lines = []
+
+    for line in lines:
+        stripped_line = line.strip()
+        if stripped_line:
+            # 保留有内容的行
+            cleaned_lines.append(stripped_line)
+        elif (
+            cleaned_lines
+            and cleaned_lines[-1]
+            and not cleaned_lines[-1].startswith(("graph", "flowchart", "subgraph", "end"))
+        ):
+            # 在某些情况下保留空行作为分隔
+            if len(cleaned_lines) > 0 and "-->" not in cleaned_lines[-1]:
+                cleaned_lines.append("")
+
+    # 移除开头和末尾的空行
+    while cleaned_lines and cleaned_lines[0] == "":
+        cleaned_lines.pop(0)
+    while cleaned_lines and cleaned_lines[-1] == "":
+        cleaned_lines.pop()
+
+    return "\n".join(cleaned_lines)
+
+
+def validate_mermaid_syntax(mermaid_content: str) -> tuple[bool, list[str]]:
+    """验证Mermaid图表语法
+
+    Args:
+        mermaid_content: Mermaid图表内容
+
+    Returns:
+        (是否有效, 错误列表)
+    """
+    import re
+
+    errors = []
+
+    # 检查基本语法错误
+    if re.search(r"\[\|[^|]*\|[^|]*\]", mermaid_content):
+        errors.append("包含无效的 [|text|text] 格式")
+
+    if re.search(r"([A-Z])\[\1\[", mermaid_content):
+        errors.append("包含嵌套方括号错误")
+
+    if re.search(r'-->\s*[A-Z]\s*\([^)]*\)"\]', mermaid_content):
+        errors.append("包含箭头语法错误")
+
+    if re.search(r";\s*$", mermaid_content, re.MULTILINE):
+        errors.append("包含行尾分号")
+
+    # 检查subgraph冲突
+    if _check_subgraph_conflicts(mermaid_content):
+        errors.append("subgraph名称与节点名称冲突")
+
+    # 检查基本结构
+    if not re.search(r"(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|gitgraph)", mermaid_content):
+        errors.append("缺少有效的图表类型声明")
+
+    return len(errors) == 0, errors
+
+
+def batch_fix_mermaid_files(directory: str) -> dict[str, int]:
+    """批量修复目录下所有Markdown文件中的Mermaid图表
+
+    Args:
+        directory: 目录路径
+
+    Returns:
+        修复统计信息
+    """
+    import os
+
+    stats = {"total_files": 0, "files_with_mermaid": 0, "fixed_diagrams": 0, "errors": 0}
+
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".md"):
+                file_path = os.path.join(root, file)
+                stats["total_files"] += 1
+
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+
+                    # 检查是否包含Mermaid图表
+                    if "```mermaid" in content:
+                        stats["files_with_mermaid"] += 1
+
+                        # 修复Mermaid语法
+                        fixed_content = fix_mermaid_syntax(content)
+
+                        # 如果内容有变化，写回文件
+                        if fixed_content != content:
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                f.write(fixed_content)
+                            stats["fixed_diagrams"] += 1
+                            print(f"修复了文件: {file_path}")
+
+                except Exception as e:
+                    print(f"处理文件 {file_path} 时出错: {e}")
+                    stats["errors"] += 1
+
+    return stats
+
+
+def remove_redundant_summaries(content: str) -> str:
+    """移除文档中多余的总结文本
+
+    Args:
+        content: 原始内容
+
+    Returns:
+        清理后的内容
+    """
+    import re
+
+    # 定义需要清理的多余总结模式
+    redundant_patterns = [
+        # 通用的总结文本
+        r"希望这份文档能帮助你更好地理解和使用.*?！如果有任何问题，欢迎查阅官方文档或提交 issue！.*?😊",
+        r"希望这份文档能帮助您更好地理解和管理.*?！.*?😊",
+        r"通过上述术语表和关系图，开发者可以更轻松地理解.*?代码库的结构和功能，从而更高效地进行开发和维护。",
+        # 特定的总结段落
+        r"🎉 \*\*总结\*\* 🎉\s*\n.*?通过合理的依赖管理和优化策略，可以进一步提升代码质量和性能。\s*\n\n",
+        # 其他可能的总结模式
+        r"该项目已历经多年发展，形成了成熟的开发模式与协作方式。未来可通过进一步的技术升级和社区拓展，保持竞争力与影响力。",
+    ]
+
+    # 应用清理规则
+    for pattern in redundant_patterns:
+        content = re.sub(pattern, "", content, flags=re.DOTALL | re.MULTILINE)
+
+    # 清理多余的分隔线和空行
+    content = re.sub(r"\n---\n\s*$", "", content)  # 移除文档末尾的分隔线
+    content = re.sub(r"\n{3,}", "\n\n", content)  # 合并多个空行
+    content = content.rstrip() + "\n"  # 确保文档以单个换行符结尾
+
+    return content
+
+
 def format_markdown(
     content_dict: Dict[str, str],
     template: Optional[str] = None,
@@ -335,7 +685,7 @@ def create_code_links(
 
         # 添加代码块
         if code:
-            result_parts.append(f"\n``python\n{code}\n```\n")
+            result_parts.append(f"\n```python\n{code}\n```\n")
 
         # 添加位置说明
         if file_path:
@@ -461,61 +811,17 @@ def split_content_into_files(
     repo_name = content_dict.get("repo_name", "docs")
     print(f"拆分内容为文件，仓库名称: {repo_name}")
 
-    # --- Helper function to resolve module links ---
-    def _resolve_module_links(
-        text_content: str, current_doc_full_path: str, all_module_doc_paths: Dict[str, str]
-    ) -> str:
-        if not text_content:
-            return ""
-        # Ensure current_doc_full_path is an absolute path for correct relative path calculation
-        # current_doc_abs_path = Path(output_dir).joinpath(current_doc_full_path).resolve()
-        # current_doc_parent_abs_path = current_doc_abs_path.parent
+    # 使用仓库结构信息（如果提供）
+    if repo_structure:
+        print(f"使用仓库结构信息，包含 {len(repo_structure)} 个条目")
 
-        # Use Path(current_doc_full_path) directly as it's already a full path from os.path.join(output_dir, ...)
-        current_doc_path_obj = Path(current_doc_full_path)
-        current_doc_dir = current_doc_path_obj.parent
+    # 记录仓库URL和分支信息（用于生成链接）
+    if repo_url:
+        print(f"仓库URL: {repo_url}")
+    if branch != "main":
+        print(f"使用分支: {branch}")
 
-        def replace_link(match: re.Match[str]) -> str:
-            linked_module_name = match.group(1)
-            target_doc_relative_path = all_module_doc_paths.get(linked_module_name)
-            if target_doc_relative_path:
-                # target_doc_abs_path = Path(output_dir).joinpath(target_doc_relative_path).resolve()
-                # Use Path(target_doc_relative_path) directly if it's relative to output_dir
-                target_doc_full_path_obj = Path(output_dir) / target_doc_relative_path
-                try:
-                    relative_path = os.path.relpath(target_doc_full_path_obj, current_doc_dir)
-                    # Ensure POSIX style paths for Markdown links
-                    return str(Path(relative_path).as_posix())
-                except ValueError:  # Happens if paths are on different drives (not expected here)
-                    return target_doc_relative_path  # Fallback
-            return match.group(0)  # Keep original if not found
-
-        # 替换模块链接占位符
-        processed_text = re.sub(r"#TODO_MODULE_LINK#\\{([^}]+)\\}", replace_link, text_content)
-
-        # 直接替换模块名称为相对路径链接
-        for module_name in all_module_doc_paths:
-            module_doc_path = all_module_doc_paths.get(module_name)
-            if module_doc_path:
-                target_doc_full_path_obj = Path(output_dir) / module_doc_path
-                try:
-                    relative_path = os.path.relpath(target_doc_full_path_obj, current_doc_dir)
-                    relative_path_posix = Path(relative_path).as_posix()
-                    # 替换模块链接
-                    pattern = (
-                        r"\[`"
-                        + re.escape(module_name)
-                        + r"`\]\(#TODO_MODULE_LINK#\{"
-                        + re.escape(module_name)
-                        + r"\}\)"
-                    )
-                    processed_text = re.sub(pattern, f"[`{module_name}`]({relative_path_posix})", processed_text)
-                except ValueError:
-                    pass
-
-        return processed_text
-
-    # --- End Helper function ---
+    # 注意：模块链接解析功能已移至独立的 resolve_module_links 函数
 
     # 尝试读取自定义的 index 模板
     index_template_path = "templates/index_template.md"
@@ -800,8 +1106,14 @@ def map_module_to_docs_path(module_name: str, repo_structure: Dict[str, Any]) ->
     Returns:
         str: 映射后的文档路径
     """
-    # 实现模块到文档路径的映射逻辑
-    # 这里添加具体的实现代码
+    # 基于仓库结构确定模块路径
+    if repo_structure and "modules" in repo_structure:
+        modules = repo_structure["modules"]
+        for module_info in modules:
+            if module_info.get("name") == module_name:
+                return module_info.get("path", module_name.replace(".", "/") + ".md")
+
+    # 默认映射逻辑
     return module_name.replace(".", "/") + ".md"
 
 
@@ -873,9 +1185,30 @@ def resolve_module_links(content: str, current_file_path: str, all_module_doc_pa
     Returns:
         解析后的链接内容
     """
-    # 实现链接解析逻辑
-    # 这里添加具体的实现代码
-    return content
+    import re
+    from pathlib import Path
+
+    if not content or not all_module_doc_paths_map:
+        return content
+
+    current_dir = Path(current_file_path).parent
+
+    # 替换模块链接占位符
+    def replace_link(match: re.Match[str]) -> str:
+        module_name = match.group(1)
+        target_path = all_module_doc_paths_map.get(module_name)
+        if target_path:
+            try:
+                relative_path = os.path.relpath(target_path, current_dir)
+                return str(Path(relative_path).as_posix())
+            except ValueError:
+                return target_path
+        return match.group(0)
+
+    # 处理模块链接
+    processed_content = re.sub(r"#TODO_MODULE_LINK#\\{([^}]+)\\}", replace_link, content)
+
+    return processed_content
 
 
 def generate_module_index_files(
@@ -893,6 +1226,41 @@ def generate_module_index_files(
     Returns:
         生成的文件列表
     """
-    # 实现生成模块索引文件的逻辑
-    # 这里添加具体的实现代码
-    return generated_files
+    from pathlib import Path
+
+    if not module_dirs:
+        return generated_files
+
+    new_files = []
+
+    for module_dir in module_dirs:
+        dir_path = Path(output_dir) / module_dir
+        if not dir_path.exists():
+            continue
+
+        index_file = dir_path / "index.md"
+
+        # 生成索引内容
+        content_parts = []
+        if justdoc_compatible:
+            content_parts.append(f"---\ntitle: {module_dir.replace('_', ' ').title()}\ncategory: {repo_name}\n---\n")
+
+        content_parts.append(f"# 📁 {module_dir.replace('_', ' ').title()}")
+        content_parts.append(f"\n模块目录: `{module_dir}`\n")
+
+        # 列出模块文件
+        md_files = [f for f in dir_path.glob("*.md") if f.name != "index.md"]
+        if md_files:
+            content_parts.append("## 模块列表\n")
+            for md_file in sorted(md_files):
+                module_name = md_file.stem.replace("_", " ").title()
+                content_parts.append(f"- [{module_name}]({md_file.name})")
+
+        # 写入索引文件
+        index_content = "\n".join(content_parts)
+        with open(index_file, "w", encoding="utf-8") as f:
+            f.write(index_content)
+
+        new_files.append(str(index_file))
+
+    return generated_files + new_files
