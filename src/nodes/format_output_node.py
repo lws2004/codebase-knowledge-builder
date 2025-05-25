@@ -145,7 +145,8 @@ class FormatOutputNode(Node):
             return {"success": False, "error": prep_res["error"]}
 
         # 获取参数
-        combined_content = self._filter_unwanted_text(prep_res["combined_content"])
+        shared = prep_res.get("shared", {})
+        combined_content = self._filter_unwanted_text(prep_res["combined_content"], shared)
         file_structure = prep_res["file_structure"]
         repo_structure = prep_res["repo_structure"]
         output_dir = prep_res["output_dir"]
@@ -209,7 +210,7 @@ class FormatOutputNode(Node):
             if not output_files:
                 log_and_notify("警告: 没有生成任何文件", "warning")
                 # 尝试直接保存原始内容，但先过滤掉不应该出现的文本
-                filtered_content = self._filter_unwanted_text(combined_content)
+                filtered_content = self._filter_unwanted_text(combined_content, shared)
                 index_path = os.path.join(output_dir, repo_name, "index.md")
                 os.makedirs(os.path.dirname(index_path), exist_ok=True)
                 with open(index_path, "w", encoding="utf-8") as f:
@@ -415,7 +416,7 @@ class FormatOutputNode(Node):
             if shared_key in shared and shared[shared_key].get("success", False):
                 content = shared[shared_key].get("content", "")
                 # 过滤掉不应该出现的文本
-                content = self._filter_unwanted_text(content)
+                content = self._filter_unwanted_text(content, shared)
                 content_dict[dict_key] = content
                 print(f"合并了{shared_key}文档，长度: {len(content_dict[dict_key])}")
             else:
@@ -428,7 +429,7 @@ class FormatOutputNode(Node):
                         with open(file_path, "r", encoding="utf-8") as f:
                             content = f.read()
                             # 过滤掉不应该出现的文本
-                            content = self._filter_unwanted_text(content)
+                            content = self._filter_unwanted_text(content, shared)
                             content_dict[dict_key] = content
                             print(f"从文件读取了{file_name}文档，长度: {len(content)}")
                 except Exception as e:
@@ -454,11 +455,12 @@ class FormatOutputNode(Node):
 
         return markdown_files
 
-    def _filter_unwanted_text(self, content: str) -> str:
+    def _filter_unwanted_text(self, content: str, shared: Optional[Dict[str, Any]] = None) -> str:
         """过滤掉不应该出现在文档中的文本，并修复格式问题
 
         Args:
             content: 原始内容
+            shared: 共享存储（可选，用于获取 LLM 配置）
 
         Returns:
             过滤后的内容
@@ -505,7 +507,19 @@ class FormatOutputNode(Node):
         filtered_content = filtered_content.replace("```\n```mermaid", "```mermaid")
 
         # 修复 Mermaid 图表中的特殊字符问题
-        filtered_content = fix_mermaid_syntax(filtered_content)
+        # 获取 LLM 客户端用于重新生成
+        llm_config = shared.get("llm_config") if shared else None
+        llm_client = None
+        if llm_config:
+            try:
+                from ..utils.llm_wrapper.llm_client import LLMClient
+
+                llm_client = LLMClient(llm_config)
+            except Exception as e:
+                log_and_notify(f"初始化 LLM 客户端失败: {e}", "warning")
+
+        # 使用新的验证和重新生成系统
+        filtered_content = fix_mermaid_syntax(filtered_content, llm_client, "格式化输出文档")
 
         # 清理多余的总结文本
         from ..utils.formatter import remove_redundant_summaries

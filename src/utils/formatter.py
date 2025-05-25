@@ -6,8 +6,36 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-def fix_mermaid_syntax(content: str) -> str:
+def fix_mermaid_syntax(content: str, llm_client=None, context: Optional[str] = None) -> str:
     """修复Mermaid图表中的语法问题
+
+    Args:
+        content: 原始内容
+        llm_client: LLM 客户端实例
+        context: 上下文信息
+
+    Returns:
+        修复后的内容
+    """
+    try:
+        # 使用新的验证和重新生成系统
+        from .mermaid_regenerator import validate_and_regenerate_mermaid
+
+        fixed_content, was_fixed = validate_and_regenerate_mermaid(content, llm_client, context)
+
+        if was_fixed:
+            print("检测到Mermaid语法错误，已使用LLM重新生成")
+
+        return fixed_content
+
+    except Exception as e:
+        print(f"使用新验证系统失败，回退到旧系统: {e}")
+        # 回退到原有逻辑
+        return _legacy_fix_mermaid_syntax(content)
+
+
+def _legacy_fix_mermaid_syntax(content: str) -> str:
+    """旧版本的 Mermaid 修复逻辑（回退方案）
 
     Args:
         content: 原始内容
@@ -79,6 +107,10 @@ def _detect_mermaid_errors(mermaid_content: str) -> bool:
         re.search(r'-->\s*[A-Z]\s*\([^)]*\)"\]', mermaid_content),
         # 行尾分号
         re.search(r";\s*$", mermaid_content, re.MULTILINE),
+        # 节点标签中的特殊符号（新增）
+        re.search(r"\[([^]]*)\([^)]*\)", mermaid_content),  # 括号
+        re.search(r'\[([^]]*)"([^"]*)"', mermaid_content),  # 引号
+        re.search(r"\[([^]]*)\{([^}]*)\}", mermaid_content),  # 大括号
         # subgraph名称与节点名称冲突
         _check_subgraph_conflicts(mermaid_content),
     ]
@@ -138,8 +170,12 @@ def _llm_mermaid_fix(mermaid_content: str) -> str:
 3. 解决subgraph名称与节点名称冲突问题
 4. 移除行尾的分号
 5. 修复箭头语法错误
-6. 确保中文字符正确显示
-7. 保持图表的原始含义和结构
+6. 移除节点标签中的特殊符号：
+   - 移除括号：A[文本(说明)] 应改为 A[文本说明]
+   - 移除引号：A[文本"引用"] 应改为 A[文本引用]
+   - 移除大括号：A[文本{{内容}}] 应改为 A[文本内容]
+7. 确保中文字符正确显示
+8. 保持图表的原始含义和结构
 
 请只返回修复后的Mermaid代码（不包含```mermaid标记），不要添加任何解释："""
 
@@ -182,6 +218,12 @@ def _simple_mermaid_fix(mermaid_content: str) -> str:
             fixed_lines.append(line)
 
     mermaid_content = "\n".join(fixed_lines)
+
+    # 0. 修复节点标签中的特殊符号（新增）
+    # 移除节点标签中的括号和其他特殊符号
+    mermaid_content = re.sub(r"\[([^]]*)\([^)]*\)([^]]*)\]", r"[\1\2]", mermaid_content)  # 移除标签中的括号
+    mermaid_content = re.sub(r'\[([^]]*)"([^"]*)"([^]]*)\]', r"[\1\2\3]", mermaid_content)  # 移除标签中的引号
+    mermaid_content = re.sub(r"\[([^]]*)\{([^}]*)\}([^]]*)\]", r"[\1\2\3]", mermaid_content)  # 移除标签中的大括号
 
     # 2. 修复嵌套方括号问题，如 A[A[text]] -> A[text]
     mermaid_content = re.sub(r"([A-Z])\[\1\[([^\]]*)\]\]", r"\1[\2]", mermaid_content)
@@ -249,6 +291,26 @@ def validate_mermaid_syntax(mermaid_content: str) -> tuple[bool, list[str]]:
     Returns:
         (是否有效, 错误列表)
     """
+    try:
+        # 使用新的验证系统
+        from .mermaid_validator import validate_mermaid_syntax_sync
+
+        return validate_mermaid_syntax_sync(mermaid_content)
+    except Exception as e:
+        print(f"使用新验证系统失败，回退到旧系统: {e}")
+        # 回退到原有逻辑
+        return _legacy_validate_mermaid_syntax(mermaid_content)
+
+
+def _legacy_validate_mermaid_syntax(mermaid_content: str) -> tuple[bool, list[str]]:
+    """旧版本的 Mermaid 语法验证（回退方案）
+
+    Args:
+        mermaid_content: Mermaid图表内容
+
+    Returns:
+        (是否有效, 错误列表)
+    """
     import re
 
     errors = []
@@ -265,6 +327,16 @@ def validate_mermaid_syntax(mermaid_content: str) -> tuple[bool, list[str]]:
 
     if re.search(r";\s*$", mermaid_content, re.MULTILINE):
         errors.append("包含行尾分号")
+
+    # 检查节点标签中的特殊符号（新增）
+    if re.search(r"\[([^]]*)\([^)]*\)", mermaid_content):
+        errors.append("节点标签中包含括号")
+
+    if re.search(r'\[([^]]*)"([^"]*)"', mermaid_content):
+        errors.append("节点标签中包含引号")
+
+    if re.search(r"\[([^]]*)\{([^}]*)\}", mermaid_content):
+        errors.append("节点标签中包含大括号")
 
     # 检查subgraph冲突
     if _check_subgraph_conflicts(mermaid_content):
