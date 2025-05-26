@@ -111,17 +111,46 @@ def _simple_validate_mermaid(mermaid_content: str) -> Tuple[bool, List[str]]:
     if re.search(r";\s*$", mermaid_content, re.MULTILINE):
         errors.append("包含行尾分号")
 
-    # 检查节点标签中的特殊符号
+    # 增强的语法检查 - 检查节点标签中的引号
+    if re.search(r'\[[^]]*"[^]]*\]', mermaid_content):
+        errors.append("节点标签中包含引号")
+
+    # 检查节点标签中的括号
     if re.search(r"\[([^]]*)\([^)]*\)", mermaid_content):
         errors.append("节点标签中包含括号")
 
-    if re.search(r'\[([^]]*)"([^"]*)"', mermaid_content):
-        errors.append("节点标签中包含引号")
-
+    # 检查节点标签中的大括号
     if re.search(r"\[([^]]*)\{([^}]*)\}", mermaid_content):
         errors.append("节点标签中包含大括号")
 
+    # 检查 subgraph 名称与节点名称冲突
+    if _check_subgraph_conflicts(mermaid_content):
+        errors.append("subgraph名称与节点名称冲突")
+
     return len(errors) == 0, errors
+
+
+def _check_subgraph_conflicts(mermaid_content: str) -> bool:
+    """检查 subgraph 名称与节点名称是否冲突
+
+    Args:
+        mermaid_content: Mermaid 图表内容
+
+    Returns:
+        是否存在冲突
+    """
+    import re
+
+    # 提取 subgraph 名称
+    subgraph_pattern = r"subgraph\s+(\w+)"
+    subgraph_names = set(re.findall(subgraph_pattern, mermaid_content))
+
+    # 提取节点名称
+    node_pattern = r"(\w+)\["
+    node_names = set(re.findall(node_pattern, mermaid_content))
+
+    # 检查是否有重叠
+    return bool(subgraph_names & node_names)
 
 
 class MermaidValidator:

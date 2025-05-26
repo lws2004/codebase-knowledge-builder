@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper.llm_client import LLMClient  # Import LLMClient
 from ..utils.logger import log_and_notify
+from ..utils.mermaid_realtime_validator import validate_mermaid_in_content
 
 
 class GenerateOverallArchitectureNodeConfig(BaseModel):
@@ -59,25 +60,36 @@ class GenerateOverallArchitectureNodeConfig(BaseModel):
         请以 Markdown 格式输出，使用适当的标题、列表、表格和代码块。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
 
-        必须包含至少2个Mermaid图表，用于可视化系统架构和模块依赖关系。Mermaid图表示例：
+        必须包含至少2个Mermaid图表，用于可视化系统架构和模块依赖关系。
+
+        **重要：Mermaid语法规范**
+        - 节点标签使用方括号格式：NodeName[节点标签]
+        - 不要在节点标签中使用引号：错误 NodeName["标签"] ✗，正确 NodeName[标签] ✓
+        - 不要在节点标签中使用括号：错误 NodeName[标签(说明)] ✗，正确 NodeName[标签说明] ✓
+        - 不要在节点标签中使用大括号：错误 NodeName[标签{内容}] ✗，正确 NodeName[标签内容] ✓
+        - 不要使用嵌套方括号：错误 NodeName[NodeName[标签]] ✗，正确 NodeName[标签] ✓
+        - 行末不要使用分号
+        - 中文字符可以直接使用，无需特殊处理
+
+        Mermaid图表示例：
 
         ```mermaid
         graph TD
-            A[模块A] --> B[模块B]
-            A --> C[模块C]
-            B --> D[模块D]
-            C --> D
+            ModuleA[模块A] --> ModuleB[模块B]
+            ModuleA --> ModuleC[模块C]
+            ModuleB --> ModuleD[模块D]
+            ModuleC --> ModuleD
         ```
 
         ```mermaid
         sequenceDiagram
-            participant 用户
-            participant API
-            participant 数据库
-            用户->>API: 请求数据
-            API->>数据库: 查询数据
-            数据库-->>API: 返回结果
-            API-->>用户: 响应
+            participant User[用户]
+            participant API[API接口]
+            participant DB[数据库]
+            User->>API: 请求数据
+            API->>DB: 查询数据
+            DB-->>API: 返回结果
+            API-->>User: 响应
         ```
 
         重要提示：
@@ -368,6 +380,7 @@ class AsyncGenerateOverallArchitectureNode(AsyncNode):  # Renamed class and chan
 
         return template
 
+    @validate_mermaid_in_content(auto_fix=True, max_retries=2)
     async def _call_model(  # Made async
         self, prompt: str, target_language: str, model: str
     ) -> tuple:  # Python 3.8 doesn't support Tuple from typing for return type hint like this, use tuple

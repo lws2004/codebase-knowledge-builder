@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
+from ..utils.mermaid_realtime_validator import validate_mermaid_in_content
 
 
 class GenerateDependencyNodeConfig(BaseModel):
@@ -50,13 +51,36 @@ class GenerateDependencyNodeConfig(BaseModel):
 
         请以 Markdown 格式输出，使用适当的标题、列表、表格和依赖图。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-        如果可能，请使用 Mermaid 语法创建依赖关系图。
+
+        必须包含至少1个Mermaid图表，用于可视化依赖关系。
+
+        **重要：Mermaid语法规范**
+        - 节点标签使用方括号格式：NodeName[节点标签]
+        - 不要在节点标签中使用引号：错误 NodeName["标签"] ✗，正确 NodeName[标签] ✓
+        - 不要在节点标签中使用括号：错误 NodeName[标签(说明)] ✗，正确 NodeName[标签说明] ✓
+        - 不要在节点标签中使用大括号：错误 NodeName[标签{内容}] ✗，正确 NodeName[标签内容] ✓
+        - 不要使用嵌套方括号：错误 NodeName[NodeName[标签]] ✗，正确 NodeName[标签] ✓
+        - 行末不要使用分号
+        - 中文字符可以直接使用，无需特殊处理
+
+        Mermaid图表示例：
+
+        ```mermaid
+        graph TD
+            ModuleA[模块A] --> ModuleB[模块B]
+            ModuleA --> ModuleC[模块C]
+            ModuleB --> ExternalLibD[外部库D]
+            ModuleC --> ExternalLibE[外部库E]
+        ```
+
         重要提示：
         1. 请确保你的分析是基于{repo_name}的实际代码，而不是生成通用示例项目。
         2. 不要使用"unknown"作为项目名称，应该使用"{repo_name}"。
         3. 不要生成虚构的模块名称，应该使用代码库中实际存在的模块名称。
         4. 不要生成虚构的API，应该使用代码库中实际存在的API。
         5. 如果你不确定某个信息，请基于提供的代码库结构和核心模块进行合理推断，而不是编造。
+        6. 必须包含至少1个Mermaid图表，这是强制要求！
+        7. 严格遵循上述Mermaid语法规范，确保生成的图表语法正确。
         """,
         description="依赖关系提示模板",
     )
@@ -285,6 +309,7 @@ class AsyncGenerateDependencyNode(AsyncNode):
 
         return template
 
+    @validate_mermaid_in_content(auto_fix=True, max_retries=2)
     async def _call_model_async(
         self,
         prompt_str: str,

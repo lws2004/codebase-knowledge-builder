@@ -19,6 +19,7 @@ from src.nodes import (
     PublishNode,
 )
 from src.nodes.flow_connector_nodes import AnalyzeRepoConnector, GenerateContentConnector
+from src.nodes.mermaid_validation_node import MermaidValidationNode
 from src.utils.config_loader import ConfigLoader
 from src.utils.env_manager import get_llm_config, load_env_vars
 from src.utils.logger import log_and_notify
@@ -39,6 +40,7 @@ def create_flow() -> AsyncFlow:
     analyze_repo_flow = AnalyzeRepoFlow(config_loader.get("nodes.analyze_repo"))
     generate_content_flow = GenerateContentFlow(config_loader.get("nodes.generate_content"))
     combine_content_node = CombineContentNode(config_loader.get_node_config("combine_content"))
+    mermaid_validation_node = MermaidValidationNode(config_loader.get_node_config("mermaid_validation"))
     format_output_node = FormatOutputNode(config_loader.get_node_config("format_output"))
     interactive_qa_node = InteractiveQANode(config_loader.get_node_config("interactive_qa"))
     publish_node = PublishNode(config_loader.get_node_config("publish"))
@@ -55,7 +57,8 @@ def create_flow() -> AsyncFlow:
     prepare_repo_node >> analyze_repo_connector
     analyze_repo_connector >> generate_content_connector
     generate_content_connector >> combine_content_node
-    combine_content_node >> format_output_node
+    combine_content_node >> mermaid_validation_node
+    mermaid_validation_node >> format_output_node
     format_output_node >> interactive_qa_node
     interactive_qa_node >> publish_node
 
