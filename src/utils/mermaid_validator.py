@@ -94,9 +94,13 @@ def _simple_validate_mermaid(mermaid_content: str) -> Tuple[bool, List[str]]:
 
     # 检查基本结构
     if not re.search(
-        r"(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|gitgraph|timeline|mindmap)", mermaid_content
+        r"(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|gitgraph|timeline|mindmap|pie)", mermaid_content
     ):
         errors.append("缺少有效的图表类型声明")
+
+    # 检查饼图特殊语法
+    if re.search(r"^pie\s*$", mermaid_content, re.MULTILINE):
+        errors.append("饼图语法错误：应使用 'pie title 标题' 而不是单独的 'pie'")
 
     # 检查常见语法错误
     if re.search(r"\[\|[^|]*\|[^|]*\]", mermaid_content):

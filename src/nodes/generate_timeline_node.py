@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
+from ..utils.mermaid_realtime_validator import validate_mermaid_in_content
 
 
 class GenerateTimelineNodeConfig(BaseModel):
@@ -45,7 +46,21 @@ class GenerateTimelineNodeConfig(BaseModel):
 
         请以 Markdown 格式输出，使用适当的标题、列表、表格和时间线图表。
         使用表情符号使文档更加生动，例如在标题前使用适当的表情符号。
-        必须使用 Mermaid 语法创建至少一个时间线图表，这是强制要求！例如：
+
+        必须包含至少1个Mermaid图表，用于可视化时间线。
+
+        **重要：Mermaid语法规范**
+        - 节点标签使用方括号格式：NodeName[节点标签]
+        - 不要在节点标签中使用引号：错误 NodeName["标签"] ✗，正确 NodeName[标签] ✓
+        - 不要在节点标签中使用括号：错误 NodeName[标签(说明)] ✗，正确 NodeName[标签说明] ✓
+        - 不要在节点标签中使用大括号：错误 NodeName[标签{内容}] ✗，正确 NodeName[标签内容] ✓
+        - 不要使用嵌套方括号：错误 NodeName[NodeName[标签]] ✗，正确 NodeName[标签] ✓
+        - 行末不要使用分号
+        - 中文字符可以直接使用，无需特殊处理
+        - 饼图使用格式：pie title 标题，不要使用单独的 pie
+        - 时间线使用格式：timeline 或 graph TD
+
+        Mermaid图表示例：
 
         ```mermaid
         timeline
@@ -255,6 +270,7 @@ class AsyncGenerateTimelineNode(AsyncNode):  # Renamed class and changed base cl
 
         return template
 
+    @validate_mermaid_in_content(auto_fix=True, max_retries=2)
     async def _call_model_async(  # Renamed for consistency
         self, prompt_str: str, target_language: str, model_name: str
     ) -> Tuple[str, Dict[str, float], bool]:

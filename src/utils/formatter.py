@@ -255,7 +255,12 @@ def _simple_mermaid_fix(mermaid_content: str) -> str:
         # 将subgraph名称改为避免冲突
         mermaid_content = re.sub(rf"subgraph\s+{conflict}\b", f"subgraph {conflict}Group", mermaid_content)
 
-    # 10. 智能清理，保留图表结构
+    # 10. 修复饼图语法错误
+    # 将单独的 "pie" 改为 "pie title 标题"
+    if re.search(r"^pie\s*$", mermaid_content, re.MULTILINE):
+        mermaid_content = re.sub(r"^pie\s*$", "pie title 数据分布", mermaid_content, flags=re.MULTILINE)
+
+    # 11. 智能清理，保留图表结构
     lines = mermaid_content.split("\n")
     cleaned_lines = []
 
@@ -343,8 +348,14 @@ def _legacy_validate_mermaid_syntax(mermaid_content: str) -> tuple[bool, list[st
         errors.append("subgraph名称与节点名称冲突")
 
     # 检查基本结构
-    if not re.search(r"(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|gitgraph)", mermaid_content):
+    if not re.search(
+        r"(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|gitgraph|timeline|mindmap|pie)", mermaid_content
+    ):
         errors.append("缺少有效的图表类型声明")
+
+    # 检查饼图特殊语法
+    if re.search(r"^pie\s*$", mermaid_content, re.MULTILINE):
+        errors.append("饼图语法错误：应使用 'pie title 标题' 而不是单独的 'pie'")
 
     return len(errors) == 0, errors
 
