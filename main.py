@@ -103,6 +103,10 @@ def load_configuration(args: argparse.Namespace) -> ConfigLoader:
     if args.env != "default":
         config_loader.load_env_config(args.env)
 
+    # 获取 LLM 配置并存储在 config_loader 中
+    llm_config = get_llm_config()
+    config_loader._set_llm_config(llm_config)
+
     # 打印当前环境变量中的模型配置，用于调试
     log_and_notify("当前环境变量中的模型配置:", "debug")
     for key in os.environ:
@@ -144,7 +148,6 @@ def create_shared_storage(
     args: argparse.Namespace,
     config_loader: ConfigLoader,
     repo_name: str,
-    llm_config: Dict[str, Any],
 ) -> Dict[str, Any]:
     """创建共享存储。.
 
@@ -159,6 +162,9 @@ def create_shared_storage(
     """
     # 设置输出目录，如果用户未指定则使用仓库名
     output_dir = args.output_dir or config_loader.get("nodes.input.default_output_dir", "docs_output")
+
+    # 获取 LLM 配置
+    llm_config = config_loader.llm_config
 
     # 创建共享存储
     return {
@@ -225,14 +231,15 @@ async def main() -> None:
     # 加载配置
     config_loader = load_configuration(args)
 
-    # 获取 LLM 配置
-    llm_config = get_llm_config()
-
     # 提取仓库名称
     repo_name = extract_repo_name(args.repo_url, args.local_path)
 
     # 创建共享存储
-    shared = create_shared_storage(args, config_loader, repo_name, llm_config)
+    shared = create_shared_storage(
+        args,
+        config_loader,
+        repo_name,
+    )
 
     # 创建流程
     flow = create_flow()

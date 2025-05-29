@@ -65,6 +65,15 @@ class LLMClientBase:
                 f"未找到{self.provider}的API密钥，请确保设置了{provider_env}或LLM_API_KEY环境变量", "warning"
             )
 
+        # 确保模型字符串包含提供商前缀
+        if self.model and "/" not in self.model:
+            if self.provider == "openai" and self.model.startswith("gpt-"):
+                log_and_notify(f"OpenAI gpt 模型不添加前缀: model={self.model}", "debug")
+            else:
+                self.model = f"{self.provider}/{self.model}"
+                log_and_notify(f"添加提供商前缀: model={self.model}", "debug")
+
+        # 设置 API 密钥
         litellm.api_key = api_key
 
         # 设置基础 URL

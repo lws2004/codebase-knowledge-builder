@@ -86,8 +86,12 @@ def load_env_vars(env_file: Optional[str] = None, env: str = "default") -> None:
         else:
             log_and_notify("未找到 .env 文件，使用现有环境变量", "info")
 
+    # 调试：打印加载 .env 后 LLM 相关的环境变量
+    log_and_notify(f"DEBUG (load_env_vars): os.getenv(LLM_MODEL_ENV) = {os.getenv(LLM_MODEL_ENV)}", "info")
+    log_and_notify(f"DEBUG (load_env_vars): os.getenv(LLM_PROVIDER_ENV) = {os.getenv(LLM_PROVIDER_ENV)}", "info")
+
     llm_model_env_val = os.getenv(LLM_MODEL_ENV)
-    log_and_notify(f"环境变量检查: {LLM_MODEL_ENV}={llm_model_env_val}", "debug")
+    log_and_notify(f"环境变量检查: {LLM_MODEL_ENV}={llm_model_env_val}", "info")
 
     if env != "default":
         config_loader_instance.load_env_config(env)
@@ -192,12 +196,9 @@ def get_node_model_config(node_name: str, default_model: str) -> str:
 def _get_base_llm_config(loader: ConfigLoader) -> Dict[str, Any]:
     """Gets the foundational LLM settings (model, provider, tokens, temp, cache)."""
     model = os.getenv(LLM_MODEL_ENV, loader.get(LLM_MODEL_CONFIG, "openai/gpt-4"))
-    provider = os.getenv(LLM_PROVIDER_ENV)  # Provider primarily from env or inferred from model
-    if not provider:
-        if "/" in model:
-            provider = model.split("/")[0]
-        else:
-            provider = loader.get(LLM_PROVIDER_CONFIG, "openai")
+    provider = os.getenv(LLM_PROVIDER_ENV, loader.get(LLM_PROVIDER_CONFIG, "openai"))  # 确保从环境变量或配置中获取提供商
+    if not provider and "/" in model:
+        provider = model.split("/")[0]
 
     max_tokens_str = os.getenv(LLM_MAX_TOKENS_ENV)
     max_tokens = int(max_tokens_str) if max_tokens_str else loader.get(LLM_MAX_TOKENS_CONFIG, 4000)

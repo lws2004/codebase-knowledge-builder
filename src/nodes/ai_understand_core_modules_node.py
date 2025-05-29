@@ -77,6 +77,9 @@ class AsyncAIUnderstandCoreModulesNode(AsyncNode):
         llm_config_shared = shared.get("llm_config")
         if llm_config_shared:
             try:
+                log_and_notify(
+                    f"DEBUG: llm_config_shared in AsyncAIUnderstandCoreModulesNode: {llm_config_shared}", "debug"
+                )
                 if not self.llm_client:
                     self.llm_client = LLMClient(config=llm_config_shared)
                 log_and_notify("AsyncAIUnderstandCoreModulesNode: LLMClient initialized.", "info")

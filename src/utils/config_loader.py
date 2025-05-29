@@ -110,6 +110,14 @@ class ConfigLoader:
             return {}
         return result
 
+    def _set_llm_config(self, llm_config: Dict[str, Any]) -> None:
+        """设置 LLM 配置
+
+        Args:
+            llm_config: LLM 配置字典
+        """
+        self.llm_config = llm_config
+
 
 if __name__ == "__main__":
     # This main block is for demonstration and basic testing of ConfigLoader.
