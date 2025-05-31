@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from ..utils.llm_wrapper.llm_client import LLMClient
 from ..utils.logger import log_and_notify
 from ..utils.mermaid_realtime_validator import validate_mermaid_in_content
+from ..utils.mermaid_regenerator import validate_and_fix_file_mermaid
 
 
 class GenerateDependencyNodeConfig(BaseModel):

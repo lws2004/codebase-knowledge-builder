@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from ..utils.llm_wrapper import LLMClient
 from ..utils.logger import log_and_notify
+from ..utils.mermaid_regenerator import validate_and_fix_file_mermaid
+from ..utils.performance_monitor import TaskMonitoringContext
 from .async_parallel_batch_node import AsyncParallelBatchNode
 
 
@@ -22,7 +25,7 @@ class GenerateModuleDetailsNodeConfig(BaseModel):
     quality_threshold: float = Field(0.7, ge=0, le=1.0, description="质量阈值")
     model: str = Field("", description="LLM 模型，从配置中获取，不应设置默认值")
     output_format: str = Field("``", description="输出格式")
-    max_modules_per_batch: int = Field(5, description="每批最大模块数")
+    max_modules_per_batch: int = Field(8, description="每批最大模块数（提升并发）")
     module_details_prompt_template: str = Field(
         """
         你是一个代码库文档专家。请为以下模块生成详细的文档。
@@ -195,16 +198,20 @@ class AsyncGenerateModuleDetailsNode(AsyncNode):
 
             log_and_notify(f"AsyncGenerateModuleDetailsNode: 开始处理模块 {module_name}", "debug")
 
-            if not self.parent.llm_client:
-                log_and_notify(
-                    f"AsyncGenerateModuleDetailsNode: Skipping module {module_name} due to missing LLM client.", "error"
-                )
-                return {
-                    "name": module_name,
-                    "path": module_path_in_repo,
-                    "success": False,
-                    "error": f"LLMClientNotAvailableInModule: {module_name}",
-                }
+            # 开始性能监控
+            task_id = f"module_{module_name}_{int(time.time())}"
+            with TaskMonitoringContext(task_id):
+                if not self.parent.llm_client:
+                    log_and_notify(
+                        f"AsyncGenerateModuleDetailsNode: Skipping module {module_name} due to missing LLM client.",
+                        "error",
+                    )
+                    return {
+                        "name": module_name,
+                        "path": module_path_in_repo,
+                        "success": False,
+                        "error": f"LLMClientNotAvailableInModule: {module_name}",
+                    }
 
             try:
                 # 添加详细日志，记录模块处理开始
@@ -1160,6 +1167,17 @@ if __name__ == "__main__":
         try:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
+
+            # 立即修复文件中的 Mermaid 语法错误
+            try:
+                was_fixed = validate_and_fix_file_mermaid(
+                    file_path, self.llm_client, f"模块文档 - {os.path.basename(file_path)}"
+                )
+                if was_fixed:
+                    log_and_notify(f"已修复模块文件中的 Mermaid 语法错误: {file_path}", "info")
+            except Exception as mermaid_error:
+                log_and_notify(f"修复模块文件 Mermaid 语法错误时出错: {mermaid_error}", "warning")
+
         except Exception as e:
             # Log error, but don't crash the whole process, error is reported per-module
             log_and_notify(f"AsyncGenerateModuleDetailsNode: Failed to save module file {file_path}: {e}", "error")
@@ -1176,6 +1194,17 @@ if __name__ == "__main__":
         try:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
+
+            # 立即修复文件中的 Mermaid 语法错误
+            try:
+                was_fixed = validate_and_fix_file_mermaid(
+                    file_path, self.llm_client, f"模块索引文档 - {os.path.basename(file_path)}"
+                )
+                if was_fixed:
+                    log_and_notify(f"已修复索引文件中的 Mermaid 语法错误: {file_path}", "info")
+            except Exception as mermaid_error:
+                log_and_notify(f"修复索引文件 Mermaid 语法错误时出错: {mermaid_error}", "warning")
+
         except Exception as e:
             log_and_notify(f"AsyncGenerateModuleDetailsNode: Failed to save index file {file_path}: {e}", "error")
             # Raise error here, as index saving failure might be more critical than a single module file?

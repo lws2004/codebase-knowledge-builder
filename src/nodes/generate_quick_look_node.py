@@ -375,6 +375,15 @@ class AsyncGenerateQuickLookNode(AsyncNode):
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             log_and_notify(f"速览文档已保存到: {file_path}", "info")
+
+            # 立即修复文件中的 Mermaid 语法错误
+            try:
+                was_fixed = validate_and_fix_file_mermaid(file_path, self.llm_client, f"文档 - {repo_name}")
+                if was_fixed:
+                    log_and_notify(f"已修复文件中的 Mermaid 语法错误: {file_path}", "info")
+            except Exception as e:
+                log_and_notify(f"修复 Mermaid 语法错误时出错: {str(e)}", "warning")
+
             return file_path
         except IOError as e:
             log_and_notify(f"保存速览文档失败: {str(e)}", "error", notify=True)

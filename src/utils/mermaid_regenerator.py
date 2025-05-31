@@ -248,3 +248,35 @@ def validate_and_regenerate_mermaid(content: str, llm_client=None, context: Opti
     fixed_content = regenerate_mermaid_in_content(content, llm_client, context)
 
     return fixed_content, True
+
+
+def validate_and_fix_file_mermaid(file_path: str, llm_client=None, context: Optional[str] = None) -> bool:
+    """验证并修复文件中的 Mermaid 图表
+
+    Args:
+        file_path: 文件路径
+        llm_client: LLM 客户端实例
+        context: 上下文信息
+
+    Returns:
+        是否进行了修复
+    """
+    try:
+        # 读取文件内容
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 验证并修复 Mermaid 图表
+        fixed_content, was_fixed = validate_and_regenerate_mermaid(content, llm_client, context)
+
+        # 如果有修复，写回文件
+        if was_fixed:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(fixed_content)
+            log_and_notify(f"已修复文件中的 Mermaid 图表: {file_path}", "info")
+
+        return was_fixed
+
+    except Exception as e:
+        log_and_notify(f"修复文件 Mermaid 图表时出错 {file_path}: {str(e)}", "error")
+        return False

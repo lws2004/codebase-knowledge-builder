@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from ..utils.llm_wrapper.llm_client import LLMClient  # Import LLMClient
 from ..utils.logger import log_and_notify
 from ..utils.mermaid_realtime_validator import validate_mermaid_in_content
+from ..utils.mermaid_regenerator import validate_and_fix_file_mermaid
 
 
 class GenerateOverallArchitectureNodeConfig(BaseModel):
@@ -489,5 +490,13 @@ class AsyncGenerateOverallArchitectureNode(AsyncNode):  # Renamed class and chan
                 f.write(content)
 
         log_and_notify(f"整体架构文档已保存到: {file_path}", "info")
+
+        # 立即修复文件中的 Mermaid 语法错误
+        try:
+            was_fixed = validate_and_fix_file_mermaid(file_path, self.llm_client, f"整体架构文档 - {repo_name}")
+            if was_fixed:
+                log_and_notify(f"已修复文件中的 Mermaid 语法错误: {file_path}", "info")
+        except Exception as e:
+            log_and_notify(f"修复 Mermaid 语法错误时出错: {str(e)}", "warning")
 
         return file_path

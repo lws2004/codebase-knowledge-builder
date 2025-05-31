@@ -92,8 +92,8 @@ nodes:
          请以 Markdown 格式输出，使用适当的标题、列表和强调。
 
    parse_code_batch:
-      max_files: 1000
-      batch_size: 100
+      max_files: 2000 # 提升文件处理上限
+      batch_size: 150 # 提升批处理大小
       ignore_patterns:
          - ".git"
          - ".vscode"
@@ -1165,13 +1165,22 @@ nodes:
    # 并行处理配置 🆕
    parallel_processing:
       enabled: true # 是否启用并行处理
-      max_workers: 4 # 最大并发工作线程数
-      max_concurrent_llm_calls: 3 # 最大并发LLM调用数
-      batch_size: 10 # 批处理大小
-      timeout: 300 # 并行任务超时时间（秒）
+      max_workers: 8 # 最大并发工作线程数（提升）
+      max_concurrent_llm_calls: 8 # 最大并发LLM调用数（提升）
+      batch_size: 15 # 批处理大小（提升）
+      timeout: 600 # 并行任务超时时间（秒）（延长）
       enable_async: true # 是否启用异步处理
-      semaphore_limit: 5 # 信号量限制
+      semaphore_limit: 10 # 信号量限制（提升）
       error_isolation: true # 是否启用错误隔离
+      # 新增高级并发配置
+      adaptive_batch_size: true # 自适应批处理大小
+      load_balancing: true # 启用负载均衡
+      connection_pool_size: 20 # HTTP连接池大小
+      retry_backoff_factor: 1.5 # 重试退避因子
+      max_retries: 5 # 最大重试次数
+      circuit_breaker_enabled: true # 启用熔断器
+      circuit_breaker_threshold: 10 # 熔断器阈值
+      performance_monitoring: true # 启用性能监控
 
    # 质量评估配置 🆕
    quality_assessment:
