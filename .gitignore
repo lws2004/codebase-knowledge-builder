@@ -94,4 +94,4 @@ coverage/
 .node_repl_history
 
 # Generated documentation
-docs_output/
+# docs_output/
