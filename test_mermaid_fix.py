@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-测试 Mermaid 修复功能
-"""
+"""测试 Mermaid 修复功能"""
 
 import os
 import tempfile
