@@ -94,13 +94,13 @@ classDiagram
         +login()
         +logout()
     }
-    
+
     class Order {
         +int id
         +Date date
         +calculate()
     }
-    
+
     User --> Order
 ```
 
